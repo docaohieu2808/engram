@@ -20,6 +20,7 @@ dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.23.0",
     "pyyaml>=6.0",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,7 @@ dev = [
 
 [project.scripts]
 engram = "engram.cli:app"
+engram-mcp = "engram.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engram"]
