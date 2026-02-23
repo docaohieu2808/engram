@@ -1,0 +1,61 @@
+nodes:
+  - name: Project
+    description: Software project or repository
+    attributes:
+      - name: language
+        type: string
+      - name: status
+        type: string
+  - name: Technology
+    description: Programming language, framework, database, or tool
+    attributes:
+      - name: version
+        type: string
+  - name: Server
+    description: Physical or virtual server, container, or cloud instance
+    attributes:
+      - name: ip
+        type: string
+      - name: provider
+        type: string
+  - name: Person
+    description: Team member, client, or stakeholder
+    attributes:
+      - name: role
+        type: string
+  - name: Service
+    description: Running service, API, or microservice
+    attributes:
+      - name: port
+        type: string
+  - name: Environment
+    description: Deployment environment (dev, staging, production)
+
+edges:
+  - name: uses
+    from_types: [Project, Service]
+    to_types: [Technology]
+  - name: runs_on
+    from_types: [Service, Project]
+    to_types: [Server, Environment]
+  - name: managed_by
+    from_types: [Project, Server, Service]
+    to_types: [Person]
+  - name: depends_on
+    from_types: [Project, Service]
+    to_types: [Project, Service, Technology]
+  - name: deployed_to
+    from_types: [Project, Service]
+    to_types: [Server, Environment]
+  - name: connects_to
+    from_types: [Service]
+    to_types: [Service, Server]
+
+extraction_hints:
+  patterns:
+    - "X uses Y → (X)-[uses]->(Y)"
+    - "X runs on Y → (X)-[runs_on]->(Y)"
+    - "X depends on Y → (X)-[depends_on]->(Y)"
+  examples:
+    - "Our API uses PostgreSQL and runs on AWS EC2"
+    - "The auth service depends on Redis for session storage"

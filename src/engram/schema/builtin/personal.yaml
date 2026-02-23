@@ -1,0 +1,41 @@
+nodes:
+  - name: Person
+    description: People you interact with
+    attributes:
+      - name: relationship
+        type: string
+      - name: email
+        type: string
+  - name: Place
+    description: Locations, cities, venues
+  - name: Event
+    description: Meetings, appointments, occurrences
+    attributes:
+      - name: date
+        type: string
+  - name: Topic
+    description: Subjects, interests, areas of knowledge
+  - name: Task
+    description: Things to do, goals, projects
+
+edges:
+  - name: knows
+    from_types: [Person]
+    to_types: [Person]
+  - name: interested_in
+    from_types: [Person]
+    to_types: [Topic]
+  - name: located_at
+    from_types: [Person, Event]
+    to_types: [Place]
+  - name: assigned_to
+    from_types: [Task]
+    to_types: [Person]
+  - name: related_to
+    from_types: [Topic, Event, Task]
+    to_types: [Topic, Event, Task, Person]
+
+extraction_hints:
+  patterns:
+    - "X met Y → (X)-[knows]->(Y)"
+    - "X is working on Y → (Y)-[assigned_to]->(X)"

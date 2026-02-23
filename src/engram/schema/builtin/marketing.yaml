@@ -1,0 +1,46 @@
+nodes:
+  - name: Campaign
+    description: Marketing campaign or initiative
+    attributes:
+      - name: status
+        type: string
+      - name: budget
+        type: string
+  - name: Channel
+    description: Marketing channel (email, social, ads, SEO)
+  - name: Audience
+    description: Target audience segment or persona
+  - name: Content
+    description: Content piece (blog, video, ad copy)
+    attributes:
+      - name: format
+        type: string
+  - name: Metric
+    description: KPI or measurement (CTR, conversion rate)
+    attributes:
+      - name: value
+        type: string
+  - name: Tool
+    description: Marketing tool or platform
+
+edges:
+  - name: targets
+    from_types: [Campaign]
+    to_types: [Audience]
+  - name: uses_channel
+    from_types: [Campaign]
+    to_types: [Channel]
+  - name: produces
+    from_types: [Campaign]
+    to_types: [Content]
+  - name: measured_by
+    from_types: [Campaign, Channel]
+    to_types: [Metric]
+  - name: managed_with
+    from_types: [Campaign, Channel]
+    to_types: [Tool]
+
+extraction_hints:
+  patterns:
+    - "Campaign X targets audience Y → (X)-[targets]->(Y)"
+    - "We use X for Y → (Y)-[managed_with]->(X)"
