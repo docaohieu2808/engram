@@ -33,8 +33,9 @@ class InboxWatcher:
         self._running = False
 
     async def start(self) -> None:
-        """Start polling loop."""
+        """Start polling loop. Recovers orphaned .processing files first."""
         self._running = True
+        self._recover_orphaned_files()
         print(f"[engram] Watching {self._inbox} (poll={self._poll_interval}s)")
 
         while self._running:
@@ -44,6 +45,21 @@ class InboxWatcher:
     def stop(self) -> None:
         """Stop the watcher."""
         self._running = False
+
+    def _recover_orphaned_files(self) -> None:
+        """Recover .processing files orphaned by previous crashes (>1 hour old)."""
+        for pf in self._inbox.glob("*.processing"):
+            try:
+                age = datetime.now().timestamp() - pf.stat().st_mtime
+                if age > 3600:  # 1 hour
+                    # Restore original extension from stem (e.g. chat.jsonl.processing → chat.jsonl)
+                    original = pf.with_suffix("")
+                    if not original.suffix:
+                        original = pf.with_suffix(".json")
+                    pf.rename(original)
+                    print(f"[engram] Recovered orphaned {pf.name} → {original.name}")
+            except Exception as e:
+                print(f"[engram] Failed to recover {pf.name}: {e}")
 
     async def _process_inbox(self) -> None:
         """Process all JSON and JSONL files in inbox."""
@@ -55,6 +71,7 @@ class InboxWatcher:
 
     async def _process_file(self, path: Path) -> None:
         """Atomically claim and process a single file."""
+        is_jsonl = path.suffix == ".jsonl"
         # Atomic claim - rename to .processing
         processing = path.with_suffix(".processing")
         try:
@@ -63,7 +80,7 @@ class InboxWatcher:
             return  # Another process claimed it
 
         try:
-            messages = self._load_chat_file(processing)
+            messages = self._load_chat_file(processing, is_jsonl=is_jsonl)
             if messages:
                 await self._ingest_fn(messages)
                 print(f"[engram] Ingested {path.name} ({len(messages)} messages)")
@@ -82,10 +99,15 @@ class InboxWatcher:
                 pass
 
     @staticmethod
-    def _load_chat_file(path: Path) -> list[dict[str, Any]]:
-        """Load messages from chat JSON or JSONL file."""
-        # JSONL: one JSON object per line (Claude Code export format)
-        if path.suffix == ".jsonl" or (path.suffix == ".processing" and ".jsonl" in path.stem):
+    def _load_chat_file(path: Path, is_jsonl: bool | None = None) -> list[dict[str, Any]]:
+        """Load messages from chat JSON or JSONL file.
+
+        Args:
+            is_jsonl: Explicit format hint. Auto-detects from extension if None.
+        """
+        if is_jsonl is None:
+            is_jsonl = path.suffix == ".jsonl" or (path.suffix == ".processing" and ".jsonl" in path.stem)
+        if is_jsonl:
             messages = []
             with open(path) as f:
                 for line in f:

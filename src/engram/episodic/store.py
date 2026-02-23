@@ -55,20 +55,35 @@ def _ensure_api_key() -> None:
             continue
 
 
-def _get_embeddings(model: str, texts: list[str]) -> list[list[float]]:
-    """Generate embeddings via litellm, fallback to ChromaDB default on error."""
+def _get_embeddings(model: str, texts: list[str], expected_dim: int | None = None) -> list[list[float]]:
+    """Generate embeddings via litellm, fallback to ChromaDB default on error.
+
+    Args:
+        expected_dim: If set, validates fallback embeddings match this dimension.
+                      Raises RuntimeError on mismatch to prevent silent corruption.
+    """
     _ensure_api_key()
     try:
         response = litellm.embedding(model=model, input=texts)
         return [item["embedding"] for item in response.data]
     except Exception:
         import warnings
+        fallback = _get_default_ef()(input=texts)
+        fallback_dim = len(fallback[0]) if fallback else 0
+        # Prevent dimension mismatch: if collection already has higher-dim embeddings,
+        # silently inserting 384d vectors would corrupt search quality
+        if expected_dim and fallback_dim != expected_dim:
+            raise RuntimeError(
+                f"Embedding API unavailable and fallback dimension ({fallback_dim}d) "
+                f"doesn't match collection ({expected_dim}d). "
+                f"Set GEMINI_API_KEY or ensure API access to avoid data corruption."
+            )
         warnings.warn(
             "Embedding API unavailable, using ChromaDB default (384d). "
             "Set GEMINI_API_KEY for higher-quality embeddings.",
             stacklevel=2,
         )
-        return _get_default_ef()(input=texts)
+        return fallback
 
 
 class EpisodicStore:
@@ -94,6 +109,7 @@ class EpisodicStore:
             name=self.COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},
         )
+        self._embedding_dim: int | None = None  # Detected on first operation
 
     async def remember(
         self,
@@ -118,7 +134,9 @@ class EpisodicStore:
             doc_metadata.update(metadata)
 
         try:
-            embeddings = _get_embeddings(self._embed_model, [content])
+            self._detect_embedding_dim()
+            embeddings = _get_embeddings(self._embed_model, [content], self._embedding_dim)
+            self._embedding_dim = self._embedding_dim or len(embeddings[0])
             self._collection.add(
                 ids=[memory_id],
                 documents=[content],
@@ -138,7 +156,8 @@ class EpisodicStore:
     ) -> list[EpisodicMemory]:
         """Search memories by semantic similarity with optional metadata filters."""
         try:
-            query_embedding = _get_embeddings(self._embed_model, [query])
+            self._detect_embedding_dim()
+            query_embedding = _get_embeddings(self._embed_model, [query], self._embedding_dim)
             kwargs: dict[str, Any] = {
                 "query_embeddings": query_embedding,
                 "n_results": min(limit, self._collection.count() or 1),
@@ -190,6 +209,22 @@ class EpisodicStore:
             "count": count,
             "collection": self.COLLECTION_NAME,
         }
+
+
+    def _detect_embedding_dim(self) -> None:
+        """Detect embedding dimension from existing collection data."""
+        if self._embedding_dim is not None:
+            return
+        # Check known dimensions for configured model
+        model_name = self._embed_model.split("/")[-1] if "/" in self._embed_model else self._embed_model
+        if model_name in _EMBEDDING_DIMS:
+            self._embedding_dim = _EMBEDDING_DIMS[model_name]
+            return
+        # Peek at existing data to detect dimension
+        if self._collection.count() > 0:
+            peek = self._collection.peek(limit=1)
+            if peek and peek.get("embeddings") and peek["embeddings"][0]:
+                self._embedding_dim = len(peek["embeddings"][0])
 
 
 def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> EpisodicMemory:

@@ -18,7 +18,7 @@ def _make_llm_response(text: str):
 
 async def test_think_with_results(episodic_store, semantic_graph):
     """think() calls LLM when episodic results are found."""
-    with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t: [[0.1] * 384] * len(t)):
+    with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t, d=None: [[0.1] * 384] * len(t)):
         await episodic_store.remember("Deployed v2 to production at noon")
 
     engine = ReasoningEngine(episodic=episodic_store, graph=semantic_graph, model="test/model")
@@ -36,7 +36,7 @@ async def test_think_no_results(tmp_path):
     from engram.episodic.store import EpisodicStore
     from engram.semantic.graph import SemanticGraph
 
-    with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t: [[0.1] * 384] * len(t)):
+    with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t, d=None: [[0.1] * 384] * len(t)):
         store = EpisodicStore(
             config=EpisodicConfig(path=str(tmp_path / "ep")),
             embedding_config=EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2"),
@@ -44,7 +44,7 @@ async def test_think_no_results(tmp_path):
     graph = SemanticGraph(config=SemanticConfig(path=str(tmp_path / "sem.db")))
     engine = ReasoningEngine(episodic=store, graph=graph, model="test/model")
 
-    with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t: [[0.1] * 384] * len(t)):
+    with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t, d=None: [[0.1] * 384] * len(t)):
         answer = await engine.think("What is the meaning of life?")
 
     assert "no relevant memories" in answer.lower()

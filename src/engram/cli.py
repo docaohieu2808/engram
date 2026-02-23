@@ -548,9 +548,17 @@ def migrate(
     all_nodes = _run(graph.get_nodes())
     name_to_key = {n.name: n.key for n in all_nodes}
 
+    skipped_edges = 0
     for from_name, to_name, relation in edges_to_add:
-        from_key = name_to_key.get(from_name, f"Project:{from_name}")
-        to_key = name_to_key.get(to_name, f"Technology:{to_name}")
+        from_key = name_to_key.get(from_name)
+        to_key = name_to_key.get(to_name)
+        if not from_key or not to_key:
+            skipped_edges += 1
+            console.print(
+                f"[yellow]Skipped edge: {from_name} --{relation}--> {to_name} "
+                f"(node(s) not found)[/yellow]"
+            )
+            continue
         edge = SemanticEdge(from_node=from_key, to_node=to_key, relation=relation)
         is_new = _run(graph.add_edge(edge))
         if is_new:
@@ -562,9 +570,10 @@ def migrate(
         store = _get_episodic()
         seen_texts: set[str] = set()
         for text in episodic_texts:
-            if text in seen_texts:
+            normalized = " ".join(text.split())
+            if normalized in seen_texts:
                 continue
-            seen_texts.add(text)
+            seen_texts.add(normalized)
             _run(store.remember(text, memory_type=MemoryType.CONTEXT, priority=4))
             episodic_count += 1
 

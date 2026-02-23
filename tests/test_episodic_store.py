@@ -13,7 +13,7 @@ from engram.models import MemoryType
 _FIXED_EMBEDDING = [0.1] * 384
 
 
-def _fake_embeddings(_model, texts):
+def _fake_embeddings(_model, texts, _expected_dim=None):
     return [_FIXED_EMBEDDING for _ in texts]
 
 

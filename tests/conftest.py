@@ -15,7 +15,7 @@ from engram.semantic.graph import SemanticGraph
 _FIXED_EMBEDDING = [0.1] * 384
 
 
-def _mock_embeddings(_model: str, texts: list[str]) -> list[list[float]]:
+def _mock_embeddings(_model: str, texts: list[str], _expected_dim: int | None = None) -> list[list[float]]:
     return [_FIXED_EMBEDDING for _ in texts]
 
 
