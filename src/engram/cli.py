@@ -451,6 +451,126 @@ async def _do_ingest_messages(messages: list[dict]) -> IngestResult:
 
 
 @app.command()
+def migrate(
+    file: Path = typer.Argument(..., help="JSON file to import (agent-memory export)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without importing"),
+):
+    """Import data from old agent-memory/neural-memory JSON exports.
+
+    Parses structured entity data (Server:, Technology:, Person:, Project:,
+    Relationship:) and imports nodes/edges into semantic graph.
+    Plain text entries go to episodic memory.
+    """
+    if not file.exists():
+        console.print(f"[red]File not found:[/red] {file}")
+        raise typer.Exit(1)
+
+    with open(file) as f:
+        data = json.load(f)
+
+    messages = data if isinstance(data, list) else data.get("messages", [])
+    if not messages:
+        console.print("[yellow]No data to import.[/yellow]")
+        return
+
+    # Parse structured entity data
+    nodes_to_add: list[tuple[str, str, dict]] = []  # (type, name, attributes)
+    edges_to_add: list[tuple[str, str, str]] = []  # (from_key, to_key, relation)
+    episodic_texts: list[str] = []
+
+    entity_prefixes = {
+        "Server": "Server", "Technology": "Technology", "Person": "Person",
+        "Project": "Project", "Environment": "Environment", "Script": "Script",
+        "Service": "Service",
+    }
+
+    for msg in messages:
+        content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
+        if not content:
+            continue
+
+        parsed = False
+        # Parse "Relationship: X --rel--> Y"
+        if content.startswith("Relationship:"):
+            import re
+            match = re.match(r"Relationship:\s*(.+?)\s*--(\w+)-->\s*(.+)", content)
+            if match:
+                from_name, relation, to_name = match.groups()
+                edges_to_add.append((from_name.strip(), to_name.strip(), relation.strip()))
+                parsed = True
+
+        # Parse "Type: Name - {json_attrs}"
+        if not parsed:
+            for prefix, node_type in entity_prefixes.items():
+                if content.startswith(f"{prefix}:"):
+                    rest = content[len(prefix) + 1:].strip()
+                    name = rest
+                    attrs = {}
+                    if " - " in rest:
+                        name, json_part = rest.split(" - ", 1)
+                        try:
+                            attrs = json.loads(json_part)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    nodes_to_add.append((node_type, name.strip(), attrs))
+                    parsed = True
+                    break
+
+        if not parsed:
+            episodic_texts.append(content)
+
+    console.print(f"[bold]Parsed:[/bold] {len(nodes_to_add)} nodes, {len(edges_to_add)} edges, {len(episodic_texts)} episodic")
+
+    if dry_run:
+        for ntype, name, attrs in nodes_to_add[:10]:
+            console.print(f"  [cyan]Node:[/cyan] {ntype}:{name} {attrs if attrs else ''}")
+        for fk, tk, rel in edges_to_add[:10]:
+            console.print(f"  [green]Edge:[/green] {fk} --{rel}--> {tk}")
+        if len(nodes_to_add) > 10:
+            console.print(f"  ... and {len(nodes_to_add) - 10} more nodes")
+        if len(edges_to_add) > 10:
+            console.print(f"  ... and {len(edges_to_add) - 10} more edges")
+        return
+
+    # Import into semantic graph
+    from engram.models import SemanticEdge, SemanticNode
+    graph = _get_graph()
+    added_nodes = 0
+    added_edges = 0
+
+    for ntype, name, attrs in nodes_to_add:
+        node = SemanticNode(type=ntype, name=name, attributes=attrs)
+        is_new = _run(graph.add_node(node))
+        if is_new:
+            added_nodes += 1
+
+    # Build a name→key lookup for edge resolution
+    all_nodes = _run(graph.get_nodes())
+    name_to_key = {n.name: n.key for n in all_nodes}
+
+    for from_name, to_name, relation in edges_to_add:
+        from_key = name_to_key.get(from_name, f"Project:{from_name}")
+        to_key = name_to_key.get(to_name, f"Technology:{to_name}")
+        edge = SemanticEdge(from_node=from_key, to_node=to_name, relation=relation)
+        is_new = _run(graph.add_edge(edge))
+        if is_new:
+            added_edges += 1
+
+    # Import episodic texts
+    episodic_count = 0
+    if episodic_texts:
+        store = _get_episodic()
+        for text in episodic_texts:
+            _run(store.remember(text, memory_type=MemoryType.CONTEXT, priority=4))
+            episodic_count += 1
+
+    console.print(
+        f"[green]Imported:[/green] {added_nodes} new nodes, "
+        f"{added_edges} new edges, {episodic_count} episodic memories"
+    )
+
+
+@app.command()
 def serve(
     port: Optional[int] = typer.Option(None, "--port", "-p"),
     host: Optional[str] = typer.Option(None, "--host"),
