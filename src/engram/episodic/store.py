@@ -38,8 +38,26 @@ def _get_default_ef():
     return _default_ef
 
 
+def _ensure_api_key() -> None:
+    """Load GEMINI_API_KEY from ~/.bashrc if not in environment."""
+    import os, re
+    if os.environ.get("GEMINI_API_KEY"):
+        return
+    for rc in (".bashrc", ".zshrc", ".profile"):
+        rc_path = os.path.expanduser(f"~/{rc}")
+        try:
+            with open(rc_path) as f:
+                match = re.search(r'export GEMINI_API_KEY="([^"]+)"', f.read())
+                if match:
+                    os.environ["GEMINI_API_KEY"] = match.group(1)
+                    return
+        except FileNotFoundError:
+            continue
+
+
 def _get_embeddings(model: str, texts: list[str]) -> list[list[float]]:
     """Generate embeddings via litellm, fallback to ChromaDB default on error."""
+    _ensure_api_key()
     try:
         response = litellm.embedding(model=model, input=texts)
         return [item["embedding"] for item in response.data]
