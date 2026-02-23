@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,12 @@ import networkx as nx
 
 from engram.config import SemanticConfig
 from engram.models import SemanticEdge, SemanticNode
+
+
+def _strip_diacritics(text: str) -> str:
+    """Remove diacritics for fuzzy matching (e.g. 'Trâm' -> 'Tram')."""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 class SemanticGraph:
@@ -133,8 +140,12 @@ class SemanticGraph:
         return True
 
     async def query(self, keyword: str, type: str | None = None) -> list[SemanticNode]:
-        """Search nodes by keyword in name/attributes, optionally filter by type."""
+        """Search nodes by keyword in name/attributes, optionally filter by type.
+
+        Supports Vietnamese diacritics: query 'tram' matches 'Trâm'.
+        """
         kw = keyword.lower()
+        kw_stripped = _strip_diacritics(kw)
         results: list[SemanticNode] = []
         for _, data in self._graph.nodes(data=True):
             node: SemanticNode | None = data.get("data")
@@ -142,7 +153,12 @@ class SemanticGraph:
                 continue
             if type is not None and node.type != type:
                 continue
-            if kw in node.name.lower() or kw in json.dumps(node.attributes).lower():
+            name_lower = node.name.lower()
+            attrs_lower = json.dumps(node.attributes, ensure_ascii=False).lower()
+            # Match exact or with stripped diacritics
+            if (kw in name_lower or kw in attrs_lower
+                    or kw_stripped in _strip_diacritics(name_lower)
+                    or kw_stripped in _strip_diacritics(attrs_lower)):
                 results.append(node)
         return results
 

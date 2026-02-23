@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import unicodedata
 from typing import Any
 
 import litellm
 litellm.suppress_debug_info = True
 
 from engram.episodic.store import EpisodicStore
-from engram.models import EpisodicMemory, SemanticNode
+from engram.models import EpisodicMemory, SemanticEdge, SemanticNode
 from engram.semantic.graph import SemanticGraph
 
 REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retrieved memories below, answer the user's question.
@@ -56,8 +58,8 @@ class ReasoningEngine:
         semantic_results: dict[str, Any] = {}
         for entity in entity_hints:
             related = await self._graph.get_related([entity], depth=2)
-            if related:
-                semantic_results[entity] = related
+            # get_related returns {entity: {nodes, edges}} — merge directly
+            semantic_results.update(related)
 
         # 4. If we have results, use LLM to synthesize
         if episodic_results or semantic_results:
@@ -66,26 +68,38 @@ class ReasoningEngine:
         return "No relevant memories found for this question."
 
     async def _extract_entity_hints(self, question: str) -> list[str]:
-        """Match words in question against known graph node names."""
+        """Match words in question against known graph node names.
+
+        Supports Vietnamese diacritics: 'tram' matches 'Trâm'.
+        """
         all_nodes = await self._graph.get_nodes()
         node_names = {n.name.lower(): n.name for n in all_nodes}
 
-        # Simple word matching against known entities
-        words = question.lower().split()
+        q_lower = question.lower()
+        q_stripped = self._strip(q_lower)
+        words = q_lower.split()
+        words_stripped = [self._strip(w) for w in words]
         found: list[str] = []
 
         for name_lower, name in node_names.items():
-            # Check if entity name appears in question (case-insensitive)
-            if name_lower in question.lower():
+            name_stripped = self._strip(name_lower)
+            # Check if entity name appears in question (exact or stripped diacritics)
+            if name_lower in q_lower or name_stripped in q_stripped:
                 found.append(name)
                 continue
             # Check individual words
-            for word in words:
-                if len(word) > 2 and word in name_lower:
+            for word, word_s in zip(words, words_stripped):
+                if len(word) > 2 and (word in name_lower or word_s in name_stripped):
                     found.append(name)
                     break
 
         return found
+
+    @staticmethod
+    def _strip(text: str) -> str:
+        """Remove diacritics for fuzzy matching."""
+        nfkd = unicodedata.normalize("NFKD", text)
+        return "".join(c for c in nfkd if not unicodedata.combining(c))
 
     async def _synthesize(
         self,
@@ -101,21 +115,21 @@ class ReasoningEngine:
             episodic_lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}")
         episodic_ctx = "\n".join(episodic_lines) if episodic_lines else "No episodic memories found."
 
-        # Format semantic context
+        # Format semantic context — include attributes for LLM synthesis
         semantic_lines = []
         for entity, data in semantic.items():
             semantic_lines.append(f"\n### {entity}")
             if isinstance(data, dict):
-                for key, items in data.items():
-                    if isinstance(items, dict):
-                        for node_name, related in items.items():
-                            if "nodes" in related:
-                                for n in related["nodes"]:
-                                    if isinstance(n, SemanticNode):
-                                        semantic_lines.append(f"  - {n.key}")
-                            if "edges" in related:
-                                for e in related["edges"]:
-                                    semantic_lines.append(f"  - {e}")
+                # get_related returns {"nodes": [...], "edges": [...]}
+                for n in data.get("nodes", []):
+                    if isinstance(n, SemanticNode):
+                        attrs = json.dumps(n.attributes, ensure_ascii=False) if n.attributes else ""
+                        semantic_lines.append(f"  - [{n.type}] {n.name}{' | ' + attrs if attrs else ''}")
+                for e in data.get("edges", []):
+                    if isinstance(e, SemanticEdge):
+                        semantic_lines.append(f"  - {e.from_node} --{e.relation}--> {e.to_node}")
+                    else:
+                        semantic_lines.append(f"  - {e}")
         semantic_ctx = "\n".join(semantic_lines) if semantic_lines else "No semantic knowledge found."
 
         prompt = REASONING_PROMPT.format(
