@@ -486,7 +486,7 @@ def migrate(
 
     for msg in messages:
         content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
-        if not content:
+        if not content or not content.strip():
             continue
 
         parsed = False
@@ -551,16 +551,20 @@ def migrate(
     for from_name, to_name, relation in edges_to_add:
         from_key = name_to_key.get(from_name, f"Project:{from_name}")
         to_key = name_to_key.get(to_name, f"Technology:{to_name}")
-        edge = SemanticEdge(from_node=from_key, to_node=to_name, relation=relation)
+        edge = SemanticEdge(from_node=from_key, to_node=to_key, relation=relation)
         is_new = _run(graph.add_edge(edge))
         if is_new:
             added_edges += 1
 
-    # Import episodic texts
+    # Import episodic texts (deduplicated)
     episodic_count = 0
     if episodic_texts:
         store = _get_episodic()
+        seen_texts: set[str] = set()
         for text in episodic_texts:
+            if text in seen_texts:
+                continue
+            seen_texts.add(text)
             _run(store.remember(text, memory_type=MemoryType.CONTEXT, priority=4))
             episodic_count += 1
 

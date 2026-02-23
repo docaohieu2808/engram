@@ -123,5 +123,7 @@ class EntityExtractor:
         while i < len(messages):
             end = min(i + chunk_size, len(messages))
             chunks.append(messages[i:end])
+            if end == len(messages):
+                break
             i = end - overlap
         return chunks

@@ -46,11 +46,12 @@ class InboxWatcher:
         self._running = False
 
     async def _process_inbox(self) -> None:
-        """Process all JSON files in inbox."""
-        for path in sorted(self._inbox.glob("*.json")):
-            if path.name.startswith("."):
-                continue
-            await self._process_file(path)
+        """Process all JSON and JSONL files in inbox."""
+        for pattern in ("*.json", "*.jsonl"):
+            for path in sorted(self._inbox.glob(pattern)):
+                if path.name.startswith("."):
+                    continue
+                await self._process_file(path)
 
     async def _process_file(self, path: Path) -> None:
         """Atomically claim and process a single file."""
@@ -82,11 +83,25 @@ class InboxWatcher:
 
     @staticmethod
     def _load_chat_file(path: Path) -> list[dict[str, Any]]:
-        """Load messages from chat JSON file."""
+        """Load messages from chat JSON or JSONL file."""
+        # JSONL: one JSON object per line (Claude Code export format)
+        if path.suffix == ".jsonl" or (path.suffix == ".processing" and ".jsonl" in path.stem):
+            messages = []
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        messages.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            return messages
+
+        # Standard JSON: {"messages": [...]} or [...]
         with open(path) as f:
             data = json.load(f)
 
-        # Support both formats: {"messages": [...]} and [...]
         if isinstance(data, list):
             return data
         if isinstance(data, dict) and "messages" in data:

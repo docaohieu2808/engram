@@ -44,6 +44,12 @@ def _get_embeddings(model: str, texts: list[str]) -> list[list[float]]:
         response = litellm.embedding(model=model, input=texts)
         return [item["embedding"] for item in response.data]
     except Exception:
+        import warnings
+        warnings.warn(
+            "Embedding API unavailable, using ChromaDB default (384d). "
+            "Set GEMINI_API_KEY for higher-quality embeddings.",
+            stacklevel=2,
+        )
         return _get_default_ef()(input=texts)
 
 
