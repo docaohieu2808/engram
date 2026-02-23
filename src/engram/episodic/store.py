@@ -1,4 +1,8 @@
-"""ChromaDB-backed episodic memory store."""
+"""ChromaDB-backed episodic memory store.
+
+Handles embeddings manually (not via ChromaDB embedding_function) to avoid
+dimension mismatch when switching between providers (e.g. default 384 vs gemini 3072).
+"""
 
 from __future__ import annotations
 
@@ -11,46 +15,45 @@ import litellm
 from engram.config import EmbeddingConfig, EpisodicConfig
 from engram.models import EpisodicMemory, MemoryType
 
+# Known embedding dimensions per model
+_EMBEDDING_DIMS: dict[str, int] = {
+    "gemini-embedding-001": 3072,
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    "all-MiniLM-L6-v2": 384,
+}
 
-class GeminiEmbeddingFunction:
-    """Custom ChromaDB embedding function using Gemini API via litellm.
 
-    Implements both __call__ and embed_query for ChromaDB >= 1.5 compatibility.
-    Falls back to ChromaDB default embedding on API errors.
-    """
+_default_ef = None
 
-    def __init__(self, model: str = "gemini/gemini-embedding-001"):
-        self._model = model
-        self._fallback = None
 
-    def name(self) -> str:
-        return "gemini_engram"
+def _get_default_ef():
+    """Lazy-load ChromaDB's default embedding function (all-MiniLM-L6-v2, 384d)."""
+    global _default_ef
+    if _default_ef is None:
+        from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+        _default_ef = DefaultEmbeddingFunction()
+    return _default_ef
 
-    def _get_fallback(self):
-        if self._fallback is None:
-            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-            self._fallback = DefaultEmbeddingFunction()
-        return self._fallback
 
-    def _embed(self, input: list[str]) -> list[list[float]]:
-        try:
-            response = litellm.embedding(model=self._model, input=input)
-            return [item["embedding"] for item in response.data]
-        except Exception:
-            return self._get_fallback()(input=input)
-
-    def __call__(self, input: list[str]) -> list[list[float]]:
-        return self._embed(input)
-
-    def embed_query(self, input: list[str]) -> list[list[float]]:
-        """ChromaDB >= 1.5 uses this for query embeddings."""
-        return self._embed(input)
+def _get_embeddings(model: str, texts: list[str]) -> list[list[float]]:
+    """Generate embeddings via litellm, fallback to ChromaDB default on error."""
+    try:
+        response = litellm.embedding(model=model, input=texts)
+        return [item["embedding"] for item in response.data]
+    except Exception:
+        return _get_default_ef()(input=texts)
 
 
 class EpisodicStore:
-    """ChromaDB-backed episodic memory store."""
+    """ChromaDB-backed episodic memory store.
 
-    COLLECTION_NAME = "engram_episodic"
+    Manages embeddings externally to prevent dimension conflicts.
+    Collection uses cosine similarity with no built-in embedding function.
+    """
+
+    COLLECTION_NAME = "engram_memories"
 
     def __init__(self, config: EpisodicConfig, embedding_config: EmbeddingConfig):
         import chromadb
@@ -61,12 +64,10 @@ class EpisodicStore:
         Path(db_path).mkdir(parents=True, exist_ok=True)
 
         self._client = chromadb.PersistentClient(path=db_path)
-        self._embedding_fn = GeminiEmbeddingFunction(
-            model=f"{embedding_config.provider}/{embedding_config.model}"
-        )
+        self._embed_model = f"{embedding_config.provider}/{embedding_config.model}"
         self._collection = self._client.get_or_create_collection(
             name=self.COLLECTION_NAME,
-            embedding_function=self._embedding_fn,
+            metadata={"hnsw:space": "cosine"},
         )
 
     async def remember(
@@ -92,9 +93,11 @@ class EpisodicStore:
             doc_metadata.update(metadata)
 
         try:
+            embeddings = _get_embeddings(self._embed_model, [content])
             self._collection.add(
                 ids=[memory_id],
                 documents=[content],
+                embeddings=embeddings,
                 metadatas=[doc_metadata],
             )
         except Exception as e:
@@ -110,8 +113,9 @@ class EpisodicStore:
     ) -> list[EpisodicMemory]:
         """Search memories by semantic similarity with optional metadata filters."""
         try:
+            query_embedding = _get_embeddings(self._embed_model, [query])
             kwargs: dict[str, Any] = {
-                "query_texts": [query],
+                "query_embeddings": query_embedding,
                 "n_results": min(limit, self._collection.count() or 1),
             }
             if filters:
