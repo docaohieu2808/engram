@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 import litellm
+litellm.suppress_debug_info = True
 
 from engram.models import ExtractionResult, SchemaDefinition, SemanticEdge, SemanticNode
 from engram.schema.loader import schema_to_prompt

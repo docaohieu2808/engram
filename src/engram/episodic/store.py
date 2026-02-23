@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any
 
 import litellm
+litellm.suppress_debug_info = True
 
 from engram.config import EmbeddingConfig, EpisodicConfig
 from engram.models import EpisodicMemory, MemoryType

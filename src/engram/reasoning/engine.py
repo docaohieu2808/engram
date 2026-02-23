@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import litellm
+litellm.suppress_debug_info = True
 
 from engram.episodic.store import EpisodicStore
 from engram.models import EpisodicMemory, SemanticNode
