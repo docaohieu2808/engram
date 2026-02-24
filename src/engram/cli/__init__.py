@@ -14,13 +14,10 @@ from engram.config import (
     save_config,
     set_config_value,
 )
+from engram.logging_setup import setup_logging
 
-logging.basicConfig(level=logging.WARNING, format="%(name)s: %(message)s")
-# Silence noisy third-party loggers
-logging.getLogger("LiteLLM").setLevel(logging.ERROR)
-logging.getLogger("litellm").setLevel(logging.ERROR)
-logging.getLogger("chromadb").setLevel(logging.ERROR)
-logging.getLogger("httpx").setLevel(logging.ERROR)
+# Bootstrap logging from config (respects ENGRAM_LOG_FORMAT / ENGRAM_LOG_LEVEL)
+setup_logging(load_config())
 
 app = typer.Typer(name="engram", help="Memory traces for AI agents - Think like human")
 add_app = typer.Typer(help="Add nodes/edges to semantic memory")

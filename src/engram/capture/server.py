@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Optional
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from engram.config import Config
 from engram.episodic.store import EpisodicStore
+from engram.logging_setup import correlation_id
 from engram.models import MemoryType
 from engram.reasoning.engine import ReasoningEngine
 from engram.semantic.graph import SemanticGraph
@@ -45,6 +48,20 @@ class SummarizeRequest(BaseModel):
     save: bool = False
 
 
+# --- Middleware ---
+
+
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    """Read or generate X-Correlation-ID, set contextvar, echo in response."""
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        cid = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
+        correlation_id.set(cid)
+        response = await call_next(request)
+        response.headers["X-Correlation-ID"] = cid
+        return response
+
+
 # --- App Factory ---
 
 
@@ -57,6 +74,7 @@ def create_app(
     """Create FastAPI app wired to memory stores."""
     app = FastAPI(title="engram", description="Memory traces for AI agents")
 
+    app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",

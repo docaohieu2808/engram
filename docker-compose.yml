@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  engram:
+    build: .
+    ports:
+      - "8765:8765"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ENGRAM_NAMESPACE=${ENGRAM_NAMESPACE:-default}
+      # Override config paths to use container volumes
+      - ENGRAM_EPISODIC_PATH=/data/episodic
+      - ENGRAM_SEMANTIC_PATH=/data/semantic.db
+      - ENGRAM_CAPTURE_INBOX=/data/inbox/
+      # PostgreSQL (optional — engram uses ChromaDB by default)
+      - POSTGRES_URL=${POSTGRES_URL:-}
+      # Redis (optional — for future caching)
+      - REDIS_URL=${REDIS_URL:-}
+    volumes:
+      - engram-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - engram-net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: engram
+      POSTGRES_USER: engram
+      POSTGRES_PASSWORD: engram
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U engram -d engram"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - engram-net
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - engram-net
+
+volumes:
+  engram-data:
+  pg-data:
+  redis-data:
+
+networks:
+  engram-net:
+    driver: bridge

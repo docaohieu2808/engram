@@ -1,4 +1,4 @@
-"""Configuration system for engram. YAML-based with env var expansion."""
+"""Configuration system for engram. YAML-based with env var expansion and env var overlay."""
 
 from __future__ import annotations
 
@@ -56,6 +56,17 @@ class HooksConfig(BaseModel):
     on_think: str | None = None     # POST {question, answer} after think()
 
 
+class LoggingConfig(BaseModel):
+    """Logging configuration."""
+    format: str = "text"   # "text" or "json"
+    level: str = "WARNING"
+
+
+class SecurityConfig(BaseModel):
+    """Security configuration."""
+    max_content_length: int = 10240  # bytes; default 10KB
+
+
 class Config(BaseModel):
     episodic: EpisodicConfig = Field(default_factory=EpisodicConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -64,6 +75,8 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     serve: ServeConfig = Field(default_factory=ServeConfig)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
 
 
 # --- Helpers ---
@@ -98,15 +111,100 @@ def _expand_path(path: str) -> Path:
     return Path(os.path.expanduser(os.path.expandvars(path)))
 
 
+# Mapping of ENGRAM_* env var suffixes to (section, field) tuples.
+# Extend this table when adding new config fields.
+_ENV_VAR_MAP: dict[str, tuple[str, str]] = {
+    "SERVE_PORT": ("serve", "port"),
+    "SERVE_HOST": ("serve", "host"),
+    "LLM_MODEL": ("llm", "model"),
+    "LLM_PROVIDER": ("llm", "provider"),
+    "LLM_API_KEY": ("llm", "api_key"),
+    "EPISODIC_NAMESPACE": ("episodic", "namespace"),
+    "EPISODIC_PATH": ("episodic", "path"),
+    "EPISODIC_PROVIDER": ("episodic", "provider"),
+    "EMBEDDING_MODEL": ("embedding", "model"),
+    "EMBEDDING_PROVIDER": ("embedding", "provider"),
+    "SEMANTIC_PATH": ("semantic", "path"),
+    "LOG_FORMAT": ("logging", "format"),
+    "LOG_LEVEL": ("logging", "level"),
+    "SECURITY_MAX_CONTENT_LENGTH": ("security", "max_content_length"),
+}
+
+# Section model classes for type inference
+_SECTION_MODELS: dict[str, type[BaseModel]] = {}
+
+
+def _get_section_models() -> dict[str, type[BaseModel]]:
+    """Lazily build section model map after all classes are defined."""
+    return {
+        "serve": ServeConfig,
+        "llm": LLMConfig,
+        "episodic": EpisodicConfig,
+        "embedding": EmbeddingConfig,
+        "semantic": SemanticConfig,
+        "logging": LoggingConfig,
+        "security": SecurityConfig,
+        "capture": CaptureConfig,
+        "hooks": HooksConfig,
+    }
+
+
+def _apply_env_overlay(data: dict[str, Any]) -> dict[str, Any]:
+    """Apply ENGRAM_* environment variables on top of YAML data dict.
+
+    Converts values to the correct type based on Pydantic field annotations.
+    Secret fields (api_key) are applied but never logged.
+    """
+    section_models = _get_section_models()
+
+    for env_suffix, (section, field) in _ENV_VAR_MAP.items():
+        env_key = f"ENGRAM_{env_suffix}"
+        raw_val = os.environ.get(env_key)
+        if raw_val is None:
+            continue
+
+        # Determine target type from Pydantic model annotation
+        model_cls = section_models.get(section)
+        target_type: type = str
+        if model_cls is not None:
+            field_info = model_cls.model_fields.get(field)
+            if field_info is not None:
+                ann = field_info.annotation
+                if ann is int:
+                    target_type = int
+                elif ann is bool:
+                    target_type = bool
+                elif ann is float:
+                    target_type = float
+
+        # Cast value
+        try:
+            if target_type is bool:
+                typed_val: Any = raw_val.lower() in ("1", "true", "yes")
+            else:
+                typed_val = target_type(raw_val)
+        except (ValueError, TypeError):
+            typed_val = raw_val  # fall back to string; Pydantic will validate
+
+        # Merge into data dict
+        if section not in data or not isinstance(data[section], dict):
+            data[section] = {}
+        data[section][field] = typed_val
+
+    return data
+
+
 def load_config(path: Path | None = None) -> Config:
-    """Load config from YAML, expanding env vars."""
+    """Load config from YAML, expanding env vars, then applying ENGRAM_* env overlay."""
     config_path = path or get_config_path()
     if config_path.exists():
         with open(config_path) as f:
             raw = yaml.safe_load(f) or {}
         data = _expand_env_vars(raw)
-        return Config(**data)
-    return Config()
+    else:
+        data = {}
+    data = _apply_env_overlay(data)
+    return Config(**data)
 
 
 def save_config(config: Config, path: Path | None = None) -> None:

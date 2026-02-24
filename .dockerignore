@@ -1,0 +1,16 @@
+.git
+.github
+tests/
+docs/
+plans/
+*.egg-info
+__pycache__
+.env
+.venv
+.pytest_cache
+.ruff_cache
+home/
+agent.jar
+*.pyc
+*.pyo
+.DS_Store

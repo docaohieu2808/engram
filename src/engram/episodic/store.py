@@ -17,6 +17,7 @@ import litellm
 from engram.config import EmbeddingConfig, EpisodicConfig
 from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, MemoryType
+from engram.sanitize import sanitize_content
 
 litellm.suppress_debug_info = True
 logger = logging.getLogger("engram")
@@ -149,6 +150,7 @@ class EpisodicStore:
         expires_at: datetime | None = None,
     ) -> str:
         """Store a memory and return its ID."""
+        content = sanitize_content(content)
         memory_id = str(uuid.uuid4())
         timestamp = datetime.now().isoformat()
         entities = entities or []

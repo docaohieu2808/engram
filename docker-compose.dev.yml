@@ -1,0 +1,16 @@
+version: "3.9"
+
+# Development overrides — use with:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  engram:
+    build:
+      context: .
+    volumes:
+      # Mount source for live code changes without rebuild
+      - ./src:/app/src:ro
+      - engram-data:/data
+    # Override CMD to add --reload via watchfiles
+    command: ["uvicorn", "engram.capture.server:create_app", "--host", "0.0.0.0", "--port", "8765", "--reload", "--reload-dir", "/app/src"]
+    environment:
+      - WATCHFILES_FORCE_POLLING=1
