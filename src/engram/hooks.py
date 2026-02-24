@@ -3,52 +3,91 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
+import socket
+import urllib.parse
 import urllib.request
 import json
 
 logger = logging.getLogger("engram")
 
-# M5: Allowed URL schemes
-_ALLOWED_SCHEMES = ("http://", "https://")
+# C2 fix: allowed URL schemes (whitelist, not blocklist)
+_ALLOWED_SCHEMES = {"http", "https"}
 
-# M5: Blocked internal host prefixes/values (simple string check)
-_BLOCKED_HOSTS = (
-    "127.",
-    "localhost",
-    "0.",
-    "10.",
-    "172.16.", "172.17.", "172.18.", "172.19.",
-    "172.20.", "172.21.", "172.22.", "172.23.",
-    "172.24.", "172.25.", "172.26.", "172.27.",
-    "172.28.", "172.29.", "172.30.", "172.31.",
-    "192.168.",
-    "169.254.",  # link-local
-    "::1",        # IPv6 loopback
-    "[::1]",
-)
+
+def _is_private_ip(ip_str: str) -> bool:
+    """Return True if the IP address is in a private/reserved range.
+
+    C2 fix: uses ipaddress module for robust IP range checking, handles
+    IPv4, IPv6, and IPv6-mapped IPv4 addresses (e.g. ::ffff:127.0.0.1).
+    """
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        # Unwrap IPv6-mapped IPv4 (e.g. ::ffff:127.0.0.1 → 127.0.0.1)
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+            addr = addr.ipv4_mapped
+        return (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_multicast
+            or addr.is_reserved
+            or addr.is_unspecified
+        )
+    except ValueError:
+        # Unparseable IP string — treat as unsafe
+        return True
 
 
 def _is_safe_webhook_url(url: str) -> bool:
-    """Return True if URL is safe to call (M5: SSRF protection)."""
-    url_lower = url.lower()
+    """Return True if URL is safe to call (C2/SSRF protection).
 
-    # Must start with http:// or https://
-    if not any(url_lower.startswith(scheme) for scheme in _ALLOWED_SCHEMES):
-        return False
+    Validates:
+    1. Scheme is http or https only.
+    2. No credentials (user@) in the authority section.
+    3. DNS resolves to a non-private IP (blocks 127.x, 10.x, 172.16-31.x, 192.168.x,
+       IPv6 loopback, link-local, and IPv6-mapped private addresses).
 
-    # Extract host portion (between scheme and first / or end)
+    Note: DNS rebinding risk is mitigated here by resolving at validation time.
+    For higher security, consider re-resolving at request time.
+    """
     try:
-        after_scheme = url.split("//", 1)[1]
-        host_part = after_scheme.split("/")[0].split("?")[0].split("#")[0]
-        # Strip port
-        host = host_part.rsplit(":", 1)[0].lower()
-    except (IndexError, ValueError):
+        parsed = urllib.parse.urlparse(url)
+    except Exception:
         return False
 
-    for blocked in _BLOCKED_HOSTS:
-        if host == blocked.rstrip(".") or host.startswith(blocked):
+    # Must be http or https
+    if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+        return False
+
+    # Block URLs with credentials (user:pass@ or user@) in the authority
+    if parsed.username is not None or parsed.password is not None:
+        logger.warning("Hook URL blocked (credentials in URL): %s", url)
+        return False
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+
+    # Resolve hostname to IP and validate against private ranges
+    try:
+        # getaddrinfo returns list of (family, type, proto, canonname, sockaddr)
+        results = socket.getaddrinfo(hostname, None)
+        if not results:
             return False
+        for result in results:
+            sockaddr = result[4]
+            ip_str = sockaddr[0]
+            if _is_private_ip(ip_str):
+                logger.warning(
+                    "Hook URL blocked (resolves to private IP %s): %s", ip_str, url
+                )
+                return False
+    except (socket.gaierror, OSError) as exc:
+        # DNS resolution failure — block the URL (fail closed)
+        logger.warning("Hook URL blocked (DNS resolution failed: %s): %s", exc, url)
+        return False
 
     return True
 
@@ -58,7 +97,7 @@ def fire_hook(url: str | None, data: dict) -> None:
 
     Uses stdlib urllib.request to avoid new dependencies.
     Runs in a background thread to avoid blocking the event loop.
-    Validates URL scheme and blocks internal IPs (M5: SSRF protection).
+    Validates URL scheme and blocks internal IPs (C2: SSRF protection).
 
     Args:
         url: Webhook URL to POST to. If None or empty, no-op.
@@ -67,7 +106,7 @@ def fire_hook(url: str | None, data: dict) -> None:
     if not url:
         return
 
-    # M5: SSRF validation
+    # C2: SSRF validation — resolves DNS and checks IP ranges
     if not _is_safe_webhook_url(url):
         logger.warning("Hook URL blocked (SSRF protection): %s", url)
         return

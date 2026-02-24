@@ -202,7 +202,8 @@ class EpisodicStore:
         timestamp = datetime.now(timezone.utc).isoformat()
 
         for mem in memories:
-            content = mem["content"]
+            # M6 fix: sanitize content just like single remember() does
+            content = sanitize_content(mem["content"])
             memory_type = mem.get("memory_type", MemoryType.FACT)
             priority = mem.get("priority", 5)
             entities = mem.get("entities") or []

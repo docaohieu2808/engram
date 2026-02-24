@@ -23,8 +23,17 @@ _config: Config | None = None
 
 
 def init_auth(config: Config) -> None:
-    """Cache config at startup so get_auth_context() does not reload it per request."""
+    """Cache config at startup so get_auth_context() does not reload it per request.
+
+    H3 fix: validate jwt_secret minimum length (32 chars) when auth is enabled.
+    Raises ValueError early at startup so misconfiguration is caught immediately.
+    """
     global _config
+    if config.auth.enabled and len(config.auth.jwt_secret) < 32:
+        raise ValueError(
+            "auth.jwt_secret must be at least 32 characters when auth is enabled. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
     _config = config
 
 
@@ -136,22 +145,40 @@ def verify_jwt(token: str, secret: str) -> Optional[TokenPayload]:
 # --- FastAPI Dependency ---
 
 # Public routes that never require auth
-_PUBLIC_PATHS = {"/health", "/api/v1/auth/token", "/auth/token"}
+_PUBLIC_PATHS = {"/health", "/health/ready", "/api/v1/auth/token", "/auth/token"}
 
-# ADMIN-only POST paths
+# ADMIN-only POST paths (bare path, stripped of /api/v1 prefix for matching)
 _ADMIN_ONLY_PATHS = {"/cleanup", "/summarize"}
 
-# Read-only paths (READER role allowed)
+# Read-only paths (READER role allowed, bare path)
 _READ_PATHS = {"/recall", "/query", "/status", "/health"}
+
+# API v1 prefix to strip before path-based RBAC checks
+_API_V1_PREFIX = "/api/v1"
+
+
+def _normalize_path(path: str) -> str:
+    """Strip /api/v1 prefix so RBAC checks work for both prefixed and bare paths.
+
+    H2 fix: RBAC path matching must handle /api/v1/ prefixed routes.
+    """
+    if path.startswith(_API_V1_PREFIX):
+        return path[len(_API_V1_PREFIX):]
+    return path
 
 
 def _require_role(path: str, method: str, role: Role) -> None:
-    """Check RBAC. Raises EngramError(FORBIDDEN) if not allowed (H7)."""
+    """Check RBAC. Raises EngramError(FORBIDDEN) if not allowed.
+
+    H2 fix: normalise path by stripping /api/v1 prefix before matching so that
+    routes like /api/v1/cleanup correctly map to the _ADMIN_ONLY_PATHS set.
+    """
+    bare_path = _normalize_path(path)
     if method == "GET":
         # All roles can use GET endpoints
         return
     # POST/DELETE etc.
-    if path in _ADMIN_ONLY_PATHS and role != Role.ADMIN:
+    if bare_path in _ADMIN_ONLY_PATHS and role != Role.ADMIN:
         raise EngramError(ErrorCode.FORBIDDEN, "Admin role required")
     if role == Role.READER:
         raise EngramError(ErrorCode.FORBIDDEN, "Reader role cannot write")

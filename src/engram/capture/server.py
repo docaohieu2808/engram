@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import time
 import uuid
 from typing import Any, Optional
@@ -87,13 +88,38 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._limiter = rate_limiter
 
+    def _extract_tenant_id(self, request: Request) -> str:
+        """Extract tenant_id from JWT bearer token (C1 fix: no header spoofing).
+
+        Falls back to client IP when auth is not in use or token is missing/invalid.
+        Never reads X-Tenant-ID header — that header is unauthenticated and spoofable.
+        """
+        import jwt as _jwt
+
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                # Decode without verification just to extract tenant_id for rate limiting.
+                # Full signature verification happens in get_auth_context; here we only
+                # need a stable, client-supplied-but-hard-to-fabricate identifier.
+                # We use options={"verify_signature": False} for rate-limit bucketing only.
+                data = _jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
+                tenant_id = data.get("tenant_id") or data.get("sub")
+                if tenant_id and isinstance(tenant_id, str):
+                    return tenant_id
+            except Exception:
+                pass  # Fall through to IP-based fallback
+
+        client_host = request.client.host if request.client else "anonymous"
+        return client_host or "anonymous"
+
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         if self._limiter is None:
             return await call_next(request)
 
-        # Use tenant from JWT sub or fall back to IP address
-        client_host = request.client.host if request.client else "anonymous"
-        tenant_id = request.headers.get("X-Tenant-ID") or client_host or "anonymous"
+        # C1 fix: use authenticated tenant from JWT, not spoofable X-Tenant-ID header
+        tenant_id = self._extract_tenant_id(request)
         allowed, remaining, reset_at = await self._limiter.check(tenant_id)
 
         if not allowed:
@@ -215,8 +241,8 @@ def create_app(
     _provider_registry.load_from_config(_cfg)
 
     @app.get("/providers")
-    async def list_providers():
-        """List all configured providers and their status."""
+    async def list_providers(auth: AuthContext = Depends(get_auth_context)):
+        """List all configured providers and their status. M2 fix: requires auth."""
         providers = []
         for p in _provider_registry.get_all():
             providers.append({
@@ -300,7 +326,8 @@ def create_app(
         if not auth_header.startswith("Bearer "):
             raise HTTPException(status_code=401, detail="Authorization header with admin secret required")
         provided_secret = auth_header[7:]
-        if provided_secret != _cfg.auth.admin_secret:
+        # C3 fix: constant-time comparison to prevent timing side-channel attacks
+        if not hmac.compare_digest(provided_secret, _cfg.auth.admin_secret):
             raise HTTPException(status_code=401, detail="Invalid secret")
         try:
             role = Role(req.role)

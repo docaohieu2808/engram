@@ -77,6 +77,12 @@ class RestAdapter(MemoryProvider):
         timeout_seconds: float = 3.0,
         **kwargs: Any,
     ):
+        # M7 fix: validate URL scheme to prevent file://, ftp://, etc.
+        url_lower = url.lower()
+        if not (url_lower.startswith("http://") or url_lower.startswith("https://")):
+            raise ValueError(
+                f"REST adapter '{name}': URL must use http:// or https:// scheme, got: {url!r}"
+            )
         super().__init__(name=name, provider_type="rest", **kwargs)
         self.url = url.rstrip("/")
         self.search_endpoint = search_endpoint
