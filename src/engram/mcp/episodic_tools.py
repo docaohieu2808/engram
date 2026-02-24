@@ -59,10 +59,22 @@ def register(mcp, get_episodic, get_graph, get_config) -> None:
         filters = {"memory_type": memory_type} if memory_type else None
         results = await store.search(query, limit=limit, filters=filters, tags=tags)
 
-        if not results:
+        lines = []
+
+        # Also search semantic graph for matching entities
+        graph = get_graph()
+        graph_nodes = await graph.query(query) if graph else []
+        for node in graph_nodes[:3]:
+            attrs = ", ".join(f"{k}={v}" for k, v in node.attributes.items()) if node.attributes else ""
+            line = f"[graph] {node.type}:{node.name}" + (f" ({attrs})" if attrs else "")
+            lines.append(line)
+            related = await graph.get_related(node.key)
+            for edge in related.get("edges", [])[:5]:
+                lines.append(f"  {edge.from_node} --{edge.relation}--> {edge.to_node}")
+
+        if not results and not lines:
             return "No memories found."
 
-        lines = []
         for mem in results:
             ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
             entities_str = f" [entities: {', '.join(mem.entities)}]" if mem.entities else ""

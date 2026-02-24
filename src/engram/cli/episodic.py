@@ -38,6 +38,12 @@ def _get_episodic(get_config, namespace: str | None = None):
     return EpisodicStore(cfg.episodic, cfg.embedding, namespace=namespace)
 
 
+def _get_semantic(get_config):
+    from engram.semantic.graph import SemanticGraph
+    cfg = get_config()
+    return SemanticGraph(cfg.semantic)
+
+
 def register(app: typer.Typer, get_config, get_namespace=None) -> None:
     """Register episodic commands on the main Typer app."""
 
@@ -95,7 +101,19 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             tags=tag_list,
         ))
 
-        if not results:
+        # Also search semantic graph for matching entities
+        graph = _get_semantic(get_config)
+        graph_nodes = run_async(graph.query(query))
+        if graph_nodes:
+            for node in graph_nodes[:3]:
+                attrs = ", ".join(f"{k}={v}" for k, v in node.attributes.items()) if node.attributes else ""
+                console.print(f"[yellow][graph][/yellow] {node.type}:{node.name}" + (f" ({attrs})" if attrs else ""))
+                # Show related edges
+                related = run_async(graph.get_related(node.key))
+                for edge in related.get("edges", [])[:5]:
+                    console.print(f"  [dim]{edge.from_node} --{edge.relation}--> {edge.to_node}[/dim]")
+
+        if not results and not graph_nodes:
             console.print("[dim]No memories found.[/dim]")
             return
 

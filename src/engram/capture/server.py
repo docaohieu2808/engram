@@ -97,9 +97,21 @@ def create_app(
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         results = await episodic.search(query, limit=limit + offset, filters=filters, tags=tag_list)
         paginated = results[offset:offset + limit]
+
+        # Also search semantic graph for matching entities
+        graph_nodes = await graph.query(query)
+        graph_results = []
+        for node in graph_nodes[:3]:
+            related = await graph.get_related(node.key)
+            graph_results.append({
+                "node": node.model_dump(),
+                "edges": [e.model_dump() for e in related.get("edges", [])[:5]],
+            })
+
         return {
             "status": "ok",
             "results": [r.model_dump() for r in paginated],
+            "graph_results": graph_results,
             "total": len(results),
             "offset": offset,
             "limit": limit,
