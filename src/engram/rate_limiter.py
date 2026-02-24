@@ -53,24 +53,23 @@ class RateLimiter:
         limit = self.requests_per_minute + self.burst
 
         try:
+            # Phase 1: atomically remove expired entries and count current window
             pipe = self._redis.pipeline()
-            # Remove expired entries outside the sliding window
             pipe.zremrangebyscore(key, 0, window_start)
-            # Count current requests in window
             pipe.zcard(key)
-            # Add current request timestamp
-            pipe.zadd(key, {str(now): now})
-            # Set TTL to avoid stale keys
-            pipe.expire(key, self._window * 2)
             results = await pipe.execute()
 
             current_count = results[1]
             reset_at = int(now) + self._window
 
             if current_count >= limit:
-                # Remove the entry we just added since request is rejected
-                await self._redis.zrem(key, str(now))
                 return False, 0, reset_at
+
+            # Phase 2: request is allowed — record it atomically
+            pipe2 = self._redis.pipeline()
+            pipe2.zadd(key, {str(now): now})
+            pipe2.expire(key, self._window * 2)
+            await pipe2.execute()
 
             remaining = max(0, limit - current_count - 1)
             return True, remaining, reset_at

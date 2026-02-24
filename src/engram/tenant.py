@@ -71,7 +71,7 @@ class StoreFactory:
         # LRU caches: OrderedDict preserves insertion order for eviction
         self._episodic_stores: OrderedDict[str, "EpisodicStore"] = OrderedDict()
         self._graphs: OrderedDict[str, "SemanticGraph"] = OrderedDict()
-        self._lock = asyncio.Lock()
+        self._lock: asyncio.Lock | None = None  # M7: lazy init to avoid event loop issues
 
     def get_episodic(self, tenant_id: str | None = None) -> "EpisodicStore":
         """Return EpisodicStore for the given tenant (defaults to TenantContext.get()).
@@ -95,6 +95,12 @@ class StoreFactory:
         self._episodic_stores[tid] = store
         return store
 
+    async def _get_lock(self) -> asyncio.Lock:
+        """Lazy lock creation to avoid asyncio.Lock() created outside event loop (M7)."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
     async def get_graph(self, tenant_id: str | None = None) -> "SemanticGraph":
         """Return SemanticGraph for the given tenant (defaults to TenantContext.get()).
 
@@ -106,7 +112,7 @@ class StoreFactory:
 
         tid = validate_tenant_id(tenant_id or TenantContext.get())
 
-        async with self._lock:
+        async with await self._get_lock():
             if tid in self._graphs:
                 self._graphs.move_to_end(tid)
                 return self._graphs[tid]
@@ -148,7 +154,7 @@ class StoreFactory:
 
     async def close_all(self) -> None:
         """Close all cached graph backends (call on server shutdown)."""
-        async with self._lock:
+        async with await self._get_lock():
             for graph in self._graphs.values():
                 try:
                     await graph.close()

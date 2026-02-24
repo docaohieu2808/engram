@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -45,6 +45,10 @@ class EpisodicMemory(BaseModel):
     memory_type: MemoryType = MemoryType.FACT
     priority: int = Priority.NORMAL
     metadata: dict[str, Any] = Field(default_factory=dict)
+    entities: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime | None = None
 
     @field_validator("priority")
     @classmethod
@@ -52,10 +56,6 @@ class EpisodicMemory(BaseModel):
         if not 1 <= v <= 10:
             raise ValueError(f"Priority must be 1-10, got {v}")
         return v
-    entities: list[str] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
-    timestamp: datetime = Field(default_factory=datetime.now)
-    expires_at: datetime | None = None
 
 
 # --- Semantic Memory (Graph DB) ---

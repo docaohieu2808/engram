@@ -42,7 +42,7 @@ def test_fire_hook_sends_correct_json_payload():
 
     data = {"event": "remember", "id": "abc", "content": "hello"}
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        fire_hook("http://localhost:9999/hook", data)
+        fire_hook("http://example.com:9999/hook", data)
 
     assert len(captured_requests) == 1
     req = captured_requests[0]
@@ -66,7 +66,7 @@ def test_fire_hook_uses_post_method():
         return resp
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        fire_hook("http://localhost:9999/hook", {"x": 1})
+        fire_hook("http://example.com:9999/hook", {"x": 1})
 
     assert captured_requests[0].get_method() == "POST"
 
@@ -78,7 +78,7 @@ def test_fire_hook_does_not_crash_on_connection_error():
     import urllib.error
     with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Connection refused")):
         # Must not raise
-        fire_hook("http://localhost:9999/hook", {"event": "remember"})
+        fire_hook("http://example.com:9999/hook", {"event": "remember"})
 
 
 def test_fire_hook_does_not_crash_on_timeout():
@@ -91,7 +91,7 @@ def test_fire_hook_does_not_crash_on_timeout():
 def test_fire_hook_does_not_crash_on_generic_exception():
     """Hook must swallow any unexpected exception."""
     with patch("urllib.request.urlopen", side_effect=RuntimeError("unexpected")):
-        fire_hook("http://localhost:9999/hook", {"event": "remember"})
+        fire_hook("http://example.com:9999/hook", {"event": "remember"})
 
 
 # --- timeout behavior ---
@@ -109,7 +109,7 @@ def test_fire_hook_passes_timeout_to_urlopen():
         return resp
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-        fire_hook("http://localhost:9999/hook", {"event": "remember"})
+        fire_hook("http://example.com:9999/hook", {"event": "remember"})
 
     assert timeout_used and timeout_used[0] is not None
     assert timeout_used[0] <= 10  # must be bounded (hooks.py uses 5s)

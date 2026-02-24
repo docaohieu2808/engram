@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import litellm
@@ -45,24 +45,6 @@ def _get_default_ef():
     return _default_ef
 
 
-def _ensure_api_key() -> None:
-    """Load GEMINI_API_KEY from ~/.bashrc if not in environment."""
-    import os
-    import re
-    if os.environ.get("GEMINI_API_KEY"):
-        return
-    for rc in (".bashrc", ".zshrc", ".profile"):
-        rc_path = os.path.expanduser(f"~/{rc}")
-        try:
-            with open(rc_path) as f:
-                match = re.search(r'export GEMINI_API_KEY="([^"]+)"', f.read())
-                if match:
-                    os.environ["GEMINI_API_KEY"] = match.group(1)
-                    return
-        except FileNotFoundError:
-            continue
-
-
 def _get_embeddings(model: str, texts: list[str], expected_dim: int | None = None) -> list[list[float]]:
     """Generate embeddings via litellm, fallback to ChromaDB default on error.
 
@@ -70,7 +52,6 @@ def _get_embeddings(model: str, texts: list[str], expected_dim: int | None = Non
         expected_dim: If set, validates fallback embeddings match this dimension.
                       Raises RuntimeError on mismatch to prevent silent corruption.
     """
-    _ensure_api_key()
     try:
         response = litellm.embedding(model=model, input=texts)
         return [item["embedding"] for item in response.data]
@@ -155,7 +136,7 @@ class EpisodicStore:
         """Store a memory and return its ID."""
         content = sanitize_content(content)
         memory_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         entities = entities or []
         tags = tags or []
 
@@ -218,7 +199,7 @@ class EpisodicStore:
         ids: list[str] = []
         documents: list[str] = []
         metadatas: list[dict[str, Any]] = []
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         for mem in memories:
             content = mem["content"]
@@ -315,6 +296,9 @@ class EpisodicStore:
             if raw_expires:
                 try:
                     expires_dt = datetime.fromisoformat(raw_expires)
+                    # Strip tz info for comparison with naive now() (backward compat)
+                    if expires_dt.tzinfo is not None:
+                        expires_dt = expires_dt.replace(tzinfo=None)
                     if expires_dt < now:
                         continue
                 except (ValueError, TypeError):
@@ -450,9 +434,9 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
 
     raw_ts = metadata.get("timestamp")
     try:
-        timestamp = datetime.fromisoformat(raw_ts) if raw_ts else datetime.now()
+        timestamp = datetime.fromisoformat(raw_ts) if raw_ts else datetime.now(timezone.utc)
     except (ValueError, TypeError):
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
 
     raw_entities = metadata.get("entities", "")
     if raw_entities:

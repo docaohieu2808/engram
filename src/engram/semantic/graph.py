@@ -21,12 +21,13 @@ logger = logging.getLogger("engram")
 class SemanticGraph:
     """NetworkX in-memory graph with pluggable storage backend (SQLite or PostgreSQL)."""
 
-    def __init__(self, backend: GraphBackend, audit: "AuditLogger | None" = None) -> None:
+    def __init__(self, backend: GraphBackend, audit: "AuditLogger | None" = None, tenant_id: str = "default") -> None:
         self._graph: nx.DiGraph = nx.DiGraph()
         self._backend = backend
         self._loaded: bool = False  # deferred loading flag
         self._initialized: bool = False  # backend.initialize() called flag
         self._audit = audit
+        self._tenant_id = tenant_id  # M10: used in audit log calls
 
     async def _ensure_loaded(self) -> None:
         """Initialize backend and load graph on first access."""
@@ -55,7 +56,7 @@ class SemanticGraph:
         self._graph.add_node(node.key, data=node)
         if self._audit:
             op = "semantic.add_node" if is_new else "semantic.update_node"
-            self._audit.log(tenant_id="default", actor="system", operation=op,
+            self._audit.log(tenant_id=self._tenant_id, actor="system", operation=op,
                             resource_id=node.key, details={"type": node.type, "name": node.name})
         return is_new
 
@@ -66,7 +67,7 @@ class SemanticGraph:
         await self._backend.save_edge(edge.key, edge.from_node, edge.to_node, edge.relation)
         self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
         if self._audit:
-            self._audit.log(tenant_id="default", actor="system", operation="semantic.add_edge",
+            self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.add_edge",
                             resource_id=edge.key, details={"relation": edge.relation,
                             "from": edge.from_node, "to": edge.to_node})
         return is_new
@@ -127,7 +128,7 @@ class SemanticGraph:
         await self._backend.delete_node(key)
         self._graph.remove_node(key)
         if self._audit:
-            self._audit.log(tenant_id="default", actor="system", operation="semantic.remove_node",
+            self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.remove_node",
                             resource_id=key)
         return True
 
@@ -145,7 +146,7 @@ class SemanticGraph:
         for u, v in to_remove:
             self._graph.remove_edge(u, v)
         if self._audit:
-            self._audit.log(tenant_id="default", actor="system", operation="semantic.remove_edge",
+            self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.remove_edge",
                             resource_id=key)
         return True
 

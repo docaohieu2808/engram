@@ -10,7 +10,7 @@ import os
 import signal
 import shutil
 import sys
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
@@ -73,7 +73,7 @@ class InboxWatcher:
         """Recover .processing files orphaned by previous crashes (>1 hour old)."""
         for pf in self._inbox.glob("*.processing"):
             try:
-                age = datetime.now().timestamp() - pf.stat().st_mtime
+                age = datetime.now(timezone.utc).timestamp() - pf.stat().st_mtime
                 if age > 3600:  # 1 hour
                     # Recover original extension from stem (e.g. "file.jsonl.processing" → "file.jsonl")
                     stem = pf.stem  # "file.jsonl" when suffix is ".processing"
@@ -110,7 +110,7 @@ class InboxWatcher:
                 await self._ingest_fn(messages)
                 logger.info("Ingested %s (%d messages)", path.name, len(messages))
 
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             dest = self._processed_dir / f"{ts}_{path.name}"
             shutil.move(str(processing), str(dest))
             # Reset retry count on success

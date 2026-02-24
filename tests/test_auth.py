@@ -53,10 +53,13 @@ def client_no_auth(mock_episodic, mock_graph, mock_engine):
 SECRET = "super-secret-key-for-testing-only-32chars"
 
 
-def _make_config(enabled: bool = True, secret: str = SECRET):
+ADMIN_SECRET = "admin-secret-for-testing-only-32chars"
+
+
+def _make_config(enabled: bool = True, secret: str = SECRET, admin_secret: str = ADMIN_SECRET):
     from engram.config import AuthConfig, Config
     cfg = Config()
-    cfg.auth = AuthConfig(enabled=enabled, jwt_secret=secret, jwt_expiry_hours=1)
+    cfg.auth = AuthConfig(enabled=enabled, jwt_secret=secret, jwt_expiry_hours=1, admin_secret=admin_secret)
     return cfg
 
 
@@ -147,7 +150,7 @@ def test_no_auth_all_routes_pass(client_no_auth):
 def test_auth_enabled_no_credentials_returns_401(mock_episodic, mock_graph, mock_engine):
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.get("/api/v1/status")
     assert resp.status_code == 401
 
@@ -156,7 +159,7 @@ def test_auth_enabled_valid_jwt_grants_access(mock_episodic, mock_graph, mock_en
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
     token = _make_token(Role.AGENT)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.get("/api/v1/status", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
 
@@ -165,7 +168,7 @@ def test_auth_enabled_expired_jwt_returns_401(mock_episodic, mock_graph, mock_en
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
     token = _make_token(Role.AGENT, exp_offset=-10)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.get("/api/v1/status", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 401
 
@@ -174,7 +177,7 @@ def test_reader_role_cannot_post(mock_episodic, mock_graph, mock_engine):
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
     token = _make_token(Role.READER)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.post("/api/v1/remember", json={"content": "x"}, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403
 
@@ -183,7 +186,7 @@ def test_agent_role_cannot_access_admin_endpoints(mock_episodic, mock_graph, moc
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
     token = _make_token(Role.AGENT)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.post("/api/v1/cleanup", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403
 
@@ -192,7 +195,7 @@ def test_admin_role_can_access_all(mock_episodic, mock_graph, mock_engine):
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
     token = _make_token(Role.ADMIN)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.post("/api/v1/cleanup", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
 
@@ -204,7 +207,7 @@ def test_api_key_auth_grants_access(tmp_path, monkeypatch, mock_episodic, mock_g
     key, _ = create_api_key("svc", Role.AGENT)
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.get("/api/v1/status", headers={"X-API-Key": key})
     assert resp.status_code == 200
 
@@ -212,28 +215,31 @@ def test_api_key_auth_grants_access(tmp_path, monkeypatch, mock_episodic, mock_g
 def test_invalid_api_key_returns_401(mock_episodic, mock_graph, mock_engine):
     app = create_app(mock_episodic, mock_graph, mock_engine)
     client = TestClient(app, raise_server_exceptions=False)
-    with patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
+    with patch("engram.auth._config", None), patch("engram.auth.load_config", return_value=_make_config(enabled=True)):
         resp = client.get("/api/v1/status", headers={"X-API-Key": "invalid-key"})
     assert resp.status_code == 401
 
 
 # --- /auth/token endpoint ---
 
-def test_auth_token_endpoint_disabled_returns_404(client_no_auth):
-    with patch("engram.capture.server.load_config", return_value=_make_config(enabled=False)):
-        resp = client_no_auth.post("/api/v1/auth/token", json={
-            "sub": "agent", "role": "agent", "jwt_secret": SECRET
-        })
+def test_auth_token_endpoint_disabled_returns_404(mock_episodic, mock_graph, mock_engine):
+    # Create app with auth disabled config — token endpoint returns 404
+    cfg = _make_config(enabled=False)
+    app = create_app(mock_episodic, mock_graph, mock_engine, config=cfg)
+    client = TestClient(app, follow_redirects=True)
+    resp = client.post("/api/v1/auth/token", json={"sub": "agent", "role": "agent"})
     assert resp.status_code == 404
 
 
 def test_auth_token_endpoint_issues_token(mock_episodic, mock_graph, mock_engine):
-    app = create_app(mock_episodic, mock_graph, mock_engine)
+    cfg = _make_config(enabled=True)
+    app = create_app(mock_episodic, mock_graph, mock_engine, config=cfg)
     client = TestClient(app, follow_redirects=True)
-    with patch("engram.capture.server.load_config", return_value=_make_config(enabled=True)):
-        resp = client.post("/api/v1/auth/token", json={
-            "sub": "agent1", "role": "agent", "tenant_id": "default", "jwt_secret": SECRET
-        })
+    resp = client.post(
+        "/api/v1/auth/token",
+        json={"sub": "agent1", "role": "agent", "tenant_id": "default"},
+        headers={"Authorization": f"Bearer {ADMIN_SECRET}"},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data
@@ -241,10 +247,12 @@ def test_auth_token_endpoint_issues_token(mock_episodic, mock_graph, mock_engine
 
 
 def test_auth_token_wrong_secret_returns_401(mock_episodic, mock_graph, mock_engine):
-    app = create_app(mock_episodic, mock_graph, mock_engine)
+    cfg = _make_config(enabled=True)
+    app = create_app(mock_episodic, mock_graph, mock_engine, config=cfg)
     client = TestClient(app, follow_redirects=True)
-    with patch("engram.capture.server.load_config", return_value=_make_config(enabled=True)):
-        resp = client.post("/api/v1/auth/token", json={
-            "sub": "x", "role": "agent", "jwt_secret": "wrong-secret"
-        })
+    resp = client.post(
+        "/api/v1/auth/token",
+        json={"sub": "x", "role": "agent"},
+        headers={"Authorization": "Bearer wrong-secret"},
+    )
     assert resp.status_code == 401

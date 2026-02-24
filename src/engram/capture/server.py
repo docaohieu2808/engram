@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import uvicorn
@@ -12,7 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from engram.auth import get_auth_context
@@ -37,32 +36,34 @@ class IngestRequest(BaseModel):
 
 
 class RememberRequest(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, max_length=10_000)
     memory_type: MemoryType = MemoryType.FACT
-    priority: int = 5
+    priority: int = Field(default=5, ge=1, le=10)
     entities: list[str] = []
     tags: list[str] = []
 
 
 class ThinkRequest(BaseModel):
-    question: str
+    question: str = Field(..., min_length=1)
 
 
 class QueryRequest(BaseModel):
-    keyword: str
+    keyword: str = Field(..., min_length=1)
     node_type: Optional[str] = None  # renamed from `type` to avoid builtin shadow
 
 
 class SummarizeRequest(BaseModel):
-    count: int = 20
+    count: int = Field(default=20, ge=1, le=1000)
     save: bool = False
 
 
 class TokenRequest(BaseModel):
+    """Request body for /auth/token. C2 fix: no jwt_secret in body.
+    Admin identity proved via Authorization: Bearer <admin_secret> header.
+    """
     sub: str
     role: str = "agent"
     tenant_id: str = "default"
-    jwt_secret: str  # caller must provide secret to obtain token
 
 
 # --- Middleware ---
@@ -91,7 +92,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Use tenant from JWT sub or fall back to IP address
-        tenant_id = request.headers.get("X-Tenant-ID") or request.client.host or "anonymous"
+        client_host = request.client.host if request.client else "anonymous"
+        tenant_id = request.headers.get("X-Tenant-ID") or client_host or "anonymous"
         allowed, remaining, reset_at = await self._limiter.check(tenant_id)
 
         if not allowed:
@@ -128,6 +130,7 @@ def create_app(
     store_factory: StoreFactory | None = None,
     cache: EngramCache | None = None,
     rate_limiter: RateLimiter | None = None,
+    config: Config | None = None,
 ) -> FastAPI:
     """Create FastAPI app wired to memory stores.
 
@@ -138,6 +141,10 @@ def create_app(
     cache and rate_limiter are optional; when None, those features are disabled.
     """
     from fastapi import APIRouter
+
+    # H2: cache config once at startup — no per-request load_config() calls
+    _cfg: Config = config if config is not None else load_config()
+
     app = FastAPI(title="engram", description="Memory traces for AI agents")
     v1 = APIRouter(prefix="/api/v1")
 
@@ -194,13 +201,11 @@ def create_app(
         return graph
 
     def _resolve_engine(auth: AuthContext, ep: EpisodicStore, gr: SemanticGraph) -> ReasoningEngine:
-        """Return reasoning engine wired to tenant stores."""
+        """Return reasoning engine wired to tenant stores. Uses cached config (H2)."""
         if engine is not None:
             return engine
-        # Build a per-request engine when using StoreFactory
-        from engram.config import load_config
-        cfg = load_config()
-        return ReasoningEngine(ep, gr, model=cfg.llm.model, on_think_hook=cfg.hooks.on_think)
+        # Build a per-request engine when using StoreFactory (use cached _cfg)
+        return ReasoningEngine(ep, gr, model=_cfg.llm.model, on_think_hook=_cfg.hooks.on_think)
 
     # --- Root-level public routes ---
 
@@ -255,26 +260,35 @@ def create_app(
     # --- API v1 routes ---
 
     @v1.post("/auth/token")
-    async def auth_token(req: TokenRequest):
-        """Issue a JWT token. Caller must supply the configured jwt_secret."""
+    async def auth_token(req: TokenRequest, request: Request):
+        """Issue a JWT token using admin_secret header auth (C2 fix).
+
+        Auth disabled or admin_secret not configured -> 404.
+        Caller must provide Authorization: Bearer <admin_secret> header.
+        """
         from engram.auth import create_jwt
 
-        config = load_config()
-        if not config.auth.enabled:
+        if not _cfg.auth.enabled:
             raise HTTPException(status_code=404, detail="Auth not enabled")
-        if req.jwt_secret != config.auth.jwt_secret:
+        if not _cfg.auth.admin_secret:
+            raise HTTPException(status_code=404, detail="Auth not enabled")
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Authorization header with admin secret required")
+        provided_secret = auth_header[7:]
+        if provided_secret != _cfg.auth.admin_secret:
             raise HTTPException(status_code=401, detail="Invalid secret")
         try:
             role = Role(req.role)
         except ValueError:
             raise HTTPException(status_code=422, detail=f"Invalid role: {req.role}")
-        expiry = int(time.time()) + config.auth.jwt_expiry_hours * 3600
+        expiry = int(time.time()) + _cfg.auth.jwt_expiry_hours * 3600
         payload = TokenPayload(sub=req.sub, role=role, tenant_id=req.tenant_id, exp=expiry)
-        token = create_jwt(payload, config.auth.jwt_secret)
+        token = create_jwt(payload, _cfg.auth.jwt_secret)
         return {
             "access_token": token,
             "token_type": "bearer",
-            "expires_in": config.auth.jwt_expiry_hours * 3600,
+            "expires_in": _cfg.auth.jwt_expiry_hours * 3600,
         }
 
     @v1.post("/ingest")
@@ -306,15 +320,14 @@ def create_app(
         gr = await _resolve_graph(auth)
         eng = _resolve_engine(auth, ep, gr)
 
-        # Try cache first
+        # Try cache first (uses cached _cfg, no per-request load_config)
         if cache is not None:
-            cfg = load_config()
             cached = await cache.get(auth.tenant_id, "think", {"q": req.question})
             if cached is not None:
                 return cached
             answer = await eng.think(req.question)
             result = {"status": "ok", "answer": answer}
-            await cache.set(auth.tenant_id, "think", {"q": req.question}, result, ttl=cfg.cache.think_ttl)
+            await cache.set(auth.tenant_id, "think", {"q": req.question}, result, ttl=_cfg.cache.think_ttl)
             return result
 
         answer = await eng.think(req.question)
@@ -327,34 +340,38 @@ def create_app(
         offset: int = 0,
         memory_type: Optional[str] = None,
         tags: Optional[str] = None,  # comma-separated tag list
+        include_graph: bool = True,  # M9: set False to skip graph search
         auth: AuthContext = Depends(get_auth_context),
     ):
-        """Search episodic memories with optional filters and pagination."""
-        # Try cache first
+        """Search episodic memories with optional filters and pagination.
+
+        include_graph: when True (default), also queries semantic graph for related entities.
+        """
+        # Try cache first (uses cached _cfg)
         if cache is not None:
-            cfg = load_config()
-            cache_params = {"q": query, "limit": limit, "offset": offset, "mt": memory_type, "tags": tags}
+            cache_params = {"q": query, "limit": limit, "offset": offset, "mt": memory_type, "tags": tags, "ig": include_graph}
             cached = await cache.get(auth.tenant_id, "recall", cache_params)
             if cached is not None:
                 return cached
 
         ep = _resolve_episodic(auth)
-        gr = await _resolve_graph(auth)
         filters = {"memory_type": memory_type} if memory_type else None
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         results = await ep.search(query, limit=limit + offset, filters=filters, tags=tag_list)
         paginated = results[offset:offset + limit]
 
-        # Also search semantic graph for matching entities
-        graph_nodes = await gr.query(query)
+        # M9: only run graph search when include_graph=True
         graph_results = []
-        for node in graph_nodes[:3]:
-            related = await gr.get_related([node.name])
-            edges = related.get(node.name, {}).get("edges", [])
-            graph_results.append({
-                "node": node.model_dump(),
-                "edges": [e.model_dump() for e in edges[:5]],
-            })
+        if include_graph:
+            gr = await _resolve_graph(auth)
+            graph_nodes = await gr.query(query)
+            for node in graph_nodes[:3]:
+                related = await gr.get_related([node.name])
+                edges = related.get(node.name, {}).get("edges", [])
+                graph_results.append({
+                    "node": node.model_dump(),
+                    "edges": [e.model_dump() for e in edges[:5]],
+                })
 
         result = {
             "status": "ok",
@@ -365,7 +382,7 @@ def create_app(
             "limit": limit,
         }
         if cache is not None:
-            await cache.set(auth.tenant_id, "recall", cache_params, result, ttl=cfg.cache.recall_ttl)
+            await cache.set(auth.tenant_id, "recall", cache_params, result, ttl=_cfg.cache.recall_ttl)
         return result
 
     @v1.get("/query")
@@ -378,9 +395,8 @@ def create_app(
         auth: AuthContext = Depends(get_auth_context),
     ):
         """Query semantic graph by keyword, type, or relatedness."""
-        # Try cache first
+        # Try cache first (uses cached _cfg)
         if cache is not None:
-            cfg = load_config()
             cache_params = {"kw": keyword, "nt": node_type, "rt": related_to, "offset": offset, "limit": limit}
             cached = await cache.get(auth.tenant_id, "query", cache_params)
             if cached is not None:
@@ -405,7 +421,7 @@ def create_app(
             "limit": limit,
         }
         if cache is not None:
-            await cache.set(auth.tenant_id, "query", cache_params, result, ttl=cfg.cache.query_ttl)
+            await cache.set(auth.tenant_id, "query", cache_params, result, ttl=_cfg.cache.query_ttl)
         return result
 
     @v1.post("/cleanup")
@@ -482,5 +498,5 @@ def run_server(
     if config is None:
         config = load_config()
     app_cache, app_limiter = asyncio.run(_build_cache_and_limiter(config))
-    app = create_app(episodic, graph, engine, ingest_fn, store_factory, app_cache, app_limiter)
+    app = create_app(episodic, graph, engine, ingest_fn, store_factory, app_cache, app_limiter, config)
     uvicorn.run(app, host=config.serve.host, port=config.serve.port)

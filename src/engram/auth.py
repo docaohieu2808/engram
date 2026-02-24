@@ -6,16 +6,34 @@ import hashlib
 import json
 import os
 import secrets
-import time
 from pathlib import Path
 from typing import Optional
 
 import jwt
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
 
 from engram.auth_models import APIKeyRecord, AuthContext, Role, TokenPayload
-from engram.config import load_config
+from engram.config import Config, load_config
+from engram.errors import EngramError, ErrorCode
+
+
+# --- Module-level config cache (H2) ---
+
+_config: Config | None = None
+
+
+def init_auth(config: Config) -> None:
+    """Cache config at startup so get_auth_context() does not reload it per request."""
+    global _config
+    _config = config
+
+
+def _get_config() -> Config:
+    """Return cached config or load once on first call."""
+    global _config
+    if _config is None:
+        _config = load_config()
+    return _config
 
 
 # --- Paths ---
@@ -127,17 +145,16 @@ _ADMIN_ONLY_PATHS = {"/cleanup", "/summarize"}
 _READ_PATHS = {"/recall", "/query", "/status", "/health"}
 
 
-def _require_role(path: str, method: str, role: Role) -> Optional[JSONResponse]:
-    """Check RBAC. Returns 403 JSONResponse if not allowed, else None."""
+def _require_role(path: str, method: str, role: Role) -> None:
+    """Check RBAC. Raises EngramError(FORBIDDEN) if not allowed (H7)."""
     if method == "GET":
         # All roles can use GET endpoints
-        return None
+        return
     # POST/DELETE etc.
     if path in _ADMIN_ONLY_PATHS and role != Role.ADMIN:
-        return JSONResponse(status_code=403, content={"detail": "Admin role required"})
+        raise EngramError(ErrorCode.FORBIDDEN, "Admin role required")
     if role == Role.READER:
-        return JSONResponse(status_code=403, content={"detail": "Reader role cannot write"})
-    return None
+        raise EngramError(ErrorCode.FORBIDDEN, "Reader role cannot write")
 
 
 async def get_auth_context(request: Request) -> AuthContext:
@@ -145,8 +162,9 @@ async def get_auth_context(request: Request) -> AuthContext:
 
     When auth is disabled (config.auth.enabled=False), returns default AuthContext.
     Checks Authorization: Bearer <jwt> first, then X-API-Key header.
+    Uses module-level cached config to avoid per-request reload (H2).
     """
-    config = load_config()
+    config = _get_config()
     path = request.url.path
     method = request.method
 
@@ -166,7 +184,9 @@ async def get_auth_context(request: Request) -> AuthContext:
         if payload is None:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
         ctx = AuthContext(tenant_id=payload.tenant_id, role=payload.role)
-        if _require_role(path, method, ctx.role):
+        try:
+            _require_role(path, method, ctx.role)
+        except EngramError:
             raise HTTPException(status_code=403, detail="Insufficient role")
         return ctx
 
@@ -177,7 +197,9 @@ async def get_auth_context(request: Request) -> AuthContext:
         if record is None:
             raise HTTPException(status_code=401, detail="Invalid API key")
         ctx = AuthContext(tenant_id=record.tenant_id, role=record.role)
-        if _require_role(path, method, ctx.role):
+        try:
+            _require_role(path, method, ctx.role)
+        except EngramError:
             raise HTTPException(status_code=403, detail="Insufficient role")
         return ctx
 

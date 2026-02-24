@@ -76,6 +76,7 @@ class AuthConfig(BaseModel):
     enabled: bool = False       # Toggle auth (false = no auth required)
     jwt_secret: str = ""        # Required when enabled; min 32 chars recommended
     jwt_expiry_hours: int = 24  # Token lifetime
+    admin_secret: str = ""      # Admin bootstrap token for /auth/token endpoint
 
 
 class TelemetryConfig(BaseModel):
@@ -183,6 +184,7 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "AUTH_ENABLED": ("auth", "enabled"),
     "AUTH_JWT_SECRET": ("auth", "jwt_secret"),
     "AUTH_JWT_EXPIRY_HOURS": ("auth", "jwt_expiry_hours"),
+    "AUTH_ADMIN_SECRET": ("auth", "admin_secret"),
     "TELEMETRY_ENABLED": ("telemetry", "enabled"),
     "TELEMETRY_OTLP_ENDPOINT": ("telemetry", "otlp_endpoint"),
     "TELEMETRY_SAMPLE_RATE": ("telemetry", "sample_rate"),
@@ -200,10 +202,6 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "RATE_LIMIT_REQUESTS_PER_MINUTE": ("rate_limit", "requests_per_minute"),
     "RATE_LIMIT_BURST": ("rate_limit", "burst"),
 }
-
-# Section model classes for type inference
-_SECTION_MODELS: dict[str, type[BaseModel]] = {}
-
 
 def _get_section_models() -> dict[str, type[BaseModel]]:
     """Lazily build section model map after all classes are defined."""
