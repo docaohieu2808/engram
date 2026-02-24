@@ -11,6 +11,7 @@ from engram.episodic.store import EpisodicStore
 from engram.reasoning.engine import ReasoningEngine
 from engram.semantic import create_graph
 from engram.semantic.graph import SemanticGraph
+from engram.tenant import TenantContext
 
 # Create MCP server
 mcp = FastMCP("engram", instructions="AI agent brain with dual memory (episodic + semantic)")
@@ -28,8 +29,13 @@ def _get_config():
 def _get_episodic() -> EpisodicStore:
     if "episodic" not in _instances:
         cfg = _get_config()
+        # MCP uses config namespace as implicit tenant_id (single-tenant mode)
+        namespace = cfg.episodic.namespace or "default"
+        TenantContext.set(namespace)
         _instances["episodic"] = EpisodicStore(
-            cfg.episodic, cfg.embedding, on_remember_hook=cfg.hooks.on_remember
+            cfg.episodic, cfg.embedding,
+            namespace=namespace,
+            on_remember_hook=cfg.hooks.on_remember,
         )
     return _instances["episodic"]
 
