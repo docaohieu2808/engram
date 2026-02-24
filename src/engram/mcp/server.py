@@ -9,6 +9,7 @@ from mcp.server import FastMCP
 from engram.config import load_config
 from engram.episodic.store import EpisodicStore
 from engram.reasoning.engine import ReasoningEngine
+from engram.semantic import create_graph
 from engram.semantic.graph import SemanticGraph
 
 # Create MCP server
@@ -36,7 +37,7 @@ def _get_episodic() -> EpisodicStore:
 def _get_graph() -> SemanticGraph:
     if "graph" not in _instances:
         cfg = _get_config()
-        _instances["graph"] = SemanticGraph(cfg.semantic)
+        _instances["graph"] = create_graph(cfg.semantic)
     return _instances["graph"]
 
 

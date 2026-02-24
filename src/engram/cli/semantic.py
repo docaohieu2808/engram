@@ -15,9 +15,9 @@ console = Console()
 
 
 def _get_graph(get_config):
-    from engram.semantic.graph import SemanticGraph
+    from engram.semantic import create_graph
     cfg = get_config()
-    return SemanticGraph(cfg.semantic)
+    return create_graph(cfg.semantic)
 
 
 def register(app: typer.Typer, add_app: typer.Typer, remove_app: typer.Typer, get_config) -> None:

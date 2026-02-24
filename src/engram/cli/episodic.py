@@ -39,9 +39,9 @@ def _get_episodic(get_config, namespace: str | None = None):
 
 
 def _get_semantic(get_config):
-    from engram.semantic.graph import SemanticGraph
+    from engram.semantic import create_graph
     cfg = get_config()
-    return SemanticGraph(cfg.semantic)
+    return create_graph(cfg.semantic)
 
 
 def register(app: typer.Typer, get_config, get_namespace=None) -> None:

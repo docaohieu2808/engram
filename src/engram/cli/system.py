@@ -31,9 +31,9 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         )
 
     def _get_graph():
-        from engram.semantic.graph import SemanticGraph
+        from engram.semantic import create_graph
         cfg = get_config()
-        return SemanticGraph(cfg.semantic)
+        return create_graph(cfg.semantic)
 
     def _get_engine():
         from engram.reasoning.engine import ReasoningEngine

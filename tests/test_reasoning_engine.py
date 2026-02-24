@@ -34,14 +34,14 @@ async def test_think_no_results(tmp_path):
     """think() returns fallback message when both stores are empty."""
     from engram.config import EmbeddingConfig, EpisodicConfig, SemanticConfig
     from engram.episodic.store import EpisodicStore
-    from engram.semantic.graph import SemanticGraph
+    from engram.semantic import create_graph
 
     with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t, d=None: [[0.1] * 384] * len(t)):
         store = EpisodicStore(
             config=EpisodicConfig(path=str(tmp_path / "ep")),
             embedding_config=EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2"),
         )
-    graph = SemanticGraph(config=SemanticConfig(path=str(tmp_path / "sem.db")))
+    graph = create_graph(SemanticConfig(path=str(tmp_path / "sem.db")))
     engine = ReasoningEngine(episodic=store, graph=graph, model="test/model")
 
     with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t, d=None: [[0.1] * 384] * len(t)):

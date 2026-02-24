@@ -9,6 +9,7 @@ import pytest
 from engram.config import EmbeddingConfig, EpisodicConfig, SemanticConfig
 from engram.episodic.store import EpisodicStore
 from engram.models import EdgeDef, NodeDef, SchemaDefinition
+from engram.semantic import create_graph
 from engram.semantic.graph import SemanticGraph
 
 # Fixed 384-dim vector for deterministic embedding tests
@@ -42,9 +43,9 @@ def episodic_store(tmp_path, mock_embeddings):
 
 @pytest.fixture
 def semantic_graph(tmp_path):
-    """SemanticGraph backed by tmp SQLite path."""
+    """SemanticGraph backed by tmp SQLite path via create_graph factory."""
     config = SemanticConfig(path=str(tmp_path / "semantic.db"))
-    return SemanticGraph(config=config)
+    return create_graph(config)
 
 
 @pytest.fixture

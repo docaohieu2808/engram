@@ -16,12 +16,12 @@ def register(app: typer.Typer, get_config) -> None:
     def _get_engine():
         from engram.episodic.store import EpisodicStore
         from engram.reasoning.engine import ReasoningEngine
-        from engram.semantic.graph import SemanticGraph
+        from engram.semantic import create_graph
         cfg = get_config()
         episodic = EpisodicStore(
             cfg.episodic, cfg.embedding, on_remember_hook=cfg.hooks.on_remember
         )
-        graph = SemanticGraph(cfg.semantic)
+        graph = create_graph(cfg.semantic)
         return ReasoningEngine(episodic, graph, model=cfg.llm.model, on_think_hook=cfg.hooks.on_think)
 
     @app.command()

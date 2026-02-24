@@ -141,17 +141,17 @@ async def test_add_edges_batch_empty_is_noop(semantic_graph):
 async def test_add_nodes_batch_persists_to_new_instance(tmp_path):
     """Nodes stored via batch are reloaded by a fresh SemanticGraph instance."""
     from engram.config import SemanticConfig
-    from engram.semantic.graph import SemanticGraph
+    from engram.semantic import create_graph
 
     db_file = str(tmp_path / "sem.db")
-    graph1 = SemanticGraph(config=SemanticConfig(path=db_file))
+    graph1 = create_graph(SemanticConfig(path=db_file))
     await graph1.add_nodes_batch([
         SemanticNode(type="Service", name="worker"),
         SemanticNode(type="Service", name="scheduler"),
     ])
-    graph1.close()
+    await graph1.close()
 
-    graph2 = SemanticGraph(config=SemanticConfig(path=db_file))
+    graph2 = create_graph(SemanticConfig(path=db_file))
     nodes = await graph2.get_nodes()
     assert {n.name for n in nodes} == {"worker", "scheduler"}
 

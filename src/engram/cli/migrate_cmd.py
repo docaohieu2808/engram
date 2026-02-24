@@ -25,9 +25,9 @@ def register(app: typer.Typer, get_config) -> None:
     """Register migrate command on the main Typer app."""
 
     def _get_graph():
-        from engram.semantic.graph import SemanticGraph
+        from engram.semantic import create_graph
         cfg = get_config()
-        return SemanticGraph(cfg.semantic)
+        return create_graph(cfg.semantic)
 
     def _get_episodic():
         from engram.episodic.store import EpisodicStore

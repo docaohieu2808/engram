@@ -29,6 +29,10 @@ class SemanticConfig(BaseModel):
     provider: str = "sqlite"
     path: str = "~/.engram/semantic.db"
     schema_name: str = Field(default="devops", alias="schema")
+    # PostgreSQL settings (used when provider="postgresql")
+    dsn: str = "${ENGRAM_SEMANTIC_DSN}"
+    pool_min: int = 5
+    pool_max: int = 20
 
     model_config = {"populate_by_name": True}
 
@@ -67,6 +71,13 @@ class SecurityConfig(BaseModel):
     max_content_length: int = 10240  # bytes; default 10KB
 
 
+class AuthConfig(BaseModel):
+    """HTTP API authentication configuration. Disabled by default for backward compat."""
+    enabled: bool = False       # Toggle auth (false = no auth required)
+    jwt_secret: str = ""        # Required when enabled; min 32 chars recommended
+    jwt_expiry_hours: int = 24  # Token lifetime
+
+
 class Config(BaseModel):
     episodic: EpisodicConfig = Field(default_factory=EpisodicConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -77,6 +88,7 @@ class Config(BaseModel):
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
 
 # --- Helpers ---
@@ -125,9 +137,16 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "EMBEDDING_MODEL": ("embedding", "model"),
     "EMBEDDING_PROVIDER": ("embedding", "provider"),
     "SEMANTIC_PATH": ("semantic", "path"),
+    "SEMANTIC_PROVIDER": ("semantic", "provider"),
+    "SEMANTIC_DSN": ("semantic", "dsn"),
+    "SEMANTIC_POOL_MIN": ("semantic", "pool_min"),
+    "SEMANTIC_POOL_MAX": ("semantic", "pool_max"),
     "LOG_FORMAT": ("logging", "format"),
     "LOG_LEVEL": ("logging", "level"),
     "SECURITY_MAX_CONTENT_LENGTH": ("security", "max_content_length"),
+    "AUTH_ENABLED": ("auth", "enabled"),
+    "AUTH_JWT_SECRET": ("auth", "jwt_secret"),
+    "AUTH_JWT_EXPIRY_HOURS": ("auth", "jwt_expiry_hours"),
 }
 
 # Section model classes for type inference
@@ -146,6 +165,7 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "security": SecurityConfig,
         "capture": CaptureConfig,
         "hooks": HooksConfig,
+        "auth": AuthConfig,
     }
 
 
