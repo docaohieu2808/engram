@@ -15,7 +15,12 @@ from engram.config import (
     set_config_value,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(name)s: %(message)s")
+# Silence noisy third-party loggers
+logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+logging.getLogger("litellm").setLevel(logging.ERROR)
+logging.getLogger("chromadb").setLevel(logging.ERROR)
+logging.getLogger("httpx").setLevel(logging.ERROR)
 
 app = typer.Typer(name="engram", help="Memory traces for AI agents - Think like human")
 add_app = typer.Typer(help="Add nodes/edges to semantic memory")
