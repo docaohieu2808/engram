@@ -111,6 +111,41 @@ class RateLimitConfig(BaseModel):
     burst: int = 10
 
 
+class ProviderEntry(BaseModel):
+    """Configuration for a single external memory provider."""
+    name: str
+    type: str  # rest, file, postgres, mcp
+    enabled: bool = True
+    debug: bool = False
+    max_consecutive_errors: int = 5
+    timeout_seconds: float = 3.0
+    # REST adapter fields
+    url: str = ""
+    search_endpoint: str = ""
+    search_method: str = "POST"
+    search_body: str = ""
+    result_path: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    # File adapter fields
+    path: str = ""
+    pattern: str = "*.md"
+    # Postgres adapter fields
+    dsn: str = ""
+    search_query: str = ""
+    # MCP adapter fields
+    command: str = ""
+    tool_name: str = ""
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+
+
+class DiscoveryConfig(BaseModel):
+    """Auto-discovery configuration for finding external memory services."""
+    local: bool = True
+    hosts: list[str] = Field(default_factory=list)
+    endpoints: list[str] = Field(default_factory=list)
+
+
 class Config(BaseModel):
     episodic: EpisodicConfig = Field(default_factory=EpisodicConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -126,6 +161,8 @@ class Config(BaseModel):
     audit: AuditConfig = Field(default_factory=AuditConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    providers: list[ProviderEntry] = Field(default_factory=list)
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
 
 
 # --- Helpers ---

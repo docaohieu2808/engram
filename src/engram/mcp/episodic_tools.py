@@ -8,7 +8,7 @@ from typing import Union
 from engram.models import MemoryType
 
 
-def register(mcp, get_episodic, get_graph, get_config) -> None:
+def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> None:
     """Register episodic MCP tools on the FastMCP instance."""
 
     @mcp.tool()
@@ -71,6 +71,15 @@ def register(mcp, get_episodic, get_graph, get_config) -> None:
             related = await graph.get_related([node.name])
             for edge in related.get(node.name, {}).get("edges", [])[:5]:
                 lines.append(f"  {edge.from_node} --{edge.relation}--> {edge.to_node}")
+
+        # Federated search across external providers
+        if get_providers:
+            from engram.providers.router import federated_search
+            providers = get_providers()
+            if providers:
+                provider_results = await federated_search(query, providers, limit=3)
+                for r in provider_results:
+                    lines.append(f"[{r.source}] {r.content[:300]}")
 
         if not results and not lines:
             return "No memories found."

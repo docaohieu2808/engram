@@ -8,6 +8,8 @@ from mcp.server import FastMCP
 
 from engram.config import load_config
 from engram.episodic.store import EpisodicStore
+from engram.providers.base import MemoryProvider
+from engram.providers.registry import ProviderRegistry
 from engram.reasoning.engine import ReasoningEngine
 from engram.semantic import create_graph
 from engram.semantic.graph import SemanticGraph
@@ -47,11 +49,21 @@ def _get_graph() -> SemanticGraph:
     return _instances["graph"]
 
 
+def _get_providers() -> list[MemoryProvider]:
+    if "providers" not in _instances:
+        cfg = _get_config()
+        registry = ProviderRegistry()
+        registry.load_from_config(cfg)
+        _instances["providers"] = registry
+    return _instances["providers"].get_active()
+
+
 def _get_engine() -> ReasoningEngine:
     if "engine" not in _instances:
         cfg = _get_config()
         _instances["engine"] = ReasoningEngine(
-            _get_episodic(), _get_graph(), model=cfg.llm.model, on_think_hook=cfg.hooks.on_think
+            _get_episodic(), _get_graph(), model=cfg.llm.model,
+            on_think_hook=cfg.hooks.on_think, providers=_get_providers(),
         )
     return _instances["engine"]
 
@@ -61,7 +73,7 @@ from engram.mcp import episodic_tools as _ep  # noqa: E402
 from engram.mcp import semantic_tools as _sem  # noqa: E402
 from engram.mcp import reasoning_tools as _rea  # noqa: E402
 
-_ep.register(mcp, _get_episodic, _get_graph, _get_config)
+_ep.register(mcp, _get_episodic, _get_graph, _get_config, get_providers=_get_providers)
 _sem.register(mcp, _get_graph)
 _rea.register(mcp, _get_engine, _get_episodic, _get_graph)
 

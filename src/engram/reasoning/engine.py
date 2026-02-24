@@ -12,6 +12,8 @@ import litellm
 from engram.episodic.store import EpisodicStore
 from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, SemanticEdge, SemanticNode
+from engram.providers.base import MemoryProvider
+from engram.providers.router import federated_search
 from engram.semantic.graph import SemanticGraph
 from engram.utils import strip_diacritics
 
@@ -39,6 +41,9 @@ REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retriev
 ## Semantic Knowledge (entities, relationships)
 {semantic_context}
 
+## External Knowledge (from connected providers)
+{provider_context}
+
 ## Question
 {question}
 
@@ -62,11 +67,13 @@ class ReasoningEngine:
         graph: SemanticGraph,
         model: str,
         on_think_hook: str | None = None,
+        providers: list[MemoryProvider] | None = None,
     ):
         self._episodic = episodic
         self._graph = graph
         self._model = model
         self._on_think_hook = on_think_hook
+        self._providers = providers or []
         # Cache of graph node names to avoid full scan on every think() call
         self._node_names_cache: list[str] | None = None
 
@@ -117,7 +124,7 @@ class ReasoningEngine:
         return summary
 
     async def think(self, question: str) -> str:
-        """Answer a question by combining episodic and semantic memory."""
+        """Answer a question by combining episodic, semantic, and federated memory."""
         # 1. Vector search for relevant episodic memories
         episodic_results = await self._episodic.search(question, limit=5)
 
@@ -128,12 +135,18 @@ class ReasoningEngine:
         semantic_results: dict[str, Any] = {}
         for entity in entity_hints:
             related = await self._graph.get_related([entity], depth=2)
-            # get_related returns {entity: {nodes, edges}} — merge directly
             semantic_results.update(related)
 
-        # 4. If we have results, use LLM to synthesize
-        if episodic_results or semantic_results:
-            answer = await self._synthesize(question, episodic_results, semantic_results)
+        # 4. Federated search across external providers
+        provider_results = await federated_search(
+            question, self._providers, limit=5, timeout_seconds=3.0,
+        )
+
+        # 5. If we have results, use LLM to synthesize
+        if episodic_results or semantic_results or provider_results:
+            answer = await self._synthesize(
+                question, episodic_results, semantic_results, provider_results,
+            )
         else:
             answer = "No relevant memories found for this question."
 
@@ -176,8 +189,11 @@ class ReasoningEngine:
         question: str,
         episodic: list[EpisodicMemory],
         semantic: dict[str, Any],
+        provider_results: list | None = None,
     ) -> str:
         """Use LLM to reason over combined memory results."""
+        from engram.providers.base import ProviderResult
+
         # Format episodic context
         episodic_lines = []
         for mem in episodic:
@@ -190,7 +206,6 @@ class ReasoningEngine:
         for entity, data in semantic.items():
             semantic_lines.append(f"\n### {entity}")
             if isinstance(data, dict):
-                # get_related returns {"nodes": [...], "edges": [...]}
                 for n in data.get("nodes", []):
                     if isinstance(n, SemanticNode):
                         attrs = json.dumps(n.attributes, ensure_ascii=False) if n.attributes else ""
@@ -202,9 +217,17 @@ class ReasoningEngine:
                         semantic_lines.append(f"  - {e}")
         semantic_ctx = "\n".join(semantic_lines) if semantic_lines else "No semantic knowledge found."
 
+        # Format provider context
+        provider_lines = []
+        for r in (provider_results or []):
+            if isinstance(r, ProviderResult):
+                provider_lines.append(f"[{r.source}] {r.content}")
+        provider_ctx = "\n".join(provider_lines) if provider_lines else "No external knowledge found."
+
         prompt = REASONING_PROMPT.format(
             episodic_context=episodic_ctx,
             semantic_context=semantic_ctx,
+            provider_context=provider_ctx,
             question=question,
         )
 

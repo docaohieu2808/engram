@@ -25,12 +25,14 @@ remove_app = typer.Typer(help="Remove nodes/edges from semantic memory")
 schema_app = typer.Typer(help="Manage semantic schemas")
 config_app = typer.Typer(help="Manage configuration")
 auth_app = typer.Typer(help="Manage API keys and authentication")
+providers_app = typer.Typer(help="Manage external memory providers")
 
 app.add_typer(add_app, name="add")
 app.add_typer(remove_app, name="remove")
 app.add_typer(schema_app, name="schema")
 app.add_typer(config_app, name="config")
 app.add_typer(auth_app, name="auth")
+app.add_typer(providers_app, name="providers")
 
 _config: Config | None = None
 _namespace: Optional[str] = None
@@ -75,6 +77,7 @@ from engram.cli import migrate_cmd as _migrate_mod  # noqa: E402
 from engram.cli import config_cmd as _config_cmd_mod  # noqa: E402
 from engram.cli import auth_cmd as _auth_cmd_mod  # noqa: E402
 from engram.cli import backup_cmd as _backup_cmd_mod  # noqa: E402
+from engram.cli import providers_cmd as _providers_cmd_mod  # noqa: E402
 
 _episodic_mod.register(app, _get_config, get_namespace=_get_namespace)
 _semantic_mod.register(app, add_app, remove_app, _get_config)
@@ -91,6 +94,7 @@ _config_cmd_mod.register(
 )
 _auth_cmd_mod.register(auth_app, _get_config)
 _backup_cmd_mod.register(app, _get_config)
+_providers_cmd_mod.register(app, providers_app, _get_config)
 
 if __name__ == "__main__":
     app()

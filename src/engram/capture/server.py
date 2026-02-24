@@ -209,6 +209,30 @@ def create_app(
 
     # --- Root-level public routes ---
 
+    # --- Provider registry (federated memory) ---
+    from engram.providers.registry import ProviderRegistry
+    _provider_registry = ProviderRegistry()
+    _provider_registry.load_from_config(_cfg)
+
+    @app.get("/providers")
+    async def list_providers():
+        """List all configured providers and their status."""
+        providers = []
+        for p in _provider_registry.get_all():
+            providers.append({
+                "name": p.name,
+                "type": p.provider_type,
+                "active": p.is_active,
+                "status": p.status_label,
+                "stats": {
+                    "query_count": p.stats.query_count,
+                    "avg_latency_ms": round(p.stats.avg_latency_ms, 1),
+                    "hit_count": p.stats.hit_count,
+                    "error_count": p.stats.error_count,
+                },
+            })
+        return {"providers": providers}
+
     @app.get("/health")
     async def health():
         """Liveness probe — fast, no component checks."""
