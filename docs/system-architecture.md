@@ -7,6 +7,7 @@ Engram is a dual-memory AI system that enables agents to reason like humans by c
 1. **Episodic Memory** — Vector embeddings for semantic search (ChromaDB)
 2. **Semantic Memory** — Knowledge graphs for entity relationships (PostgreSQL/SQLite + NetworkX)
 3. **Reasoning Engine** — LLM synthesis connecting both stores (Gemini via litellm)
+4. **Federation Layer** — External memory providers (REST, File, Postgres, MCP) via smart query router
 
 All three interfaces (CLI, MCP, HTTP) share the same memory layers.
 
@@ -30,7 +31,7 @@ All three interfaces (CLI, MCP, HTTP) share the same memory layers.
         └───────────┬─────────────┘
                     │
         ┌───────────▼──────────────┐
-        │  TenantContext (ContextVar)
+        │  TenantContext (ContextVar)│
         │  tenant_id = ${JWT.tenant_id}│
         └───────────┬──────────────┘
                     │
@@ -53,9 +54,30 @@ All three interfaces (CLI, MCP, HTTP) share the same memory layers.
     │  query_ttl)       │
     └────────────────────┘
 
+    ┌──────────────────────────────────────────────────┐
+    │  Federation Layer (v0.2 — src/engram/providers/) │
+    │                                                  │
+    │  QueryRouter (classify_query)                    │
+    │    → "internal" — skip external providers        │
+    │    → "domain"   — fan-out to all active providers│
+    │                                                  │
+    │  ProviderRegistry (entry_points plugin system)   │
+    │    ├─ RestAdapter   (Cognee, Mem0, LightRAG,     │
+    │    │                 Graphiti)                   │
+    │    ├─ FileAdapter   (OpenClaw memory files)      │
+    │    ├─ PostgresAdapter (external PG tables)       │
+    │    └─ McpAdapter   (MCP server subprocesses)     │
+    │                                                  │
+    │  AutoDiscovery (discover command)                │
+    │    Tier 1: local port scan (8000,8080,9520,…)    │
+    │    Tier 2: remote hosts                          │
+    │    Tier 3: direct endpoints                      │
+    │    Tier 4: MCP config files                      │
+    └──────────────────────────────────────────────────┘
+
     ┌──────────────────┐
-    │ Rate Limiter     │ ← Optional per-tenant
-    │ (sliding window) │   Via Redis
+    │ Rate Limiter     │ ← JWT-based (not header spoofing)
+    │ (sliding window) │   Per-tenant via Redis
     └──────────────────┘
 
     ┌──────────────────────────┐
@@ -141,7 +163,72 @@ relate(entity_key) → [related_entities]
 
 ---
 
-### Layer 3: Reasoning Engine
+### Layer 3: Federation Layer (v0.2)
+
+**Path:** `src/engram/providers/`
+
+**Purpose:** Connect engram to external memory sources via pluggable adapters. Results are merged with internal recall before LLM synthesis.
+
+**Components:**
+
+- **MemoryProvider** (`base.py`) — Abstract base with built-in stats tracking and circuit breaker
+  - `search(query, limit)` → `list[ProviderResult]`
+  - `health()` → `bool`
+  - `add(content, metadata)` → `str | None` (optional write support)
+  - `tracked_search()` — wraps `search()` with latency + error counting; auto-disables after `max_consecutive_errors` (default 5)
+
+- **Adapters** — Four built-in implementations:
+  | Adapter | File | Purpose |
+  |---------|------|---------|
+  | RestAdapter | `rest_adapter.py` | HTTP POST/GET to Cognee, Mem0, LightRAG, Graphiti |
+  | FileAdapter | `file_adapter.py` | Glob markdown/text files (e.g. OpenClaw workspace) |
+  | PostgresAdapter | `postgres_adapter.py` | Parameterised SQL query against external tables |
+  | McpAdapter | `mcp_adapter.py` | Spawn MCP server subprocess, call tool via stdio |
+
+- **QueryRouter** (`router.py`) — Keyword-based classification before fan-out
+  - `classify_query(query)` → `"internal"` or `"domain"`
+  - Internal keywords (decisions, errors, todos) skip providers → fast path
+  - Domain keywords (how-to, docs, setup) include all active providers
+  - Queries >3 words default to `"domain"`
+  - Supports Vietnamese keywords
+
+- **ProviderRegistry** (`registry.py`) — Loads providers from config + `entry_points`
+  - Built-in types: `rest`, `file`, `postgres`, `mcp`
+  - Third-party: register via `entry_points(group="engram.providers")`
+  - `get_active()` returns only enabled + non-auto-disabled providers
+
+- **AutoDiscovery** (`discovery.py`) — Scans for running services
+  - Known services: Cognee (8000), Mem0 (8080), LightRAG (9520), OpenClaw (file), Graphiti (8000)
+  - SSRF protection: remote hosts validated against routable IPs only
+  - MCP config scan: `~/.claude/settings.json`, `~/.cursor/settings.json`
+
+**Config** (`~/.engram/config.yaml`):
+```yaml
+providers:
+  - name: openclaw
+    type: file
+    path: ~/.openclaw/workspace/memory/
+    pattern: "*.md"
+    enabled: true
+
+  - name: mem0
+    type: rest
+    url: http://localhost:8080
+    search_endpoint: /v1/memories/search
+    search_method: POST
+    search_body: '{"query": "{query}", "limit": {limit}}'
+    result_path: results[].memory
+    enabled: true
+
+discovery:
+  local: true          # scan localhost ports on startup
+  hosts: []            # additional remote hosts
+  endpoints: []        # direct endpoint URLs to probe
+```
+
+---
+
+### Layer 4: Reasoning Engine
 
 **Path:** `src/engram/reasoning/`
 
@@ -167,7 +254,7 @@ ingest(messages) → {extracted_entities, stored_memories}
 
 ---
 
-### Layer 4: HTTP API Server
+### Layer 5: HTTP API Server
 
 **Path:** `src/engram/capture/server.py`
 
@@ -175,17 +262,18 @@ ingest(messages) → {extracted_entities, stored_memories}
 
 | Method | Endpoint | Purpose | Auth | Response |
 |--------|----------|---------|------|----------|
-| POST | /remember | Store episodic memory | No | `{id, created_at}` |
-| GET | /recall | Search memories | No | `{results, total, offset, limit}` |
-| POST | /think | LLM reasoning | No | `{answer}` |
-| POST | /ingest | Extract entities + store | No | `{extracted, stored}` |
-| GET | /query | Graph search | No | `{nodes, edges, total, offset, limit}` |
-| POST | /cleanup | Delete expired | Admin | `{deleted}` |
-| POST | /summarize | LLM synthesis | Admin | `{summary}` |
-| POST | /auth/token | Issue JWT | No (admin_secret in body) | `{token, expires_at}` |
 | GET | /health | Liveness | No | `{status: ok}` |
-| POST | /backup | Export memory | No | `{backup_id, uri}` |
-| POST | /restore | Import backup | No | `{restored_count}` |
+| GET | /health/ready | Readiness probe | No | `{status, checks}` |
+| POST | /api/v1/remember | Store episodic memory | No | `{id, created_at}` |
+| GET | /api/v1/recall | Search memories | No | `{results, total, offset, limit}` |
+| POST | /api/v1/think | LLM reasoning (federated) | No | `{answer}` |
+| POST | /api/v1/ingest | Extract entities + store | No | `{extracted, stored}` |
+| GET | /api/v1/query | Graph search | No | `{nodes, edges, total, offset, limit}` |
+| GET | /api/v1/status | Memory + graph counts | No | `{episodic_count, graph_nodes, ...}` |
+| POST | /api/v1/cleanup | Delete expired | Admin | `{deleted}` |
+| POST | /api/v1/summarize | LLM synthesis | Admin | `{summary}` |
+| POST | /api/v1/auth/token | Issue JWT | No (admin_secret in body) | `{token, expires_at}` |
+| GET | /providers | List active providers + stats | Auth required | `{providers}` |
 
 **Request/Response Structure:**
 
@@ -226,7 +314,7 @@ Errors:
 
 ---
 
-### Layer 5: Multi-Tenancy
+### Layer 6: Multi-Tenancy
 
 **Path:** `src/engram/tenant.py`
 
@@ -245,7 +333,7 @@ Errors:
 
 ---
 
-### Layer 6: Authentication & Authorization
+### Layer 7: Authentication & Authorization
 
 **Path:** `src/engram/auth.py`, `src/engram/auth_models.py`
 
@@ -275,7 +363,7 @@ Errors:
 
 ---
 
-### Layer 7: Caching & Rate Limiting
+### Layer 8: Caching & Rate Limiting
 
 **Path:** `src/engram/cache.py`, `src/engram/rate_limiter.py`
 
@@ -290,10 +378,11 @@ Errors:
 - Per-tenant limits: config.rate_limit.requests_per_minute
 - Burst allowance: config.rate_limit.burst
 - Headers: X-RateLimit-Limit, -Remaining, -Reset; Retry-After
+- JWT-based identity (not spoofable X-Forwarded-For header)
 
 ---
 
-### Layer 8: Observability
+### Layer 9: Observability
 
 **Path:** `src/engram/logging_setup.py`, `src/engram/audit.py`
 
@@ -497,10 +586,14 @@ Request
 |----------|---------|-----------|
 | Tenant isolation | Row-level (PG) or file-level (SQLite) | tenant_id column/filename |
 | API access | JWT + API key verification | HMAC signature + hash lookup |
-| Authorization | Role-based (RBAC) | Role enum + path-based rules |
+| Authorization | Role-based (RBAC) | Role enum + path-based rules (path normalization applied) |
 | Content size | 10KB limit per memory | Pydantic Field(max_length=10000) |
 | Secret storage | Hashed API keys only | SHA256 hashes in JSON |
 | Audit trail | Immutable log | Append-only JSONL |
+| Timing attacks | Constant-time comparison | `hmac.compare_digest` for key verification |
+| JWT secret | Minimum length enforced | Startup validation rejects short secrets |
+| SSRF (webhooks) | URL allowlist validation | Private/loopback IPs blocked in discovery + webhooks |
+| SQL injection | Parameterised queries | PostgresAdapter uses `$1/$2` placeholders only |
 
 ---
 
@@ -518,9 +611,8 @@ Request
 
 ## Future Architecture Evolution
 
-- **Phase 11:** Distributed semantic graph (cluster-aware backend)
-- **Phase 12:** Streaming LLM responses (WebSocket support)
-- **Phase 13:** Multi-region replication
-- **Phase 14:** Plugin system for custom extractors
-- **Phase 15:** Observability dashboard UI
+- **v0.3:** Advanced query DSL (Cypher-like), GraphQL endpoint, streaming responses
+- **v0.4:** Distributed semantic graph, multi-node clustering, Raft consensus
+- **v0.5:** Observability dashboard UI, custom embedding models, advanced RBAC
+- **v1.0:** Production release, marketplace, enterprise SLA, compliance certifications
 

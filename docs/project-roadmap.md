@@ -2,10 +2,42 @@
 
 ## Version History
 
-### v0.2.0 (Completed — 2026-02-24)
-**Enterprise Upgrade Complete**
+### v0.2.0 (Completed — 2026-02-25)
+**Enterprise Upgrade + Federation System**
 
-Transformed engram from prototype to enterprise-grade system with 10 independent phases:
+Transformed engram from prototype to enterprise-grade system with 10 independent phases, then extended with federation and security hardening:
+
+**Phase 11: Federation System (Provider Adapters)** ✓
+- Provider adapter framework: REST, File, Postgres, MCP (`src/engram/providers/`)
+- Smart query router with keyword-based classification (internal vs. domain queries)
+- Auto-discovery: Cognee, Mem0, LightRAG, OpenClaw, Graphiti
+- Provider registry with entry_points plugin system (third-party adapters)
+- Per-provider stats tracking + circuit breaker (auto-disable on consecutive errors)
+- CLI commands: `engram discover`, `engram providers list/test/stats/add`
+- Config: `providers` and `discovery` sections in config.yaml
+- `/think` endpoint now uses federated providers for context enrichment
+- GET /providers endpoint (auth required)
+
+**Phase 12: Security Hardening** ✓
+- SSRF protection in webhooks and discovery (private/loopback IPs blocked)
+- SQL injection prevention in PostgresAdapter (parameterised queries)
+- JWT-based rate limiting (not header spoofing via X-Forwarded-For)
+- Timing attack mitigation using `hmac.compare_digest`
+- RBAC path normalization to prevent bypass
+- JWT secret minimum length validation at startup
+
+**Phase 13: Bug Fixes (11 issues)** ✓
+- `/api/v1/think` wires active providers into ReasoningEngine
+- UTC-aware datetime for memory expiry comparisons
+- McpAdapter safe cleanup on partial init failure
+- Graph traversal optimized from O(E) to O(V)
+- Engine node cache invalidation after ingest
+
+**Current stats:** 31 episodic memories in production, OpenClaw file provider active, 345 tests passing.
+
+---
+
+### v0.2.0 enterprise phases (completed 2026-02-24):
 
 **Phase 1: Config + Logging Foundation** ✓
 - YAML-based configuration with env var expansion
@@ -200,31 +232,35 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 
 ## Completed Phases (v0.2.0)
 
-| Phase | Status | Completion | Tests | Effort |
-|-------|--------|------------|-------|--------|
-| 1. Config + Logging | ✓ Complete | 100% | 20+ | 4h |
-| 2. PostgreSQL Graph | ✓ Complete | 100% | 25+ | 6h |
-| 3. Authentication | ✓ Complete | 100% | 30+ | 5h |
-| 4. Multi-Tenancy | ✓ Complete | 100% | 20+ | 5h |
-| 5. Caching + Rate Limit | ✓ Complete | 100% | 25+ | 4h |
-| 6. API Versioning | ✓ Complete | 100% | 15+ | 3h |
-| 7. Observability | ✓ Complete | 100% | 20+ | 4h |
-| 8. Docker + CI/CD | ✓ Complete | 100% | 10+ | 3h |
-| 9. Health + Backup | ✓ Complete | 100% | 20+ | 3h |
-| 10. Testing Expansion | ✓ Complete | 100% | 270+ | 3h |
+| Phase | Status | Tests |
+|-------|--------|-------|
+| 1. Config + Logging | ✓ Complete | 20+ |
+| 2. PostgreSQL Graph | ✓ Complete | 25+ |
+| 3. Authentication | ✓ Complete | 30+ |
+| 4. Multi-Tenancy | ✓ Complete | 20+ |
+| 5. Caching + Rate Limit | ✓ Complete | 25+ |
+| 6. API Versioning | ✓ Complete | 15+ |
+| 7. Observability | ✓ Complete | 20+ |
+| 8. Docker + CI/CD | ✓ Complete | 10+ |
+| 9. Health + Backup | ✓ Complete | 20+ |
+| 10. Testing Expansion | ✓ Complete | 270+ |
+| 11. Federation System | ✓ Complete | included in 345 |
+| 12. Security Hardening | ✓ Complete | included in 345 |
+| 13. Bug Fixes (11) | ✓ Complete | — |
 
-**Total Effort:** 40 hours | **Total Tests:** 270 | **Bug Fixes:** 21
+**Total Tests:** 345 | **Bug Fixes:** 32 (21 original + 11 v0.2 phase 3)
 
 ---
 
 ## Known Limitations & Future Improvements
 
 ### Current Limitations (v0.2.0)
-- Single-node deployment only (multi-node in Phase 11)
-- No built-in query DSL (Cypher-like support in Phase 12)
+- Single-node deployment only (multi-node in v0.4)
+- No built-in query DSL (Cypher-like support in v0.3)
 - ChromaDB doesn't support distributed mode
 - Streaming responses not supported
-- No native dashboard UI (built-in Phase 13)
+- No native dashboard UI (v0.5)
+- Provider stats are in-memory only (reset on restart)
 
 ### Roadmap Priorities
 1. **Query DSL** (Q2 2026) — Power users need complex graph queries
@@ -243,14 +279,18 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 ## Success Metrics
 
 ### v0.2.0 (Completed)
-- [x] 10 phases independently deployable
-- [x] 270+ tests passing (target: 75%+ coverage)
+- [x] 13 phases complete (10 enterprise + federation + security + bug fixes)
+- [x] 345 tests passing
 - [x] PostgreSQL backend option working
 - [x] Multi-tenant support production-ready
 - [x] Auth optional but enforced correctly
 - [x] Docker image building and running
-- [x] All 21 bug fixes resolved
+- [x] All 32 bug fixes resolved
 - [x] CI/CD passing on every commit
+- [x] Federation system: REST/File/Postgres/MCP adapters
+- [x] Auto-discovery for Cognee, Mem0, LightRAG, OpenClaw, Graphiti
+- [x] Security hardening: SSRF, SQL injection, timing attacks, RBAC path normalization
+- [x] /api/v1/think uses federated providers
 
 ### v0.3.0 (Target)
 - [ ] Advanced graph queries (path finding, patterns)
@@ -295,7 +335,7 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 
 | Version | Target Date | Focus | Status |
 |---------|-------------|-------|--------|
-| v0.2.0 | 2026-02-24 | Enterprise Foundation | ✓ Released |
+| v0.2.0 | 2026-02-25 | Enterprise + Federation + Security | ✓ Released |
 | v0.3.0 | 2026-06-30 | Advanced Queries | Planned |
 | v0.4.0 | 2026-09-30 | Multi-Node Distribution | Planned |
 | v0.5.0 | 2026-12-31 | Dashboard + Features | Planned |

@@ -7,10 +7,11 @@ Engram is a dual-memory AI agent system that thinks like humans. It combines:
 - **Episodic Memory** — Vector database (ChromaDB) for semantic similarity search over timestamped memories
 - **Semantic Memory** — Knowledge graph (PostgreSQL/SQLite + NetworkX) for typed entities and relationships
 - **Reasoning Engine** — LLM synthesis (Gemini) that connects episodic + semantic memory to answer questions
+- **Federation Layer** — External provider adapters (REST, File, Postgres, MCP) extending recall across services
 
 Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI).
 
-**Version:** 0.2.0 | **Status:** Enterprise-ready | **Tests:** 270+ | **License:** MIT
+**Version:** 0.2.0 | **Status:** Enterprise-ready + Federation | **Tests:** 345 | **License:** MIT
 
 ---
 
@@ -37,10 +38,17 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **Backup/Restore** — Snapshot and restore memory
 - **Config** — YAML + env var expansion + CLI overlay
 
+### Federation (v0.2)
+- **Provider adapters:** REST, File, Postgres, MCP — connect to external memory services
+- **Auto-discovery:** Finds Cognee, Mem0, LightRAG, OpenClaw, Graphiti automatically
+- **Smart routing:** Keyword classification routes queries to internal or federated providers
+- **Circuit breaker:** Providers auto-disable after consecutive errors; re-enable manually
+- **Plugin system:** Third-party adapters via `entry_points(group="engram.providers")`
+
 ### Extensibility
 - **Pluggable semantic backend:** SQLite (default) or PostgreSQL
 - **Schema templates:** Built-in schemas (devops, marketing, personal) or custom
-- **Webhooks:** Fire-and-forget on memory operations
+- **Webhooks:** Fire-and-forget on memory operations (SSRF-protected)
 - **Async:** Full async/await support for scale
 
 ---
@@ -155,6 +163,26 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **FR10.4** Per-tenant backup support
 - **Acceptance:** Backup/restore roundtrip preserves data integrity
 
+#### FR11: Federation (v0.2)
+- **FR11.1** Connect to external memory services via REST, File, Postgres, or MCP adapters
+- **FR11.2** Auto-discover services: Cognee, Mem0, LightRAG, OpenClaw, Graphiti
+- **FR11.3** Keyword-based routing — internal queries skip external providers (fast path)
+- **FR11.4** Parallel fan-out with per-provider timeout (3s default)
+- **FR11.5** Circuit breaker: auto-disable provider after N consecutive errors
+- **FR11.6** Third-party providers via Python entry_points plugin system
+- **FR11.7** /think endpoint merges federated results with internal context
+- **FR11.8** GET /providers endpoint returns active provider list + stats (auth required)
+- **Acceptance:** Providers registered in config are queried on domain queries; circuit breaker stops failing providers; `engram discover` adds services to config
+
+#### FR12: Security Hardening (v0.2)
+- **FR12.1** SSRF prevention in webhooks and auto-discovery
+- **FR12.2** SQL injection prevention in PostgresAdapter (parameterised queries)
+- **FR12.3** Rate limit identity based on JWT claims (not X-Forwarded-For)
+- **FR12.4** Timing-safe comparison for API key verification
+- **FR12.5** RBAC path normalization to prevent bypass
+- **FR12.6** JWT secret minimum length validation at startup
+- **Acceptance:** All six controls verified via unit tests
+
 ---
 
 ### Non-Functional Requirements
@@ -170,7 +198,7 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **Multi-tenant:** Support 1000+ tenants with LRU eviction
 - **Memory limit:** Graph cache max 100 instances (configurable)
 - **Connection pooling:** asyncpg min 5, max 20 per process
-- **Test coverage:** 75%+ code coverage; 270+ tests
+- **Test coverage:** 75%+ code coverage; 345 tests
 
 #### NFR3: Reliability
 - **Availability:** 99.9% uptime target (health checks every 30s)
@@ -183,7 +211,10 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **Content limit:** 10KB default max per memory
 - **Audit:** Compliance logging available
 - **Secrets:** API keys stored as hashes only
-- **RBAC:** Three-tier role enforcement
+- **RBAC:** Three-tier role enforcement with path normalization
+- **SSRF:** Private/loopback IPs blocked in webhooks + discovery
+- **Timing:** `hmac.compare_digest` for constant-time key verification
+- **JWT secret:** Minimum length enforced at startup
 
 #### NFR5: Usability
 - **Documentation:** README + 6 doc files covering setup, API, deployment
@@ -202,14 +233,17 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 ## Success Criteria
 
 ### For v0.2.0 (Completed)
-- ✓ 10 phases delivered independently
-- ✓ 270 tests passing
+- ✓ 13 phases delivered (10 enterprise + federation + security + bug fixes)
+- ✓ 345 tests passing
 - ✓ PostgreSQL backend option working
 - ✓ Multi-tenant support production-ready
 - ✓ Auth optional but enforced correctly
 - ✓ Docker image building
-- ✓ All 21 bug fixes resolved
+- ✓ All 32 bug fixes resolved
 - ✓ CI/CD passing on every commit
+- ✓ Federation layer (REST/File/Postgres/MCP adapters)
+- ✓ Auto-discovery for 5 known services
+- ✓ Security hardening (SSRF, SQL injection, timing, RBAC, JWT)
 
 ### For Future Releases
 - Distributed semantic graph (cluster mode)
@@ -241,6 +275,10 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 | llm.model | gemini/gemini-2.0-flash | str | Model name |
 | audit.enabled | false | bool | Enable audit logging |
 | telemetry.enabled | false | bool | Enable OpenTelemetry |
+| providers | [] | list | Federation provider entries (name, type, url/path, enabled) |
+| discovery.local | true | bool | Scan localhost ports for known services |
+| discovery.hosts | [] | list | Additional remote hosts to scan |
+| discovery.endpoints | [] | list | Direct endpoint URLs to probe |
 
 ---
 
@@ -298,32 +336,34 @@ engram serve
 
 ## Roadmap & Future Work
 
-- Phase 11: Graph replication (multi-node semantic backend)
-- Phase 12: Advanced querying (Cypher-like DSL)
-- Phase 13: Observability dashboard
-- Phase 14: Plugin system for custom extractors
-- Phase 15: Marketplace for pre-built schemas
+- v0.3: Advanced query DSL (Cypher-like), GraphQL endpoint, streaming responses
+- v0.4: Multi-node clustering, distributed semantic graph, Raft consensus
+- v0.5: Observability dashboard UI, custom embedding models
+- v1.0: Production release, marketplace, enterprise SLA
 
 ---
 
 ## Change Log
 
+**v0.2.0** (2026-02-25) — Enterprise + Federation + Security
+- Federation layer: REST/File/Postgres/MCP provider adapters
+- Auto-discovery for Cognee, Mem0, LightRAG, OpenClaw, Graphiti
+- Smart query router (keyword-based, internal vs. domain)
+- Circuit breaker per provider; entry_points plugin system
+- CLI: `engram discover`, `engram providers list/test/stats/add`
+- Security hardening: SSRF, SQL injection, timing attacks, RBAC, JWT secret validation
+- 11 bug fixes: federated think, UTC datetime, graph O(V), node cache, McpAdapter cleanup
+- 345 tests (up from 270)
+
 **v0.2.0** (2026-02-24) — Enterprise Upgrade Complete
-- Config + Logging foundation
-- PostgreSQL semantic graph backend
-- JWT + API key auth with RBAC
-- Multi-tenancy support
-- Redis caching + rate limiting
-- API versioning (/api/v1/)
-- OpenTelemetry + JSONL audit
-- Docker + GitHub Actions
-- Health checks + backup/restore
-- Test expansion (270 tests)
+- Config + Logging foundation, PostgreSQL semantic graph backend
+- JWT + API key auth with RBAC, multi-tenancy support
+- Redis caching + rate limiting, API versioning (/api/v1/)
+- OpenTelemetry + JSONL audit, Docker + GitHub Actions
+- Health checks + backup/restore, test expansion (270 tests)
 - 21 bug fixes (3 critical, 7 high, 11 medium)
 
 **v0.1.0** (2025-XX-XX) — Initial Release
-- Dual-memory architecture
-- CLI, MCP, HTTP API
-- ChromaDB + SQLite graph
-- Gemini LLM integration
+- Dual-memory architecture, CLI, MCP, HTTP API
+- ChromaDB + SQLite graph, Gemini LLM integration
 

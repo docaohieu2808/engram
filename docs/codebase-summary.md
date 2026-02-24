@@ -1,9 +1,9 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.2.0 is a dual-memory AI agent system combining episodic (vector) and semantic (graph) memory with LLM reasoning. ~2000 LoC, 270 tests, Python 3.11+.
+Engram v0.2.0 is a dual-memory AI agent system combining episodic (vector) and semantic (graph) memory with LLM reasoning, extended by a federation layer for connecting external memory sources. ~2500 LoC, 345 tests, Python 3.11+.
 
-**Total:** 85,707 tokens across 84 files. Top files: `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration).
+**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `providers/` (federation layer).
 
 ---
 
@@ -132,6 +132,56 @@ Graph query DSL and utilities.
 
 ---
 
+### `src/engram/providers/` — Federation layer (v0.2)
+
+#### `base.py` (120 LOC)
+Abstract base class and data models for all external memory providers.
+- **ProviderResult:** `{content, score, source, metadata}`
+- **ProviderStats:** per-provider `{query_count, hit_count, error_count, consecutive_errors, total_latency_ms}`
+- **MemoryProvider:** ABC with `search()`, `health()`, `add()`, `tracked_search()`, circuit breaker (auto-disable after `max_consecutive_errors`)
+
+#### `registry.py` (155 LOC)
+Loads and manages all provider instances.
+- **ProviderRegistry:** `load_from_config()`, `register()`, `get_active()`, `close_all()`
+- Third-party adapters via `entry_points(group="engram.providers")`
+- Lazy import of built-in adapters
+
+#### `router.py` (115 LOC)
+Keyword-based query classification and fan-out.
+- **classify_query():** returns `"internal"` (skip providers) or `"domain"` (fan-out)
+- **federated_search():** parallel async queries with `asyncio.gather`, per-provider timeout (3s default), dedup + score sort
+- Supports English + Vietnamese keywords
+
+#### `discovery.py` (270 LOC)
+Auto-discover external memory services.
+- **discover():** Four tiers — port scan, remote hosts, direct endpoints, MCP config files
+- **Known services:** Cognee (8000), Mem0 (8080), LightRAG (9520), OpenClaw (file), Graphiti (8000)
+- **SSRF protection:** `_is_safe_discovery_host()` blocks private/loopback IPs on remote hosts
+- **MCP config scan:** Parses `~/.claude/settings.json`, `~/.cursor/settings.json` for memory-related MCP servers
+
+#### `rest_adapter.py` (130 LOC)
+HTTP REST adapter for Cognee, Mem0, LightRAG, Graphiti.
+- Configurable `search_endpoint`, `search_method`, `search_body` template, `result_path`
+- `result_path` supports dot-bracket notation (e.g. `data[].text`)
+- SSRF protection on webhook URLs
+
+#### `file_adapter.py`
+Reads local markdown/text files matching a glob pattern.
+- Used for OpenClaw workspace memory (`~/.openclaw/workspace/memory/*.md`)
+- Returns file content as ProviderResult with filename as source
+
+#### `postgres_adapter.py`
+Queries an external PostgreSQL table with parameterised SQL.
+- `search_query` must use `$1` placeholder for query text
+- SQL injection safe by design
+
+#### `mcp_adapter.py`
+Spawns an MCP server subprocess and calls a tool via stdio.
+- Safe cleanup on partial init failure (prevents resource leaks)
+- `tool_name` defaults to `search_memory`
+
+---
+
 ### `src/engram/reasoning/` — LLM synthesis
 
 #### `engine.py` (200 LOC)
@@ -212,6 +262,13 @@ File system watcher for inbox auto-ingest.
 #### `migrate_cmd.py` (80 LOC)
 - `engram migrate <export.json>` — Import from old agent-memory exports
 
+#### `providers_cmd.py` (215 LOC)
+- `engram discover [--add-host <host>]` — Scan for memory services + prompt to add to config
+- `engram providers list` — Show all configured providers with status
+- `engram providers test <name>` — Health check + sample search for a provider
+- `engram providers stats` — Query/hit/error counts per provider
+- `engram providers add --name <n> --url <u> [--type <t>]` — Add provider by URL or path
+
 #### `system.py` (100 LOC)
 - `engram status` — Memory counts + graph stats
 - `engram dump` — Export JSON
@@ -277,16 +334,17 @@ Load and validate schemas; enforce type constraints on graph operations.
 | Metric | Value |
 |--------|-------|
 | Python version | 3.11+ |
-| Total LOC | ~2000 |
-| Test count | 270+ |
-| Modules | 15+ |
-| Endpoints | 12 (HTTP) |
-| CLI commands | 20+ |
+| Total LOC | ~2500 |
+| Test count | 345 |
+| Modules | 20+ |
+| Endpoints | 13 (HTTP) |
+| CLI commands | 25+ |
 | MCP tools | 8 |
-| Config fields | 40+ |
+| Config fields | 50+ |
 | Supported roles | 3 (ADMIN, AGENT, READER) |
 | Max tenants cached | 100 (graphs), 1000 (episodic) |
-| Token count | 85,707 |
+| Provider adapter types | 4 (rest, file, postgres, mcp) |
+| Known auto-discoverable services | 5 (Cognee, Mem0, LightRAG, OpenClaw, Graphiti) |
 
 ---
 
@@ -312,20 +370,23 @@ Load and validate schemas; enforce type constraints on graph operations.
 
 ---
 
-## Enterprise Features (v0.2.0)
+## Features (v0.2.0)
 
-**Completed in 10-phase upgrade:**
+**13-phase delivery:**
 
-1. **Configuration Foundation** — YAML + env vars, structured logging
-2. **PostgreSQL Backend** — Pluggable semantic graph (SQLite default)
-3. **Authentication** — JWT + API keys, RBAC (disabled by default)
-4. **Multi-Tenancy** — Per-tenant stores, contextvar isolation
-5. **Caching & Rate Limiting** — Redis optional, sliding-window limits
-6. **API Versioning** — /api/v1/ with backward-compat redirects
-7. **Observability** — OpenTelemetry + JSONL audit logging
-8. **Docker & CI/CD** — GitHub Actions, automated testing + release
-9. **Health Checks** — Liveness + readiness probes, backup/restore
-10. **Test Expansion** — 270 tests, 75%+ coverage target
+1. Configuration Foundation — YAML + env vars, structured logging
+2. PostgreSQL Backend — Pluggable semantic graph (SQLite default)
+3. Authentication — JWT + API keys, RBAC (disabled by default)
+4. Multi-Tenancy — Per-tenant stores, contextvar isolation
+5. Caching & Rate Limiting — Redis optional, sliding-window limits
+6. API Versioning — /api/v1/ with backward-compat redirects
+7. Observability — OpenTelemetry + JSONL audit logging
+8. Docker & CI/CD — GitHub Actions, automated testing + release
+9. Health Checks — Liveness + readiness probes, backup/restore
+10. Test Expansion — 270 → 345 tests
+11. **Federation System** — REST/File/Postgres/MCP adapters, auto-discovery, circuit breaker
+12. **Security Hardening** — SSRF, SQL injection, timing attack, RBAC normalization, JWT validation
+13. **Bug Fixes (11)** — federated think, UTC datetime, McpAdapter cleanup, graph O(V), node cache
 
-**Bug fixes:** 21 total (3 critical, 7 high, 11 medium/low) — reasoning accuracy, Vietnamese diacritics, recall consistency.
+**Bug fixes:** 32 total. Active: 31 episodic memories, OpenClaw file provider connected.
 
