@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 class EpisodicConfig(BaseModel):
     provider: str = "chromadb"
     path: str = "~/.engram/episodic"
+    namespace: str = "default"
 
 
 class EmbeddingConfig(BaseModel):
@@ -49,6 +50,12 @@ class ServeConfig(BaseModel):
     host: str = "127.0.0.1"
 
 
+class HooksConfig(BaseModel):
+    """Webhook URLs fired after memory operations (fire-and-forget)."""
+    on_remember: str | None = None  # POST {id, content, memory_type} after remember()
+    on_think: str | None = None     # POST {question, answer} after think()
+
+
 class Config(BaseModel):
     episodic: EpisodicConfig = Field(default_factory=EpisodicConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -56,6 +63,7 @@ class Config(BaseModel):
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     serve: ServeConfig = Field(default_factory=ServeConfig)
+    hooks: HooksConfig = Field(default_factory=HooksConfig)
 
 
 # --- Helpers ---

@@ -64,14 +64,16 @@ engram watch --daemon
 ### Episodic Memory
 
 ```bash
-engram remember <content> [--type fact|decision|preference|todo|error|context|workflow] [--priority 1-10]
-engram recall <query> [--limit 5] [--type <type>]
+engram remember <content> [--type fact|decision|preference|todo|error|context|workflow] [--priority 1-10] [--tags tag1,tag2] [--expires 2h|1d|7d]
+engram recall <query> [--limit 5] [--type <type>] [--tags tag1,tag2] [--namespace <ns>]
 ```
 
 Examples:
 ```bash
 engram remember "Switched to Redis for session storage" --type decision --priority 7
+engram remember "Fix auth bug by Monday" --type todo --tags urgent,auth --expires 3d
 engram recall "database" --limit 10 --type error
+engram recall "auth issues" --tags urgent --namespace work
 ```
 
 ### Semantic Graph
@@ -96,11 +98,20 @@ engram query --type Service --format json
 
 ```bash
 engram think <question>
+engram summarize [--count 20] [--save]
 ```
 
-Example:
+Examples:
 ```bash
 engram think "Which services depend on PostgreSQL and have had recent errors?"
+engram summarize --count 30 --save
+```
+
+### Maintenance
+
+```bash
+engram cleanup                          # Delete all expired memories
+engram summarize [--count 20] [--save]  # Summarize recent N memories via LLM
 ```
 
 ### Ingest
@@ -130,6 +141,7 @@ Examples:
 ```bash
 engram config get llm.model
 engram config set llm.model gemini/gemini-2.0-flash
+engram config set hooks.on_remember http://localhost:9000/webhook
 ```
 
 ### System
@@ -149,32 +161,66 @@ Config file: `~/.engram/config.yaml`
 episodic:
   provider: chromadb
   path: ~/.engram/episodic
+  namespace: default               # Collection namespace (isolates memory sets)
 
 embedding:
   provider: gemini
-  model: gemini-embedding-001          # 3072 dimensions
+  model: gemini-embedding-001      # 3072 dimensions
 
 semantic:
   provider: sqlite
   path: ~/.engram/semantic.db
-  schema: devops                       # Built-in schema template
+  schema: devops                   # Built-in schema template
 
 llm:
   provider: gemini
   model: gemini/gemini-2.0-flash
-  api_key: ${GEMINI_API_KEY}           # Expanded from environment
+  api_key: ${GEMINI_API_KEY}       # Expanded from environment
 
 capture:
   enabled: true
   inbox: ~/.engram/inbox/
-  poll_interval: 5                     # seconds
+  poll_interval: 5                 # seconds
 
 serve:
   host: 127.0.0.1
   port: 8765
+
+hooks:
+  on_remember: null                # POST {id, content, memory_type} after each remember()
+  on_think: null                   # POST {question, answer} after each think()
 ```
 
 Environment variables in `${VAR}` format are expanded at load time. No API key required for basic storage; reasoning and Gemini embeddings require `GEMINI_API_KEY`.
+
+### Webhooks
+
+Set `hooks.on_remember` or `hooks.on_think` to any HTTP URL. Engram will fire a POST request (JSON body) after each operation — fire-and-forget, never blocks the main operation.
+
+```yaml
+hooks:
+  on_remember: http://localhost:9000/on-memory
+  on_think: http://localhost:9000/on-think
+```
+
+Payloads:
+- `on_remember`: `{"id": "...", "content": "...", "memory_type": "fact"}`
+- `on_think`: `{"question": "...", "answer": "..."}`
+
+### Namespaces
+
+Use namespaces to isolate memory collections (e.g. per project, per user):
+
+```bash
+engram remember "prod DB is PostgreSQL 15" --namespace work
+engram recall "database" --namespace work
+```
+
+Or set the default namespace in config:
+```yaml
+episodic:
+  namespace: myproject
+```
 
 ## MCP Setup
 
@@ -197,9 +243,11 @@ Available MCP tools:
 
 | Tool | Description |
 |------|-------------|
-| `engram_remember` | Store memory with type and priority |
-| `engram_recall` | Search episodic memories by similarity |
+| `engram_remember` | Store memory with type, priority, tags, and optional namespace |
+| `engram_recall` | Search episodic memories by similarity with optional tag/type/namespace filters |
 | `engram_think` | Reason across episodic + semantic memory via LLM |
+| `engram_summarize` | Summarize recent N memories into key insights via LLM |
+| `engram_cleanup` | Delete all expired memories from the episodic store |
 | `engram_status` | Show memory statistics |
 | `engram_add_entity` | Add entity node to knowledge graph |
 | `engram_add_relation` | Add relationship edge between entities |
@@ -212,13 +260,17 @@ Start server: `engram serve`  Default: `http://127.0.0.1:8765`
 
 | Method | Endpoint | Body / Params | Description |
 |--------|----------|---------------|-------------|
-| `POST` | `/remember` | `{content, memory_type, priority, entities}` | Store episodic memory |
+| `POST` | `/remember` | `{content, memory_type, priority, entities, tags}` | Store episodic memory |
 | `POST` | `/think` | `{question}` | LLM reasoning over all memory |
-| `GET` | `/recall` | `?query=&limit=5` | Search episodic memories |
-| `GET` | `/query` | `?keyword=&type=` | Query semantic graph |
+| `GET` | `/recall` | `?query=&limit=5&offset=0&memory_type=&tags=` | Search episodic memories |
+| `GET` | `/query` | `?keyword=&node_type=&related_to=&offset=0&limit=50` | Query semantic graph |
 | `POST` | `/ingest` | `{messages: [...]}` | Dual ingest from message array |
+| `POST` | `/cleanup` | — | Delete expired memories, returns `{deleted: N}` |
+| `POST` | `/summarize` | `{count: 20, save: false}` | Summarize recent memories via LLM |
 | `GET` | `/status` | — | Memory statistics |
 | `GET` | `/health` | — | Liveness check |
+
+Pagination on `/recall` and `/query`: use `offset` and `limit` query params. Response includes `total`, `offset`, `limit` fields.
 
 ## Embeddings
 

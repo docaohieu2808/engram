@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import uvicorn
 from fastapi import FastAPI
@@ -25,9 +25,10 @@ class IngestRequest(BaseModel):
 
 class RememberRequest(BaseModel):
     content: str
-    memory_type: str = "fact"
+    memory_type: MemoryType = MemoryType.FACT
     priority: int = 5
     entities: list[str] = []
+    tags: list[str] = []
 
 
 class ThinkRequest(BaseModel):
@@ -36,7 +37,12 @@ class ThinkRequest(BaseModel):
 
 class QueryRequest(BaseModel):
     keyword: str
-    type: str | None = None
+    node_type: Optional[str] = None  # renamed from `type` to avoid builtin shadow
+
+
+class SummarizeRequest(BaseModel):
+    count: int = 20
+    save: bool = False
 
 
 # --- App Factory ---
@@ -67,10 +73,9 @@ def create_app(
 
     @app.post("/remember")
     async def remember(req: RememberRequest):
-        mem_type = MemoryType(req.memory_type)
         mem_id = await episodic.remember(
-            req.content, memory_type=mem_type, priority=req.priority,
-            entities=req.entities,
+            req.content, memory_type=req.memory_type, priority=req.priority,
+            entities=req.entities, tags=req.tags,
         )
         return {"status": "ok", "id": mem_id}
 
@@ -80,14 +85,64 @@ def create_app(
         return {"status": "ok", "answer": answer}
 
     @app.get("/recall")
-    async def recall(query: str, limit: int = 5):
-        results = await episodic.search(query, limit=limit)
-        return {"status": "ok", "results": [r.model_dump() for r in results]}
+    async def recall(
+        query: str,
+        limit: int = 5,
+        offset: int = 0,
+        memory_type: Optional[str] = None,
+        tags: Optional[str] = None,  # comma-separated tag list
+    ):
+        """Search episodic memories with optional filters and pagination."""
+        filters = {"memory_type": memory_type} if memory_type else None
+        tag_list = [t.strip() for t in tags.split(",")] if tags else None
+        results = await episodic.search(query, limit=limit + offset, filters=filters, tags=tag_list)
+        paginated = results[offset:offset + limit]
+        return {
+            "status": "ok",
+            "results": [r.model_dump() for r in paginated],
+            "total": len(results),
+            "offset": offset,
+            "limit": limit,
+        }
 
     @app.get("/query")
-    async def query(keyword: str, type: str | None = None):
-        results = await graph.query(keyword, type=type)
-        return {"status": "ok", "results": [n.model_dump() for n in results]}
+    async def query(
+        keyword: str,
+        node_type: Optional[str] = None,
+        related_to: Optional[str] = None,
+        offset: int = 0,
+        limit: int = 50,
+    ):
+        """Query semantic graph by keyword, type, or relatedness."""
+        if related_to:
+            related = await graph.get_related([related_to], depth=2)
+            nodes = []
+            for data in related.values():
+                if isinstance(data, dict):
+                    nodes.extend(data.get("nodes", []))
+        else:
+            nodes = await graph.query(keyword, type=node_type)
+
+        paginated = nodes[offset:offset + limit]
+        return {
+            "status": "ok",
+            "results": [n.model_dump() for n in paginated],
+            "total": len(nodes),
+            "offset": offset,
+            "limit": limit,
+        }
+
+    @app.post("/cleanup")
+    async def cleanup():
+        """Delete all expired memories from episodic store."""
+        deleted = await episodic.cleanup_expired()
+        return {"status": "ok", "deleted": deleted}
+
+    @app.post("/summarize")
+    async def summarize(req: SummarizeRequest):
+        """Summarize recent N memories into key insights using LLM."""
+        summary = await engine.summarize(n=req.count, save=req.save)
+        return {"status": "ok", "summary": summary}
 
     @app.get("/status")
     async def status():

@@ -2,16 +2,34 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-import unicodedata
+import logging
 from typing import Any
 
 import litellm
-litellm.suppress_debug_info = True
 
 from engram.episodic.store import EpisodicStore
+from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, SemanticEdge, SemanticNode
 from engram.semantic.graph import SemanticGraph
+from engram.utils import strip_diacritics
+
+litellm.suppress_debug_info = True
+logger = logging.getLogger("engram")
+
+SUMMARIZE_PROMPT = """You are a memory assistant. Summarize the following memories into key insights.
+Be concise. Group related items. Highlight patterns, decisions, and important facts.
+
+## Memories
+{memories}
+
+## Instructions
+- Extract the most important insights
+- Group related memories together
+- Keep the summary under 200 words
+- Use bullet points
+"""
 
 REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retrieved memories below, answer the user's question.
 
@@ -41,10 +59,60 @@ class ReasoningEngine:
         episodic: EpisodicStore,
         graph: SemanticGraph,
         model: str,
+        on_think_hook: str | None = None,
     ):
         self._episodic = episodic
         self._graph = graph
         self._model = model
+        self._on_think_hook = on_think_hook
+        # Cache of graph node names to avoid full scan on every think() call
+        self._node_names_cache: list[str] | None = None
+
+    def invalidate_cache(self) -> None:
+        """Invalidate entity hints cache (call when graph mutates)."""
+        self._node_names_cache = None
+
+    async def summarize(self, n: int = 20, save: bool = False) -> str:
+        """Summarize recent N memories into key insights using LLM.
+
+        Args:
+            n: Number of recent memories to include.
+            save: If True, store the summary as a new memory with type=context.
+        """
+        from engram.models import MemoryType
+
+        memories = await self._episodic.get_recent(n)
+        if not memories:
+            return "No memories to summarize."
+
+        memory_lines = []
+        for mem in memories:
+            ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
+            memory_lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}")
+        memories_text = "\n".join(memory_lines)
+
+        prompt = SUMMARIZE_PROMPT.format(memories=memories_text)
+
+        try:
+            response = await litellm.acompletion(
+                model=self._model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+            )
+            summary = response.choices[0].message.content
+        except Exception as e:
+            logger.error("Summarize LLM call failed: %s", e)
+            return f"Summarization failed: {e}"
+
+        if save and summary:
+            await self._episodic.remember(
+                summary,
+                memory_type=MemoryType.CONTEXT,
+                priority=6,
+                tags=["summary"],
+            )
+
+        return summary
 
     async def think(self, question: str) -> str:
         """Answer a question by combining episodic and semantic memory."""
@@ -63,26 +131,32 @@ class ReasoningEngine:
 
         # 4. If we have results, use LLM to synthesize
         if episodic_results or semantic_results:
-            return await self._synthesize(question, episodic_results, semantic_results)
+            answer = await self._synthesize(question, episodic_results, semantic_results)
+        else:
+            answer = "No relevant memories found for this question."
 
-        return "No relevant memories found for this question."
+        fire_hook(self._on_think_hook, {"question": question, "answer": answer})
+        return answer
 
     async def _extract_entity_hints(self, question: str) -> list[str]:
         """Match words in question against known graph node names.
 
         Supports Vietnamese diacritics: 'tram' matches 'Trâm'.
+        Uses cached node names to avoid full graph scan on every call.
         """
-        all_nodes = await self._graph.get_nodes()
-        node_names = {n.name.lower(): n.name for n in all_nodes}
+        if self._node_names_cache is None:
+            all_nodes = await self._graph.get_nodes()
+            self._node_names_cache = [n.name for n in all_nodes]
+        node_names = {n.lower(): n for n in self._node_names_cache}
 
         q_lower = question.lower()
-        q_stripped = self._strip(q_lower)
+        q_stripped = strip_diacritics(q_lower)
         words = q_lower.split()
-        words_stripped = [self._strip(w) for w in words]
+        words_stripped = [strip_diacritics(w) for w in words]
         found: list[str] = []
 
         for name_lower, name in node_names.items():
-            name_stripped = self._strip(name_lower)
+            name_stripped = strip_diacritics(name_lower)
             # Check if entity name appears in question (exact or stripped diacritics)
             if name_lower in q_lower or name_stripped in q_stripped:
                 found.append(name)
@@ -94,12 +168,6 @@ class ReasoningEngine:
                     break
 
         return found
-
-    @staticmethod
-    def _strip(text: str) -> str:
-        """Remove diacritics for fuzzy matching."""
-        nfkd = unicodedata.normalize("NFKD", text)
-        return "".join(c for c in nfkd if not unicodedata.combining(c))
 
     async def _synthesize(
         self,
@@ -138,13 +206,25 @@ class ReasoningEngine:
             question=question,
         )
 
-        try:
-            response = await litellm.acompletion(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            # Fallback: return raw results without LLM synthesis
-            return f"Memory results (LLM synthesis failed: {e}):\n\n{episodic_ctx}\n\n{semantic_ctx}"
+        last_exc: Exception | None = None
+        for attempt in range(3):  # 1 initial + 2 retries
+            try:
+                response = await litellm.acompletion(
+                    model=self._model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                last_exc = e
+                err_str = str(e).lower()
+                is_transient = any(k in err_str for k in ("connection", "rate", "timeout", "503", "429"))
+                if is_transient and attempt < 2:
+                    logger.warning("Synthesis transient error (attempt %d): %s", attempt + 1, e)
+                    await asyncio.sleep(1)
+                    continue
+                break
+
+        # Fallback: return raw results without LLM synthesis
+        logger.error("LLM synthesis failed: %s", last_exc)
+        return f"Memory results (LLM synthesis failed: {last_exc}):\n\n{episodic_ctx}\n\n{semantic_ctx}"

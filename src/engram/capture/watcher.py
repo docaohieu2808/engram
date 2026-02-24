@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import atexit
 import asyncio
 import json
+import logging
 import os
 import signal
 import shutil
@@ -12,7 +14,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
+logger = logging.getLogger("engram")
+
 PID_FILE = Path.home() / ".engram" / "watcher.pid"
+_MAX_RETRIES = 3
+
+# Graceful shutdown flag set by SIGTERM handler
+_shutdown = False
+
+
+def _handle_sigterm(signum: int, frame: Any) -> None:
+    """Set shutdown flag on SIGTERM — watcher will exit after current file."""
+    global _shutdown
+    _shutdown = True
 
 
 class InboxWatcher:
@@ -28,19 +42,28 @@ class InboxWatcher:
         self._inbox.mkdir(parents=True, exist_ok=True)
         self._processed_dir = Path.home() / ".engram" / "processed"
         self._processed_dir.mkdir(parents=True, exist_ok=True)
+        self._failed_dir = Path.home() / ".engram" / "failed"
+        self._failed_dir.mkdir(parents=True, exist_ok=True)
         self._ingest_fn = ingest_fn
         self._poll_interval = poll_interval
         self._running = False
+        self._retry_counts: dict[str, int] = {}
 
     async def start(self) -> None:
         """Start polling loop. Recovers orphaned .processing files first."""
+        global _shutdown
+        _shutdown = False
+        signal.signal(signal.SIGTERM, _handle_sigterm)
         self._running = True
         self._recover_orphaned_files()
-        print(f"[engram] Watching {self._inbox} (poll={self._poll_interval}s)")
+        logger.info("Watching %s (poll=%ss)", self._inbox, self._poll_interval)
 
-        while self._running:
-            await self._process_inbox()
-            await asyncio.sleep(self._poll_interval)
+        try:
+            while self._running and not _shutdown:
+                await self._process_inbox()
+                await asyncio.sleep(self._poll_interval)
+        finally:
+            _cleanup_pid()
 
     def stop(self) -> None:
         """Stop the watcher."""
@@ -52,14 +75,13 @@ class InboxWatcher:
             try:
                 age = datetime.now().timestamp() - pf.stat().st_mtime
                 if age > 3600:  # 1 hour
-                    # Restore original extension from stem (e.g. chat.jsonl.processing → chat.jsonl)
                     original = pf.with_suffix("")
                     if not original.suffix:
                         original = pf.with_suffix(".json")
                     pf.rename(original)
-                    print(f"[engram] Recovered orphaned {pf.name} → {original.name}")
+                    logger.info("Recovered orphaned %s -> %s", pf.name, original.name)
             except Exception as e:
-                print(f"[engram] Failed to recover {pf.name}: {e}")
+                logger.warning("Failed to recover %s: %s", pf.name, e)
 
     async def _process_inbox(self) -> None:
         """Process all JSON and JSONL files in inbox."""
@@ -72,31 +94,47 @@ class InboxWatcher:
     async def _process_file(self, path: Path) -> None:
         """Atomically claim and process a single file."""
         is_jsonl = path.suffix == ".jsonl"
-        # Atomic claim - rename to .processing
         processing = path.with_suffix(".processing")
         try:
             path.rename(processing)
         except FileNotFoundError:
             return  # Another process claimed it
 
+        file_key = path.name
         try:
             messages = self._load_chat_file(processing, is_jsonl=is_jsonl)
             if messages:
                 await self._ingest_fn(messages)
-                print(f"[engram] Ingested {path.name} ({len(messages)} messages)")
+                logger.info("Ingested %s (%d messages)", path.name, len(messages))
 
-            # Move to processed with timestamp prefix
             ts = datetime.now().strftime("%Y%m%d-%H%M%S")
             dest = self._processed_dir / f"{ts}_{path.name}"
             shutil.move(str(processing), str(dest))
+            # Reset retry count on success
+            self._retry_counts.pop(file_key, None)
 
         except Exception as e:
-            print(f"[engram] Error processing {path.name}: {e}")
-            # Move back to inbox for retry
-            try:
-                processing.rename(path)
-            except Exception:
-                pass
+            logger.error("Error processing %s: %s", path.name, e)
+            retries = self._retry_counts.get(file_key, 0) + 1
+            self._retry_counts[file_key] = retries
+
+            if retries >= _MAX_RETRIES:
+                # Move to failed directory after max retries exhausted
+                logger.warning(
+                    "%s failed %d times, moving to failed/", path.name, retries
+                )
+                try:
+                    dest = self._failed_dir / path.name
+                    shutil.move(str(processing), str(dest))
+                except Exception:
+                    pass
+                self._retry_counts.pop(file_key, None)
+            else:
+                # Restore to inbox for retry
+                try:
+                    processing.rename(path)
+                except Exception:
+                    pass
 
     @staticmethod
     def _load_chat_file(path: Path, is_jsonl: bool | None = None) -> list[dict[str, Any]]:
@@ -131,6 +169,17 @@ class InboxWatcher:
         return []
 
 
+def _cleanup_pid() -> None:
+    """Remove PID file if it belongs to current process."""
+    try:
+        if PID_FILE.exists():
+            pid = int(PID_FILE.read_text().strip())
+            if pid == os.getpid():
+                PID_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def daemonize() -> None:
     """Fork to background daemon process."""
     pid = os.fork()
@@ -138,15 +187,19 @@ def daemonize() -> None:
         # Parent - write PID and exit
         PID_FILE.parent.mkdir(parents=True, exist_ok=True)
         PID_FILE.write_text(str(pid))
-        print(f"[engram] Watcher daemon started (PID={pid})")
+        logger.info("Watcher daemon started (PID=%d)", pid)
         sys.exit(0)
 
-    # Child - redirect stdout/stderr to log
+    # Child - redirect stdout/stderr to log, close inherited fds
     os.setsid()
     log_path = Path.home() / ".engram" / "watcher.log"
     log = open(log_path, "a")
     os.dup2(log.fileno(), sys.stdout.fileno())
     os.dup2(log.fileno(), sys.stderr.fileno())
+    log.close()
+
+    # Register PID cleanup for child process
+    atexit.register(_cleanup_pid)
 
 
 def is_daemon_running() -> bool:

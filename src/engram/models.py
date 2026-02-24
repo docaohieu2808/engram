@@ -46,6 +46,7 @@ class EpisodicMemory(BaseModel):
     priority: int = Priority.NORMAL
     metadata: dict[str, Any] = Field(default_factory=dict)
     entities: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=datetime.now)
     expires_at: datetime | None = None
 

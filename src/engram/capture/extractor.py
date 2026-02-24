@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
 from typing import Any
 
 import litellm
-litellm.suppress_debug_info = True
 
 from engram.models import ExtractionResult, SchemaDefinition, SemanticEdge, SemanticNode
 from engram.schema.loader import schema_to_prompt
+
+litellm.suppress_debug_info = True
+logger = logging.getLogger("engram")
 
 # Extraction prompt template
 EXTRACTION_PROMPT = """You are an entity extraction system. Extract entities and relationships from the conversation below.
@@ -63,25 +67,35 @@ class EntityExtractor:
         return await self.extract_entities(messages)
 
     async def _extract_chunk(self, messages: list[dict]) -> ExtractionResult:
-        """Run LLM extraction on a chunk of messages."""
+        """Run LLM extraction on a chunk of messages, with up to 2 retries on transient errors."""
         formatted = "\n".join(
             f"[{m.get('role', 'user')}]: {m.get('content', '')}" for m in messages
         )
         prompt = EXTRACTION_PROMPT.format(schema=self._schema_prompt, messages=formatted)
 
-        try:
-            response = await litellm.acompletion(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                response_format={"type": "json_object"},
-            )
-            content = response.choices[0].message.content
-            return self._parse_response(content)
-        except Exception as e:
-            # Log but don't crash - return empty result
-            print(f"[engram] Extraction error: {e}")
-            return ExtractionResult()
+        last_exc: Exception | None = None
+        for attempt in range(3):  # 1 initial + 2 retries
+            try:
+                response = await litellm.acompletion(
+                    model=self._model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    response_format={"type": "json_object"},
+                )
+                content = response.choices[0].message.content
+                return self._parse_response(content)
+            except Exception as e:
+                last_exc = e
+                err_str = str(e).lower()
+                is_transient = any(k in err_str for k in ("connection", "rate", "timeout", "503", "429"))
+                if is_transient and attempt < 2:
+                    logger.warning("Extraction transient error (attempt %d): %s", attempt + 1, e)
+                    await asyncio.sleep(1)
+                    continue
+                break
+
+        logger.error("Extraction error: %s", last_exc)
+        return ExtractionResult()
 
     def _parse_response(self, content: str) -> ExtractionResult:
         """Parse LLM JSON response into ExtractionResult."""
