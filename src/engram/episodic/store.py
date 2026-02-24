@@ -14,6 +14,7 @@ from typing import Any
 
 import litellm
 
+from engram.audit import AuditLogger
 from engram.config import EmbeddingConfig, EpisodicConfig
 from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, MemoryType
@@ -112,6 +113,7 @@ class EpisodicStore:
         embedding_config: EmbeddingConfig,
         namespace: str | None = None,
         on_remember_hook: str | None = None,
+        audit: AuditLogger | None = None,
     ):
         import chromadb
         from pathlib import Path
@@ -129,6 +131,7 @@ class EpisodicStore:
         self._collection = None
         self._embedding_dim: int | None = None  # Detected on first operation
         self._on_remember_hook = on_remember_hook
+        self._audit = audit
 
     def _ensure_collection(self) -> Any:
         """Create ChromaDB collection on first access (lazy initialization)."""
@@ -193,6 +196,14 @@ class EpisodicStore:
             "content": content,
             "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
         })
+        if self._audit:
+            self._audit.log(
+                tenant_id=self._namespace,
+                actor="system",
+                operation="episodic.remember",
+                resource_id=memory_id,
+                details={"memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type},
+            )
         return memory_id
 
     async def remember_batch(self, memories: list[dict[str, Any]]) -> list[str]:

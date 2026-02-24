@@ -7,7 +7,10 @@ from engram.semantic.graph import SemanticGraph
 __all__ = ["SemanticGraph", "create_graph"]
 
 
-def create_graph(config: "engram.config.SemanticConfig") -> SemanticGraph:  # type: ignore[name-defined]
+def create_graph(
+    config: "engram.config.SemanticConfig",  # type: ignore[name-defined]
+    audit: "engram.audit.AuditLogger | None" = None,  # type: ignore[name-defined]
+) -> SemanticGraph:
     """Factory: pick backend from config.provider and return a SemanticGraph."""
     from engram.config import SemanticConfig  # local import avoids circular deps
 
@@ -26,4 +29,4 @@ def create_graph(config: "engram.config.SemanticConfig") -> SemanticGraph:  # ty
         from engram.semantic.sqlite_backend import SqliteBackend
         backend = SqliteBackend(config.path)
 
-    return SemanticGraph(backend)
+    return SemanticGraph(backend, audit=audit)

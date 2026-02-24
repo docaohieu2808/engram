@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import uvicorn
@@ -16,11 +17,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from engram.auth import get_auth_context
 from engram.auth_models import AuthContext, Role, TokenPayload
+from engram.cache import EngramCache
 from engram.config import Config, load_config
 from engram.errors import EngramError, ErrorCode, ErrorResponse
 from engram.episodic.store import EpisodicStore
 from engram.logging_setup import correlation_id
 from engram.models import MemoryType
+from engram.rate_limiter import RateLimiter
 from engram.reasoning.engine import ReasoningEngine
 from engram.semantic.graph import SemanticGraph
 from engram.tenant import StoreFactory, TenantContext
@@ -76,6 +79,40 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Per-tenant sliding-window rate limiting. Skips when rate_limiter is None."""
+
+    def __init__(self, app: Any, rate_limiter: RateLimiter | None = None) -> None:
+        super().__init__(app)
+        self._limiter = rate_limiter
+
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
+        if self._limiter is None:
+            return await call_next(request)
+
+        # Use tenant from JWT sub or fall back to IP address
+        tenant_id = request.headers.get("X-Tenant-ID") or request.client.host or "anonymous"
+        allowed, remaining, reset_at = await self._limiter.check(tenant_id)
+
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"error": {"code": "RATE_LIMITED", "message": "Too many requests"}},
+                headers={
+                    "X-RateLimit-Limit": str(self._limiter.requests_per_minute),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(reset_at),
+                    "Retry-After": str(reset_at - int(time.time())),
+                },
+            )
+
+        response = await call_next(request)
+        response.headers["X-RateLimit-Limit"] = str(self._limiter.requests_per_minute)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(reset_at)
+        return response
+
+
 # --- App Factory ---
 
 
@@ -89,18 +126,25 @@ def create_app(
     engine: ReasoningEngine | None = None,
     ingest_fn: Any = None,
     store_factory: StoreFactory | None = None,
+    cache: EngramCache | None = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> FastAPI:
     """Create FastAPI app wired to memory stores.
 
     Accepts either legacy single-tenant stores (episodic, graph, engine) or a
     StoreFactory for multi-tenant mode. When store_factory is provided, stores
     are resolved per-request from the authenticated tenant_id.
+
+    cache and rate_limiter are optional; when None, those features are disabled.
     """
     from fastapi import APIRouter
     app = FastAPI(title="engram", description="Memory traces for AI agents")
     v1 = APIRouter(prefix="/api/v1")
 
+    # Starlette middleware order: last added = outermost (first to run)
     app.add_middleware(CorrelationIdMiddleware)
+    if rate_limiter is not None:
+        app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -158,11 +202,31 @@ def create_app(
         cfg = load_config()
         return ReasoningEngine(ep, gr, model=cfg.llm.model, on_think_hook=cfg.hooks.on_think)
 
-    # --- Root-level public route ---
+    # --- Root-level public routes ---
 
     @app.get("/health")
     async def health():
+        """Liveness probe — fast, no component checks."""
         return {"status": "ok"}
+
+    @app.get("/health/ready")
+    async def health_ready():
+        """Readiness probe — performs deep component checks."""
+        from engram.health import deep_check
+        # Resolve default stores for health check (single-tenant or first available)
+        ep = episodic
+        gr = graph
+        if store_factory is not None:
+            ep = store_factory.get_episodic("default")
+            gr = await store_factory.get_graph("default")
+        if ep is None or gr is None:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "unhealthy", "components": {}, "error": "stores not initialised"},
+            )
+        result = await deep_check(ep, gr)
+        status_code = 200 if result["status"] == "healthy" else 503
+        return JSONResponse(status_code=status_code, content=result)
 
     # --- Legacy 301 redirects ---
 
@@ -217,6 +281,9 @@ def create_app(
     async def ingest(req: IngestRequest, auth: AuthContext = Depends(get_auth_context)):
         if ingest_fn:
             result = await ingest_fn(req.messages)
+            # Invalidate recall cache since ingest adds new memories
+            if cache is not None:
+                await cache.invalidate(auth.tenant_id, "recall")
             return {"status": "ok", "result": result.model_dump()}
         return {"status": "error", "message": "Ingest function not configured"}
 
@@ -227,6 +294,10 @@ def create_app(
             req.content, memory_type=req.memory_type, priority=req.priority,
             entities=req.entities, tags=req.tags,
         )
+        # Invalidate recall/think cache for this tenant since new memory was added
+        if cache is not None:
+            await cache.invalidate(auth.tenant_id, "recall")
+            await cache.invalidate(auth.tenant_id, "think")
         return {"status": "ok", "id": mem_id}
 
     @v1.post("/think")
@@ -234,6 +305,18 @@ def create_app(
         ep = _resolve_episodic(auth)
         gr = await _resolve_graph(auth)
         eng = _resolve_engine(auth, ep, gr)
+
+        # Try cache first
+        if cache is not None:
+            cfg = load_config()
+            cached = await cache.get(auth.tenant_id, "think", {"q": req.question})
+            if cached is not None:
+                return cached
+            answer = await eng.think(req.question)
+            result = {"status": "ok", "answer": answer}
+            await cache.set(auth.tenant_id, "think", {"q": req.question}, result, ttl=cfg.cache.think_ttl)
+            return result
+
         answer = await eng.think(req.question)
         return {"status": "ok", "answer": answer}
 
@@ -247,6 +330,14 @@ def create_app(
         auth: AuthContext = Depends(get_auth_context),
     ):
         """Search episodic memories with optional filters and pagination."""
+        # Try cache first
+        if cache is not None:
+            cfg = load_config()
+            cache_params = {"q": query, "limit": limit, "offset": offset, "mt": memory_type, "tags": tags}
+            cached = await cache.get(auth.tenant_id, "recall", cache_params)
+            if cached is not None:
+                return cached
+
         ep = _resolve_episodic(auth)
         gr = await _resolve_graph(auth)
         filters = {"memory_type": memory_type} if memory_type else None
@@ -265,7 +356,7 @@ def create_app(
                 "edges": [e.model_dump() for e in edges[:5]],
             })
 
-        return {
+        result = {
             "status": "ok",
             "results": [r.model_dump() for r in paginated],
             "graph_results": graph_results,
@@ -273,6 +364,9 @@ def create_app(
             "offset": offset,
             "limit": limit,
         }
+        if cache is not None:
+            await cache.set(auth.tenant_id, "recall", cache_params, result, ttl=cfg.cache.recall_ttl)
+        return result
 
     @v1.get("/query")
     async def query(
@@ -284,6 +378,14 @@ def create_app(
         auth: AuthContext = Depends(get_auth_context),
     ):
         """Query semantic graph by keyword, type, or relatedness."""
+        # Try cache first
+        if cache is not None:
+            cfg = load_config()
+            cache_params = {"kw": keyword, "nt": node_type, "rt": related_to, "offset": offset, "limit": limit}
+            cached = await cache.get(auth.tenant_id, "query", cache_params)
+            if cached is not None:
+                return cached
+
         gr = await _resolve_graph(auth)
         if related_to:
             related = await gr.get_related([related_to], depth=2)
@@ -295,13 +397,16 @@ def create_app(
             nodes = await gr.query(keyword, type=node_type)
 
         paginated = nodes[offset:offset + limit]
-        return {
+        result = {
             "status": "ok",
             "results": [n.model_dump() for n in paginated],
             "total": len(nodes),
             "offset": offset,
             "limit": limit,
         }
+        if cache is not None:
+            await cache.set(auth.tenant_id, "query", cache_params, result, ttl=cfg.cache.query_ttl)
+        return result
 
     @v1.post("/cleanup")
     async def cleanup(auth: AuthContext = Depends(get_auth_context)):
@@ -344,6 +449,26 @@ def _require_admin(auth: AuthContext) -> None:
         raise EngramError(ErrorCode.FORBIDDEN, "Admin role required")
 
 
+async def _build_cache_and_limiter(config: Config) -> tuple[EngramCache | None, RateLimiter | None]:
+    """Construct and connect cache/rate_limiter from config. Returns (None, None) when disabled."""
+    app_cache: EngramCache | None = None
+    app_limiter: RateLimiter | None = None
+
+    if config.cache.enabled:
+        app_cache = EngramCache(config.cache.redis_url)
+        await app_cache.connect()
+
+    if config.rate_limit.enabled:
+        app_limiter = RateLimiter(
+            config.rate_limit.redis_url,
+            requests_per_minute=config.rate_limit.requests_per_minute,
+            burst=config.rate_limit.burst,
+        )
+        await app_limiter.connect()
+
+    return app_cache, app_limiter
+
+
 def run_server(
     episodic: EpisodicStore | None = None,
     graph: SemanticGraph | None = None,
@@ -353,7 +478,9 @@ def run_server(
     store_factory: StoreFactory | None = None,
 ) -> None:
     """Run HTTP server. Accepts legacy single-tenant stores or a StoreFactory."""
+    import asyncio
     if config is None:
         config = load_config()
-    app = create_app(episodic, graph, engine, ingest_fn, store_factory)
+    app_cache, app_limiter = asyncio.run(_build_cache_and_limiter(config))
+    app = create_app(episodic, graph, engine, ingest_fn, store_factory, app_cache, app_limiter)
     uvicorn.run(app, host=config.serve.host, port=config.serve.port)

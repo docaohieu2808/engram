@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 
@@ -12,17 +12,21 @@ from engram.models import SemanticEdge, SemanticNode
 from engram.semantic.backend import GraphBackend
 from engram.utils import strip_diacritics as _strip_diacritics
 
+if TYPE_CHECKING:
+    from engram.audit import AuditLogger
+
 logger = logging.getLogger("engram")
 
 
 class SemanticGraph:
     """NetworkX in-memory graph with pluggable storage backend (SQLite or PostgreSQL)."""
 
-    def __init__(self, backend: GraphBackend) -> None:
+    def __init__(self, backend: GraphBackend, audit: "AuditLogger | None" = None) -> None:
         self._graph: nx.DiGraph = nx.DiGraph()
         self._backend = backend
         self._loaded: bool = False  # deferred loading flag
         self._initialized: bool = False  # backend.initialize() called flag
+        self._audit = audit
 
     async def _ensure_loaded(self) -> None:
         """Initialize backend and load graph on first access."""
@@ -49,6 +53,10 @@ class SemanticGraph:
         is_new = node.key not in self._graph
         await self._backend.save_node(node.key, node.type, node.name, json.dumps(node.attributes))
         self._graph.add_node(node.key, data=node)
+        if self._audit:
+            op = "semantic.add_node" if is_new else "semantic.update_node"
+            self._audit.log(tenant_id="default", actor="system", operation=op,
+                            resource_id=node.key, details={"type": node.type, "name": node.name})
         return is_new
 
     async def add_edge(self, edge: SemanticEdge) -> bool:
@@ -57,6 +65,10 @@ class SemanticGraph:
         is_new = not self._graph.has_edge(edge.from_node, edge.to_node)
         await self._backend.save_edge(edge.key, edge.from_node, edge.to_node, edge.relation)
         self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
+        if self._audit:
+            self._audit.log(tenant_id="default", actor="system", operation="semantic.add_edge",
+                            resource_id=edge.key, details={"relation": edge.relation,
+                            "from": edge.from_node, "to": edge.to_node})
         return is_new
 
     async def add_nodes_batch(self, nodes: list[SemanticNode]) -> None:
@@ -114,6 +126,9 @@ class SemanticGraph:
         await self._backend.delete_edges_for_node(key)
         await self._backend.delete_node(key)
         self._graph.remove_node(key)
+        if self._audit:
+            self._audit.log(tenant_id="default", actor="system", operation="semantic.remove_node",
+                            resource_id=key)
         return True
 
     async def remove_edge(self, key: str) -> bool:
@@ -129,6 +144,9 @@ class SemanticGraph:
         await self._backend.delete_edge(key)
         for u, v in to_remove:
             self._graph.remove_edge(u, v)
+        if self._audit:
+            self._audit.log(tenant_id="default", actor="system", operation="semantic.remove_edge",
+                            resource_id=key)
         return True
 
     async def query(self, keyword: str, type: str | None = None) -> list[SemanticNode]:

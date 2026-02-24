@@ -78,6 +78,38 @@ class AuthConfig(BaseModel):
     jwt_expiry_hours: int = 24  # Token lifetime
 
 
+class TelemetryConfig(BaseModel):
+    """OpenTelemetry configuration. Disabled by default; requires telemetry extra."""
+    enabled: bool = False
+    otlp_endpoint: str = ""
+    sample_rate: float = 0.1
+    service_name: str = "engram"
+
+
+class AuditConfig(BaseModel):
+    """Audit logging configuration. Disabled by default."""
+    enabled: bool = False
+    backend: str = "file"
+    path: str = "~/.engram/audit.jsonl"
+
+
+class CacheConfig(BaseModel):
+    """Redis cache configuration. Disabled by default."""
+    enabled: bool = False
+    redis_url: str = "redis://localhost:6379/0"
+    recall_ttl: int = 300   # seconds; TTL for /recall results
+    think_ttl: int = 900    # seconds; TTL for /think results
+    query_ttl: int = 300    # seconds; TTL for /query results
+
+
+class RateLimitConfig(BaseModel):
+    """Sliding-window rate limit configuration. Disabled by default."""
+    enabled: bool = False
+    redis_url: str = "redis://localhost:6379/0"
+    requests_per_minute: int = 60
+    burst: int = 10
+
+
 class Config(BaseModel):
     episodic: EpisodicConfig = Field(default_factory=EpisodicConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -89,6 +121,10 @@ class Config(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
+    audit: AuditConfig = Field(default_factory=AuditConfig)
+    cache: CacheConfig = Field(default_factory=CacheConfig)
+    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
 
 
 # --- Helpers ---
@@ -147,6 +183,22 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "AUTH_ENABLED": ("auth", "enabled"),
     "AUTH_JWT_SECRET": ("auth", "jwt_secret"),
     "AUTH_JWT_EXPIRY_HOURS": ("auth", "jwt_expiry_hours"),
+    "TELEMETRY_ENABLED": ("telemetry", "enabled"),
+    "TELEMETRY_OTLP_ENDPOINT": ("telemetry", "otlp_endpoint"),
+    "TELEMETRY_SAMPLE_RATE": ("telemetry", "sample_rate"),
+    "TELEMETRY_SERVICE_NAME": ("telemetry", "service_name"),
+    "AUDIT_ENABLED": ("audit", "enabled"),
+    "AUDIT_PATH": ("audit", "path"),
+    "AUDIT_BACKEND": ("audit", "backend"),
+    "CACHE_ENABLED": ("cache", "enabled"),
+    "CACHE_REDIS_URL": ("cache", "redis_url"),
+    "CACHE_RECALL_TTL": ("cache", "recall_ttl"),
+    "CACHE_THINK_TTL": ("cache", "think_ttl"),
+    "CACHE_QUERY_TTL": ("cache", "query_ttl"),
+    "RATE_LIMIT_ENABLED": ("rate_limit", "enabled"),
+    "RATE_LIMIT_REDIS_URL": ("rate_limit", "redis_url"),
+    "RATE_LIMIT_REQUESTS_PER_MINUTE": ("rate_limit", "requests_per_minute"),
+    "RATE_LIMIT_BURST": ("rate_limit", "burst"),
 }
 
 # Section model classes for type inference
@@ -166,6 +218,10 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "capture": CaptureConfig,
         "hooks": HooksConfig,
         "auth": AuthConfig,
+        "telemetry": TelemetryConfig,
+        "audit": AuditConfig,
+        "cache": CacheConfig,
+        "rate_limit": RateLimitConfig,
     }
 
 
