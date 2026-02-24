@@ -106,10 +106,11 @@ async def restore(episodic, graph, archive_path: str) -> dict:
         # --- Restore semantic graph ---
         node_count = 0
         edge_count = 0
+        node_failures = 0
+        edge_failures = 0
         semantic_file = tmp_path / "semantic.json"
         if semantic_file.exists():
             graph_data = json.loads(semantic_file.read_text())
-            node_failures = 0
             for node_dict in graph_data.get("nodes", []):
                 try:
                     node = SemanticNode(**node_dict)
@@ -118,7 +119,6 @@ async def restore(episodic, graph, archive_path: str) -> dict:
                 except Exception as exc:
                     node_failures += 1
                     logger.warning("Failed to restore semantic node %r: %s", node_dict, exc)
-            edge_failures = 0
             for edge_dict in graph_data.get("edges", []):
                 try:
                     edge = SemanticEdge(**edge_dict)
