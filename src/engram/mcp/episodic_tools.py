@@ -68,8 +68,8 @@ def register(mcp, get_episodic, get_graph, get_config) -> None:
             attrs = ", ".join(f"{k}={v}" for k, v in node.attributes.items()) if node.attributes else ""
             line = f"[graph] {node.type}:{node.name}" + (f" ({attrs})" if attrs else "")
             lines.append(line)
-            related = await graph.get_related(node.key)
-            for edge in related.get("edges", [])[:5]:
+            related = await graph.get_related([node.name])
+            for edge in related.get(node.name, {}).get("edges", [])[:5]:
                 lines.append(f"  {edge.from_node} --{edge.relation}--> {edge.to_node}")
 
         if not results and not lines:
@@ -111,7 +111,10 @@ def register(mcp, get_episodic, get_graph, get_config) -> None:
 
         # Accept both list[dict] and JSON string for backward compatibility
         if isinstance(messages, str):
-            messages = json.loads(messages)
+            try:
+                messages = json.loads(messages)
+            except json.JSONDecodeError as e:
+                return f"Invalid JSON: {e}"
 
         cfg = get_config()
         schema = load_schema(cfg.semantic.schema_name)

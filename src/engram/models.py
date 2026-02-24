@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 # --- Enums ---
@@ -45,6 +45,13 @@ class EpisodicMemory(BaseModel):
     memory_type: MemoryType = MemoryType.FACT
     priority: int = Priority.NORMAL
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("priority")
+    @classmethod
+    def _validate_priority(cls, v: int) -> int:
+        if not 1 <= v <= 10:
+            raise ValueError(f"Priority must be 1-10, got {v}")
+        return v
     entities: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=datetime.now)

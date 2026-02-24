@@ -59,7 +59,7 @@ def create_app(
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:*", "http://127.0.0.1:*"],
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -102,10 +102,11 @@ def create_app(
         graph_nodes = await graph.query(query)
         graph_results = []
         for node in graph_nodes[:3]:
-            related = await graph.get_related(node.key)
+            related = await graph.get_related([node.name])
+            edges = related.get(node.name, {}).get("edges", [])
             graph_results.append({
                 "node": node.model_dump(),
-                "edges": [e.model_dump() for e in related.get("edges", [])[:5]],
+                "edges": [e.model_dump() for e in edges[:5]],
             })
 
         return {

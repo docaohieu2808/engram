@@ -109,8 +109,8 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
                 attrs = ", ".join(f"{k}={v}" for k, v in node.attributes.items()) if node.attributes else ""
                 console.print(f"[yellow][graph][/yellow] {node.type}:{node.name}" + (f" ({attrs})" if attrs else ""))
                 # Show related edges
-                related = run_async(graph.get_related(node.key))
-                for edge in related.get("edges", [])[:5]:
+                related = run_async(graph.get_related([node.name]))
+                for edge in related.get(node.name, {}).get("edges", [])[:5]:
                     console.print(f"  [dim]{edge.from_node} --{edge.relation}--> {edge.to_node}[/dim]")
 
         if not results and not graph_nodes:

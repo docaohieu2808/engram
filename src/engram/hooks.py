@@ -39,11 +39,8 @@ def fire_hook(url: str | None, data: dict) -> None:
 
     # Schedule in background thread — don't block caller
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.run_in_executor(None, _post)
-        else:
-            _post()
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, _post)
     except RuntimeError:
-        # No event loop — run inline
+        # No running event loop — run inline
         _post()

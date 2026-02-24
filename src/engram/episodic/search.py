@@ -54,23 +54,17 @@ async def filtered_search(
         entities: List of entity names; memories must contain at least one
         limit: Max results to return
     """
-    conditions: list[dict] = []
-
-    if memory_type:
-        conditions.append({"memory_type": {"$eq": memory_type}})
-
-    # Entities are stored as comma-joined string; use $contains per entity
-    if entities:
-        entity_conditions = [{"entities": {"$contains": e}} for e in entities]
-        if len(entity_conditions) == 1:
-            conditions.extend(entity_conditions)
-        else:
-            conditions.append({"$or": entity_conditions})
-
     filters: dict | None = None
-    if len(conditions) == 1:
-        filters = conditions[0]
-    elif len(conditions) > 1:
-        filters = {"$and": conditions}
+    if memory_type:
+        filters = {"memory_type": {"$eq": memory_type}}
 
-    return await store.search(query, limit=limit, filters=filters)
+    # Fetch extra results to allow post-filtering by entities
+    fetch_limit = limit * 3 if entities else limit
+    results = await store.search(query, limit=fetch_limit, filters=filters)
+
+    # Post-filter by entities (stored as JSON array string, not filterable via ChromaDB)
+    if entities:
+        entity_set = set(entities)
+        results = [m for m in results if entity_set & set(m.entities)]
+
+    return results[:limit]

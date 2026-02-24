@@ -179,20 +179,17 @@ class SemanticGraph:
     async def remove_edge(self, key: str) -> bool:
         """Remove edge from both stores by edge key."""
         self._ensure_loaded()
-        found = any(
-            data.get("key") == key
-            for _, _, data in self._graph.edges(data=True)
-        )
-        if not found:
-            return False
-        conn = self._connect()
-        conn.execute("DELETE FROM edges WHERE key=?", (key,))
-        conn.commit()
+        # Single pass to find and collect edges to remove
         to_remove = [
             (u, v)
             for u, v, data in self._graph.edges(data=True)
             if data.get("key") == key
         ]
+        if not to_remove:
+            return False
+        conn = self._connect()
+        conn.execute("DELETE FROM edges WHERE key=?", (key,))
+        conn.commit()
         for u, v in to_remove:
             self._graph.remove_edge(u, v)
         return True

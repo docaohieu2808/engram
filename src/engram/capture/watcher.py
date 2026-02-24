@@ -75,8 +75,11 @@ class InboxWatcher:
             try:
                 age = datetime.now().timestamp() - pf.stat().st_mtime
                 if age > 3600:  # 1 hour
-                    original = pf.with_suffix("")
-                    if not original.suffix:
+                    # Recover original extension from stem (e.g. "file.jsonl.processing" → "file.jsonl")
+                    stem = pf.stem  # "file.jsonl" when suffix is ".processing"
+                    if "." in stem:
+                        original = pf.with_name(stem)  # keeps the original extension
+                    else:
                         original = pf.with_suffix(".json")
                     pf.rename(original)
                     logger.info("Recovered orphaned %s -> %s", pf.name, original.name)
