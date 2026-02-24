@@ -1,43 +1,42 @@
 # engram
 
-Memory traces for AI agents - Think like human.
+**Memory traces for AI agents — Think like humans.**
 
-![Python](https://img.shields.io/badge/python-3.11+-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Status](https://img.shields.io/badge/status-active-brightgreen)
+![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-270+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.2.0-blue)
 
-Dual-memory brain combining episodic (vector) + semantic (graph) memory with LLM-powered reasoning. Exposes CLI, MCP server, and HTTP API for agent integration.
+Dual-memory AI system combining episodic (vector) + semantic (graph) memory with LLM reasoning. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment. Exposes CLI, MCP, and versioned HTTP API (/api/v1/).
 
-## Architecture
+## Features
 
-```
-CLI / MCP / HTTP API
-        │
-  ┌─────┴──────┐
-  │  Reasoning  │ ← LLM synthesis (Gemini)
-  │   Engine    │
-  ├──────┬──────┤
-  │Episodic│Semantic│
-  │(ChromaDB)│(SQLite+NetworkX)│
-  └────────┴────────┘
-       │              │
-  Vector search   Knowledge graph
-  (embeddings)    (entities + relations)
-```
+- **Dual Memory** — Episodic (ChromaDB) + Semantic (PostgreSQL/SQLite) with LLM synthesis
+- **Multi-Tenancy** — Isolated per-tenant stores, row-level isolation in PostgreSQL
+- **Authentication** — JWT + API keys with RBAC (ADMIN, AGENT, READER), optional
+- **Caching** — Redis-backed result caching with per-endpoint TTLs
+- **Rate Limiting** — Sliding-window per-tenant limits with burst allowance
+- **Versioned API** — `/api/v1/` with backward-compat redirects, structured errors
+- **Observability** — OpenTelemetry + JSONL audit logging (optional)
+- **Deployment** — Docker Compose, Kubernetes-ready, health checks
+- **Backup/Restore** — Memory snapshots, point-in-time recovery
+- **Configuration** — YAML + env vars + CLI with type casting
 
-- **Episodic store**: ChromaDB vector DB, semantic similarity search over timestamped memories
-- **Semantic graph**: SQLite-backed NetworkX graph, typed entities and relationships
-- **Reasoning engine**: Combines both stores, feeds context to LLM for synthesis
-
-## Install
+## Installation
 
 ```bash
-# Install from source
+# From source
+git clone https://github.com/engram/engram.git
+cd engram
 pip install -e .
 
-# Dev setup with extras
+# Dev setup with optional dependencies
 pip install -e ".[dev]"
+
+# With observability support (OpenTelemetry)
+pip install -e ".[telemetry]"
 ```
 
-Requires Python 3.11+. Set `GEMINI_API_KEY` for LLM reasoning and Gemini embeddings.
+**Requirements:** Python 3.11+
+
+**Optional:** `GEMINI_API_KEY` for LLM reasoning and embeddings (basic storage works without it)
 
 ## Quick Start
 
@@ -155,43 +154,69 @@ engram serve [--host 127.0.0.1] [--port 8765]  # Start HTTP API server
 
 ## Configuration
 
-Config file: `~/.engram/config.yaml`
+**Config file:** `~/.engram/config.yaml` (optional; defaults work for local development)
 
+**Priority:** CLI flags > environment variables > YAML > defaults
+
+### Example config.yaml
 ```yaml
 episodic:
   provider: chromadb
   path: ~/.engram/episodic
-  namespace: default               # Collection namespace (isolates memory sets)
+  namespace: default
 
 embedding:
   provider: gemini
-  model: gemini-embedding-001      # 3072 dimensions
+  model: gemini-embedding-001
 
 semantic:
-  provider: sqlite
-  path: ~/.engram/semantic.db
-  schema: devops                   # Built-in schema template
+  provider: postgresql  # or sqlite (default)
+  dsn: postgresql://user:pass@localhost/engram
+  pool_min: 5
+  pool_max: 20
 
 llm:
   provider: gemini
   model: gemini/gemini-2.0-flash
-  api_key: ${GEMINI_API_KEY}       # Expanded from environment
+  api_key: ${GEMINI_API_KEY}
 
-capture:
-  enabled: true
-  inbox: ~/.engram/inbox/
-  poll_interval: 5                 # seconds
+auth:
+  enabled: false  # Set to true for production
+  jwt_secret: "use-32+-chars-or-${ENV_VAR}"
 
-serve:
-  host: 127.0.0.1
-  port: 8765
+cache:
+  enabled: false  # Set to true with Redis
+  redis_url: redis://localhost:6379/0
 
-hooks:
-  on_remember: null                # POST {id, content, memory_type} after each remember()
-  on_think: null                   # POST {question, answer} after each think()
+rate_limit:
+  enabled: false
+  requests_per_minute: 100
+
+audit:
+  enabled: false
+  path: ~/.engram/audit.jsonl
+
+telemetry:
+  enabled: false  # Requires telemetry extra
+  otlp_endpoint: http://localhost:4317
 ```
 
-Environment variables in `${VAR}` format are expanded at load time. No API key required for basic storage; reasoning and Gemini embeddings require `GEMINI_API_KEY`.
+### Key Environment Variables
+```bash
+GEMINI_API_KEY                        # LLM + embeddings
+ENGRAM_AUTH_ENABLED                   # Enable auth
+ENGRAM_AUTH_JWT_SECRET                # JWT signing key (32+ chars)
+ENGRAM_SEMANTIC_PROVIDER              # sqlite or postgresql
+ENGRAM_SEMANTIC_DSN                   # PostgreSQL connection string
+ENGRAM_CACHE_ENABLED                  # Enable Redis caching
+ENGRAM_CACHE_REDIS_URL                # Redis URL
+ENGRAM_RATE_LIMIT_ENABLED             # Enable rate limiting
+ENGRAM_RATE_LIMIT_REQUESTS_PER_MINUTE # Default 60
+ENGRAM_AUDIT_ENABLED                  # Enable audit logs
+ENGRAM_TELEMETRY_ENABLED              # Enable OpenTelemetry
+```
+
+**Note:** Environment variables override YAML; `${VARIABLE}` syntax in YAML is expanded at load time.
 
 ### Webhooks
 
@@ -256,21 +281,43 @@ Available MCP tools:
 
 ## HTTP API
 
-Start server: `engram serve`  Default: `http://127.0.0.1:8765`
+Start server: `engram serve [--host 0.0.0.0] [--port 8765]`
 
-| Method | Endpoint | Body / Params | Description |
-|--------|----------|---------------|-------------|
-| `POST` | `/remember` | `{content, memory_type, priority, entities, tags}` | Store episodic memory |
-| `POST` | `/think` | `{question}` | LLM reasoning over all memory |
-| `GET` | `/recall` | `?query=&limit=5&offset=0&memory_type=&tags=` | Search episodic memories |
-| `GET` | `/query` | `?keyword=&node_type=&related_to=&offset=0&limit=50` | Query semantic graph |
-| `POST` | `/ingest` | `{messages: [...]}` | Dual ingest from message array |
-| `POST` | `/cleanup` | — | Delete expired memories, returns `{deleted: N}` |
-| `POST` | `/summarize` | `{count: 20, save: false}` | Summarize recent memories via LLM |
-| `GET` | `/status` | — | Memory statistics |
-| `GET` | `/health` | — | Liveness check |
+**Endpoints** (all at `/api/v1/`; legacy routes redirect):
 
-Pagination on `/recall` and `/query`: use `offset` and `limit` query params. Response includes `total`, `offset`, `limit` fields.
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/remember` | Store episodic memory |
+| `GET` | `/recall` | Search memories (pagination: `?offset=0&limit=10`) |
+| `POST` | `/think` | LLM reasoning across episodic + semantic |
+| `GET` | `/query` | Graph search (`?keyword=X&node_type=Y&related_to=Z`) |
+| `POST` | `/ingest` | Extract entities + store memories from messages |
+| `POST` | `/cleanup` | Delete expired memories (admin only) |
+| `POST` | `/summarize` | LLM synthesis of recent memories (admin only) |
+| `POST` | `/auth/token` | Issue JWT (admin_secret required) |
+| `GET` | `/health` | Liveness check (always available) |
+| `POST` | `/backup` | Export all memory to JSON |
+| `POST` | `/restore` | Import backup snapshot |
+
+**Auth:** Disabled by default. Enable with `ENGRAM_AUTH_ENABLED=true` and `ENGRAM_AUTH_JWT_SECRET`. Use Bearer token or X-API-Key header.
+
+**Responses:** All wrapped in `{data, meta}` with error format `{error: {code, message}, meta}`.
+
+**Example:**
+```bash
+# Store memory
+curl -X POST http://localhost:8765/api/v1/remember \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Deployed v1.0 to production", "memory_type": "fact", "priority": 8}'
+
+# Search
+curl "http://localhost:8765/api/v1/recall?query=deployment&limit=5"
+
+# Reason
+curl -X POST http://localhost:8765/api/v1/think \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What deployment issues have we had?"}'
+```
 
 ## Embeddings
 
@@ -282,6 +329,70 @@ Two embedding modes depending on API key availability:
 | Fallback | `all-MiniLM-L6-v2` (ChromaDB default) | 384 | nothing |
 
 Embedding dimensions must remain consistent within a collection. If you switch embedding providers, reinitialize the episodic store or create a new collection.
+
+## Docker
+
+### Quick Start
+```bash
+docker build -t engram:latest .
+docker run -e GEMINI_API_KEY="your-key" -p 8765:8765 engram:latest
+```
+
+### Production (PostgreSQL + Redis)
+See [deployment-guide.md](docs/deployment-guide.md) for Docker Compose with PostgreSQL, Redis, and OpenTelemetry.
+
+---
+
+## Documentation
+
+- **[Project Overview & PDR](docs/project-overview-pdr.md)** — Features, requirements, config reference
+- **[System Architecture](docs/system-architecture.md)** — Design, data flow, deployment patterns
+- **[Code Standards](docs/code-standards.md)** — Conventions, patterns, best practices
+- **[Deployment Guide](docs/deployment-guide.md)** — Docker, Kubernetes, environment variables, auth setup
+- **[Codebase Summary](docs/codebase-summary.md)** — Module inventory, 85k tokens, metrics
+- **[Project Roadmap](docs/project-roadmap.md)** — v0.3.0 → v1.0.0, completed phases, future work
+
+---
+
+## Test Coverage
+
+- **270+ tests** across all modules
+- **75%+ code coverage** target
+- **CI/CD:** GitHub Actions runs full test suite on every PR and commit
+- **Load tests:** Marked as excluded from CI; run separately in staging
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=src/engram --cov-report=html
+```
+
+---
+
+## Enterprise Features (v0.2.0)
+
+✓ Multi-tenancy with contextvar isolation
+✓ JWT + API key authentication (optional, backward compat)
+✓ PostgreSQL semantic graph backend (SQLite default)
+✓ Redis caching + rate limiting (optional)
+✓ OpenTelemetry + JSONL audit logging (optional)
+✓ Docker + GitHub Actions CI/CD
+✓ Health checks + backup/restore
+✓ API versioning (/api/v1/) with error codes
+✓ 270 tests, 21 bug fixes
+
+---
+
+## Support & Community
+
+- **GitHub:** https://github.com/engram/engram
+- **Issues:** Report bugs and request features
+- **Discussions:** Questions, architecture discussions, ideas
+- **Contributing:** Pull requests welcome (see [CONTRIBUTING.md](CONTRIBUTING.md))
+
+---
 
 ## License
 
