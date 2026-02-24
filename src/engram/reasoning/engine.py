@@ -43,7 +43,9 @@ REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retriev
 {question}
 
 ## Instructions
-- Synthesize information from both memory sources
+- REASON and INFER from the data — don't just list facts, draw conclusions
+- Answer the WHY behind actions, not just WHAT happened
+- Connect dots between related entities and events to derive meaning
 - Be specific - cite dates, names, and details from memories
 - If memories contradict, note the conflict
 - If no relevant memories found, say so honestly
