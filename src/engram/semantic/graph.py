@@ -187,11 +187,16 @@ class SemanticGraph:
                     node_data: SemanticNode | None = self._graph.nodes[key].get("data")
                     if node_data:
                         nodes.append(node_data)
-                for u, v, data in self._graph.edges(data=True):
-                    if u in visited or v in visited:
+                # H5 fix: only scan edges of visited nodes, not all edges
+                seen_edges: set[tuple[str, str, str]] = set()
+                for node_key in visited:
+                    for u, v, data in self._graph.edges(node_key, data=True):
                         edge_data: SemanticEdge | None = data.get("data")
-                        if edge_data and edge_data not in edges:
-                            edges.append(edge_data)
+                        if edge_data:
+                            edge_id = (edge_data.from_node, edge_data.relation, edge_data.to_node)
+                            if edge_id not in seen_edges:
+                                seen_edges.add(edge_id)
+                                edges.append(edge_data)
             result[name] = {"nodes": nodes, "edges": edges}
         return result
 

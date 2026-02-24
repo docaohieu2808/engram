@@ -31,7 +31,11 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             namespace: Override config namespace for this operation
         """
         store = _get_store(get_episodic, get_config, namespace)
-        mem_type = MemoryType(memory_type)
+        try:
+            mem_type = MemoryType(memory_type)
+        except ValueError:
+            valid = ", ".join(t.value for t in MemoryType)
+            return f"Invalid memory_type '{memory_type}'. Valid: {valid}"
         mem_id = await store.remember(
             content, memory_type=mem_type, priority=priority,
             entities=entities or [], tags=tags or [],

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -43,7 +43,7 @@ def ns_store(tmp_path):
 @pytest.mark.asyncio
 async def test_expired_memory_filtered_from_search(store):
     """Expired memories are not returned by search()."""
-    past = datetime.now() - timedelta(hours=1)
+    past = datetime.now(timezone.utc) - timedelta(hours=1)
     with patch("engram.episodic.store._get_embeddings", side_effect=_fake_embeddings):
         await store.remember("This memory is expired", expires_at=past)
         results = await store.search("expired memory")
@@ -53,7 +53,7 @@ async def test_expired_memory_filtered_from_search(store):
 @pytest.mark.asyncio
 async def test_non_expired_memory_visible_in_search(store):
     """Non-expired memories with future expires_at are returned by search()."""
-    future = datetime.now() + timedelta(hours=24)
+    future = datetime.now(timezone.utc) + timedelta(hours=24)
     with patch("engram.episodic.store._get_embeddings", side_effect=_fake_embeddings):
         await store.remember("Future expiry memory", expires_at=future)
         results = await store.search("future expiry memory")
@@ -63,7 +63,7 @@ async def test_non_expired_memory_visible_in_search(store):
 @pytest.mark.asyncio
 async def test_cleanup_expired_returns_count(store):
     """cleanup_expired() deletes expired memories and returns count."""
-    past = datetime.now() - timedelta(hours=1)
+    past = datetime.now(timezone.utc) - timedelta(hours=1)
     with patch("engram.episodic.store._get_embeddings", side_effect=_fake_embeddings):
         await store.remember("Expired one", expires_at=past)
         await store.remember("Expired two", expires_at=past)
@@ -75,7 +75,7 @@ async def test_cleanup_expired_returns_count(store):
 @pytest.mark.asyncio
 async def test_cleanup_expired_removes_from_store(store):
     """After cleanup_expired(), collection count decreases by expired count."""
-    past = datetime.now() - timedelta(seconds=1)
+    past = datetime.now(timezone.utc) - timedelta(seconds=1)
     with patch("engram.episodic.store._get_embeddings", side_effect=_fake_embeddings):
         await store.remember("Expired", expires_at=past)
         await store.remember("Valid")

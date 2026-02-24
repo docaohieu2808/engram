@@ -102,9 +102,9 @@ async def test_remember_multiple_then_count_in_stats(episodic):
 @pytest.mark.integration
 async def test_cleanup_removes_expired_memories(episodic):
     """remember with past expiry → cleanup → count decreases."""
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
-    past = datetime.now() - timedelta(hours=1)
+    past = datetime.now(timezone.utc) - timedelta(hours=1)
     with patch("engram.episodic.store._get_embeddings", side_effect=_mock_embeddings):
         await episodic.remember("This should expire", expires_at=past)
         await episodic.remember("This is permanent")

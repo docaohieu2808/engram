@@ -34,7 +34,7 @@ class McpAdapter(MemoryProvider):
 
     async def _ensure_client(self):
         """Lazy-init MCP client connection via stdio transport."""
-        if self._client is not None:
+        if self._session is not None:
             return
 
         from mcp import ClientSession, StdioServerParameters
@@ -47,11 +47,29 @@ class McpAdapter(MemoryProvider):
             env=self.env or None,
         )
 
-        self._transport = stdio_client(server_params)
-        read_stream, write_stream = await self._transport.__aenter__()
-        self._session = ClientSession(read_stream, write_stream)
-        await self._session.__aenter__()
-        await self._session.initialize()
+        transport = stdio_client(server_params)
+        try:
+            read_stream, write_stream = await transport.__aenter__()
+            self._transport = transport
+            session = ClientSession(read_stream, write_stream)
+            await session.__aenter__()
+            self._session = session
+            await self._session.initialize()
+        except Exception:
+            # Clean up partially-initialized resources
+            if self._session:
+                try:
+                    await self._session.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                self._session = None
+            if self._transport:
+                try:
+                    await self._transport.__aexit__(None, None, None)
+                except Exception:
+                    pass
+                self._transport = None
+            raise
 
     async def search(self, query: str, limit: int = 5) -> list[ProviderResult]:
         await self._ensure_client()

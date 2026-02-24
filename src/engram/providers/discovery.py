@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+import ipaddress
+import socket
+
 import aiohttp
 
 from engram.config import DiscoveryConfig, ProviderEntry
@@ -86,6 +89,20 @@ KNOWN_SERVICES: list[dict[str, Any]] = [
 ]
 
 
+def _is_safe_discovery_host(host: str) -> bool:
+    """Check host resolves to a non-loopback, non-link-local address."""
+    try:
+        addrs = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+        for _fam, _type, _proto, _canon, sockaddr in addrs:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_loopback or ip.is_link_local:
+                continue
+            return True  # at least one routable address
+        return False
+    except (socket.gaierror, ValueError):
+        return False
+
+
 async def _check_health(url: str, health_path: str, timeout: float = 2.0) -> bool:
     """Check if a service is reachable via health endpoint."""
     try:
@@ -127,8 +144,11 @@ async def discover(config: DiscoveryConfig | None = None) -> list[ProviderEntry]
         hosts.append("localhost")
     hosts.extend(config.hosts)
 
-    # 1. Port scan on all hosts
+    # 1. Port scan on all hosts (skip private IPs for remote hosts)
     for host in hosts:
+        if host != "localhost" and not _is_safe_discovery_host(host):
+            logger.warning("Skipping unsafe discovery host: %s", host)
+            continue
         for svc in KNOWN_SERVICES:
             if svc["name"] in seen_names:
                 continue

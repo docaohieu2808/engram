@@ -349,8 +349,11 @@ def create_app(
             # Invalidate recall cache since ingest adds new memories
             if cache is not None:
                 await cache.invalidate(auth.tenant_id, "recall")
+            # H6 fix: invalidate node name cache so think() sees new entities
+            if engine is not None:
+                engine.invalidate_cache()
             return {"status": "ok", "result": result.model_dump()}
-        return {"status": "error", "message": "Ingest function not configured"}
+        raise HTTPException(status_code=501, detail="Ingest function not configured")
 
     @v1.post("/remember")
     async def remember(req: RememberRequest, auth: AuthContext = Depends(get_auth_context)):
@@ -370,6 +373,8 @@ def create_app(
         ep = _resolve_episodic(auth)
         gr = await _resolve_graph(auth)
         eng = _resolve_engine(auth, ep, gr)
+        # I1 fix: pass active providers to engine for federated search
+        eng._providers = _provider_registry.get_active()
 
         # Try cache first (uses cached _cfg, no per-request load_config)
         if cache is not None:

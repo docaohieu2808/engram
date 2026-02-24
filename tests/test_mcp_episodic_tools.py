@@ -122,10 +122,10 @@ class TestEngramCleanup:
 
     @pytest.mark.asyncio
     async def test_cleanup_expired_returns_count(self, episodic_store):
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         from engram.mcp.episodic_tools import register
 
-        past = datetime.now() - timedelta(hours=1)
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
         await episodic_store.remember("old memory", expires_at=past)
         await episodic_store.remember("another old one", expires_at=past)
 

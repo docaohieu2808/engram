@@ -237,12 +237,11 @@ def test_summarize_with_save(client, mock_engine):
 # --- Tests: POST /api/v1/ingest ---
 
 def test_ingest_without_fn_returns_error(mock_episodic, mock_graph, mock_engine):
-    """When no ingest_fn is provided, /api/v1/ingest returns error status."""
+    """When no ingest_fn is provided, /api/v1/ingest returns 501."""
     app = create_app(mock_episodic, mock_graph, mock_engine, ingest_fn=None)
     c = TestClient(app, follow_redirects=False)
     resp = c.post("/api/v1/ingest", json={"messages": [{"role": "user", "content": "hi"}]})
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "error"
+    assert resp.status_code == 501
 
 
 def test_ingest_with_fn_calls_it(mock_episodic, mock_graph, mock_engine):

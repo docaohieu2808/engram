@@ -12,11 +12,13 @@ logger = logging.getLogger("engram.providers.registry")
 
 # Map of type string → adapter class (lazy imports to avoid hard deps)
 _ADAPTER_FACTORIES: dict[str, type] = {}
+_BUILTINS_LOADED = False
 
 
 def _get_adapter_class(provider_type: str) -> type | None:
     """Get adapter class by type string, with lazy import."""
-    if not _ADAPTER_FACTORIES:
+    global _BUILTINS_LOADED
+    if not _BUILTINS_LOADED:
         from engram.providers.rest_adapter import RestAdapter
         from engram.providers.file_adapter import FileAdapter
         from engram.providers.postgres_adapter import PostgresAdapter
@@ -28,6 +30,7 @@ def _get_adapter_class(provider_type: str) -> type | None:
             "postgres": PostgresAdapter,
             "mcp": McpAdapter,
         })
+        _BUILTINS_LOADED = True
 
     # Check built-in adapters
     if provider_type in _ADAPTER_FACTORIES:
@@ -127,5 +130,23 @@ class ProviderRegistry:
     def get_all(self) -> list[MemoryProvider]:
         return list(self._providers.values())
 
-    def remove(self, name: str) -> bool:
-        return self._providers.pop(name, None) is not None
+    async def remove(self, name: str) -> bool:
+        """Remove provider by name, closing it if it has a close() method."""
+        provider = self._providers.pop(name, None)
+        if provider is None:
+            return False
+        if hasattr(provider, "close"):
+            try:
+                await provider.close()
+            except Exception as e:
+                logger.warning("Error closing provider '%s': %s", name, e)
+        return True
+
+    async def close_all(self) -> None:
+        """Close all providers that have a close() method."""
+        for provider in self._providers.values():
+            if hasattr(provider, "close"):
+                try:
+                    await provider.close()
+                except Exception as e:
+                    logger.warning("Error closing provider '%s': %s", provider.name, e)

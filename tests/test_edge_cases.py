@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -149,7 +149,7 @@ class TestTTLExpiry:
     @pytest.mark.asyncio
     async def test_expired_memory_not_in_search_results(self, episodic_store):
         """Memory with past expires_at should not appear in search results."""
-        past = datetime.now() - timedelta(hours=1)
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
         await episodic_store.remember(
             "This memory has expired",
             expires_at=past,
@@ -158,14 +158,14 @@ class TestTTLExpiry:
         results = await episodic_store.search("memory expired")
         # Expired memories should be filtered from results
         assert all(
-            r.expires_at is None or r.expires_at > datetime.now()
+            r.expires_at is None or r.expires_at > datetime.now(timezone.utc)
             for r in results
         )
 
     @pytest.mark.asyncio
     async def test_future_expiry_memory_is_in_results(self, episodic_store):
         """Memory with future expires_at should appear in search."""
-        future = datetime.now() + timedelta(hours=24)
+        future = datetime.now(timezone.utc) + timedelta(hours=24)
         content = "This memory will expire tomorrow"
         await episodic_store.remember(content, expires_at=future)
 
@@ -175,8 +175,8 @@ class TestTTLExpiry:
     @pytest.mark.asyncio
     async def test_cleanup_expired_removes_past_memories(self, episodic_store):
         """cleanup_expired() should delete memories past their expires_at."""
-        past = datetime.now() - timedelta(hours=2)
-        future = datetime.now() + timedelta(hours=2)
+        past = datetime.now(timezone.utc) - timedelta(hours=2)
+        future = datetime.now(timezone.utc) + timedelta(hours=2)
 
         await episodic_store.remember("expired one", expires_at=past)
         await episodic_store.remember("expired two", expires_at=past)

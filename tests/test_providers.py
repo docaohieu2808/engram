@@ -263,12 +263,13 @@ class TestProviderRegistry:
         assert len(registry.get_active()) == 1
         assert registry.get_active()[0].name == "on"
 
-    def test_remove(self):
+    @pytest.mark.asyncio
+    async def test_remove(self):
         registry = ProviderRegistry()
         registry.register(MockProvider(name="temp"))
-        assert registry.remove("temp") is True
+        assert await registry.remove("temp") is True
         assert registry.get("temp") is None
-        assert registry.remove("nonexistent") is False
+        assert await registry.remove("nonexistent") is False
 
 
 # --- Discovery ---

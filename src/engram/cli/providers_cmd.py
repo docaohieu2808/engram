@@ -36,7 +36,7 @@ def register(app: typer.Typer, providers_app: typer.Typer, get_config: Callable[
         from engram.providers.discovery import discover as run_discover
 
         console.print("[bold]Scanning for memory services...[/bold]\n")
-        found = asyncio.get_event_loop().run_until_complete(run_discover(cfg.discovery))
+        found = asyncio.run(run_discover(cfg.discovery))
 
         if not found:
             console.print("[yellow]No services found.[/yellow]")
@@ -130,7 +130,7 @@ def register(app: typer.Typer, providers_app: typer.Typer, get_config: Callable[
             for r in results[:3]:
                 console.print(f"    [{r.source}] {r.content[:100]}")
 
-        asyncio.get_event_loop().run_until_complete(_test())
+        asyncio.run(_test())
 
     @providers_app.command("stats")
     def provider_stats():
@@ -184,7 +184,7 @@ def register(app: typer.Typer, providers_app: typer.Typer, get_config: Callable[
                     return entry
                 return None
 
-            entry = asyncio.get_event_loop().run_until_complete(_detect())
+            entry = asyncio.run(_detect())
             if entry:
                 cfg.providers.append(entry)
                 save_config(cfg)

@@ -287,7 +287,7 @@ class EpisodicStore:
         if not results["ids"] or not results["ids"][0]:
             return memories
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for i, mem_id in enumerate(results["ids"][0]):
             doc = results["documents"][0][i] if results["documents"] else ""
             meta = results["metadatas"][0][i] if results["metadatas"] else {}
@@ -297,9 +297,9 @@ class EpisodicStore:
             if raw_expires:
                 try:
                     expires_dt = datetime.fromisoformat(raw_expires)
-                    # Strip tz info for comparison with naive now() (backward compat)
-                    if expires_dt.tzinfo is not None:
-                        expires_dt = expires_dt.replace(tzinfo=None)
+                    # Assume naive timestamps are UTC for consistent comparison
+                    if expires_dt.tzinfo is None:
+                        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
                     if expires_dt < now:
                         continue
                 except (ValueError, TypeError):
@@ -328,7 +328,7 @@ class EpisodicStore:
         except Exception as e:
             raise RuntimeError(f"Cleanup failed: {e}") from e
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         expired_ids: list[str] = []
 
         for i, mem_id in enumerate(result["ids"]):
@@ -337,6 +337,8 @@ class EpisodicStore:
             if raw_expires:
                 try:
                     expires_dt = datetime.fromisoformat(raw_expires)
+                    if expires_dt.tzinfo is None:
+                        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
                     if expires_dt < now:
                         expired_ids.append(mem_id)
                 except (ValueError, TypeError):
