@@ -58,6 +58,53 @@ engram add edge "Service:API" "Technology:PostgreSQL" --relation uses
 engram watch --daemon
 ```
 
+## Auto-Memory SDK
+
+Drop `EngramClient` into any Python agent as a transparent LLM wrapper — it auto-recalls relevant memories before each call and auto-extracts facts/decisions after.
+
+```python
+from engram import EngramClient
+
+async with EngramClient(namespace="my-agent") as client:
+    # Automatic memory — no manual remember() calls needed
+    response = await client.chat([
+        {"role": "user", "content": "Deploy to production"}
+    ])
+    # engram auto-recalls relevant context before the LLM call
+    # and auto-extracts facts/decisions from the response in the background
+```
+
+Explicit memory operations are also available:
+
+```python
+# Store a memory manually
+await client.remember("Team decided: no deploys on Fridays", memory_type="decision", priority=8)
+
+# Search memories by semantic similarity
+results = await client.recall("deployment policy", limit=5)
+
+# Reason across all memory
+answer = await client.think("What are our deployment rules?")
+```
+
+Sync wrappers for non-async code:
+
+```python
+client = EngramClient(namespace="my-agent")
+client.remember_sync("Redis chosen for session storage")
+results = client.recall_sync("caching strategy")
+```
+
+### Claude Code Hooks
+
+For Claude Code users, engram ships Stop + SessionEnd hooks that capture every conversation turn automatically — no SDK integration needed.
+
+```bash
+# hooks auto-register via ~/.claude/settings.json
+# Stop hook: extracts facts from each response (async, non-blocking)
+# SessionEnd hook: stores full session summary on /clear
+```
+
 ## CLI Reference
 
 ### Episodic Memory
