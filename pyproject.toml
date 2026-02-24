@@ -51,3 +51,7 @@ line-length = 100
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: end-to-end integration tests",
+    "load: load and stress tests (excluded from CI)",
+]
