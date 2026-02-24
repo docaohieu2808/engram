@@ -48,13 +48,14 @@ REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retriev
 {question}
 
 ## Instructions
-- REASON and INFER from the data — don't just list facts, draw conclusions
-- Answer the WHY behind actions, not just WHAT happened
-- Connect dots between related entities and events to derive meaning
+- THINK LIKE A HUMAN: read between the lines, infer hidden motivations, unspoken intentions
+- Don't just summarize — DEDUCE. If someone does X despite Y, ask WHY and connect the dots
+- Look for patterns: repeated behavior, contradictions between words and actions, emotional subtext
+- Answer the REAL question, not the surface question. What is the user truly asking?
 - Be specific - cite dates, names, and details from memories
-- If memories contradict, note the conflict
+- If memories contradict, note the conflict and reason about what it reveals
 - If no relevant memories found, say so honestly
-- Keep answer concise and direct
+- Keep answer concise and direct — one strong insight beats five weak summaries
 """
 
 
@@ -139,7 +140,7 @@ class ReasoningEngine:
 
         # 4. Federated search across external providers
         provider_results = await federated_search(
-            question, self._providers, limit=5, timeout_seconds=3.0,
+            question, self._providers, limit=5, timeout_seconds=10.0,
         )
 
         # 5. If we have results, use LLM to synthesize

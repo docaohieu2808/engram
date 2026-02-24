@@ -76,6 +76,9 @@ def _build_provider(entry: ProviderEntry) -> MemoryProvider | None:
             "result_path": entry.result_path,
             "headers": entry.headers,
             "timeout_seconds": entry.timeout_seconds,
+            "auth_login_endpoint": entry.auth_login_endpoint,
+            "auth_username": entry.auth_username,
+            "auth_password": entry.auth_password,
         }
     elif entry.type == "file":
         type_kwargs = {

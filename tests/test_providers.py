@@ -190,8 +190,9 @@ class TestClassifyQuery:
     def test_long_query_defaults_domain(self):
         assert classify_query("explain the architecture of microservice deployment") == "domain"
 
-    def test_short_query_defaults_internal(self):
-        assert classify_query("server status") == "internal"
+    def test_short_query_defaults_domain(self):
+        """Short non-internal queries default to domain for broader federation."""
+        assert classify_query("server status") == "domain"
 
 
 class TestFederatedSearch:

@@ -40,11 +40,8 @@ def classify_query(query: str) -> str:
     if any(kw in q_lower for kw in DOMAIN_KEYWORDS):
         return "domain"
 
-    # Heuristic: longer queries are more likely domain questions
-    if len(query.split()) > 3:
-        return "domain"
-
-    return "internal"
+    # Default: include external providers for any non-internal query
+    return "domain"
 
 
 async def federated_search(

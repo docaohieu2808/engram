@@ -126,6 +126,10 @@ class ProviderEntry(BaseModel):
     search_body: str = ""
     result_path: str = ""
     headers: dict[str, str] = Field(default_factory=dict)
+    # REST auth fields (JWT auto-login)
+    auth_login_endpoint: str = ""  # e.g. /api/v1/auth/login
+    auth_username: str = ""
+    auth_password: str = ""
     # File adapter fields
     path: str = ""
     pattern: str = "*.md"

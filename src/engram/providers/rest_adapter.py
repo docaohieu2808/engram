@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any
 
 import aiohttp
@@ -41,7 +42,6 @@ def _extract_by_path(data: Any, path: str) -> list[str]:
             if key and isinstance(item, dict):
                 val = item.get(key)
             elif key and isinstance(item, list):
-                # Try numeric index
                 try:
                     val = item[int(key)]
                 except (ValueError, IndexError):
@@ -75,6 +75,9 @@ class RestAdapter(MemoryProvider):
         result_path: str = "",
         headers: dict[str, str] | None = None,
         timeout_seconds: float = 3.0,
+        auth_login_endpoint: str = "",
+        auth_username: str = "",
+        auth_password: str = "",
         **kwargs: Any,
     ):
         # M7 fix: validate URL scheme to prevent file://, ftp://, etc.
@@ -91,8 +94,60 @@ class RestAdapter(MemoryProvider):
         self.result_path = result_path
         self.headers = headers or {}
         self.timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        # JWT auto-login
+        self._auth_login_endpoint = auth_login_endpoint
+        self._auth_username = auth_username
+        self._auth_password = auth_password
+        self._token: str | None = None
+        self._token_expires_at: float = 0.0
+
+    @property
+    def _auth_enabled(self) -> bool:
+        return bool(self._auth_login_endpoint and self._auth_username)
+
+    async def _ensure_token(self) -> None:
+        """Login and cache JWT token. Refresh 5 min before expiry."""
+        if not self._auth_enabled:
+            return
+        if self._token and time.time() < self._token_expires_at - 300:
+            return
+
+        login_url = f"{self.url}{self._auth_login_endpoint}"
+        async with aiohttp.ClientSession(timeout=self.timeout) as session:
+            async with session.post(
+                login_url,
+                data={
+                    "username": self._auth_username,
+                    "password": self._auth_password,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+        self._token = data.get("access_token", "")
+        # Decode expiry from JWT payload (base64 middle segment)
+        self._token_expires_at = self._parse_jwt_expiry(self._token)
+        self.headers["Authorization"] = f"Bearer {self._token}"
+        logger.info("[%s] JWT token acquired, expires at %s", self.name, self._token_expires_at)
+
+    @staticmethod
+    def _parse_jwt_expiry(token: str) -> float:
+        """Extract exp claim from JWT without external libs."""
+        import base64
+
+        try:
+            payload = token.split(".")[1]
+            # Add padding
+            payload += "=" * (4 - len(payload) % 4)
+            decoded = json.loads(base64.urlsafe_b64decode(payload))
+            return float(decoded.get("exp", 0))
+        except Exception:
+            # Fallback: assume 1 hour from now
+            return time.time() + 3600
 
     async def search(self, query: str, limit: int = 5) -> list[ProviderResult]:
+        await self._ensure_token()
         search_url = f"{self.url}{self.search_endpoint}"
 
         async with aiohttp.ClientSession(timeout=self.timeout) as session:
@@ -126,6 +181,7 @@ class RestAdapter(MemoryProvider):
 
     async def health(self) -> bool:
         try:
+            await self._ensure_token()
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(f"{self.url}/health", headers=self.headers) as resp:
                     return resp.status < 500
