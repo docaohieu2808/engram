@@ -12,7 +12,9 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from pathlib import Path
+
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -533,6 +535,57 @@ def create_app(
         ep_stats = await ep.stats()
         sem_stats = await gr.stats()
         return {"episodic": ep_stats, "semantic": sem_stats}
+
+    # --- Graph visualization routes ---
+
+    @v1.get("/graph/data")
+    async def graph_data(request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Return all nodes and edges in vis-network format for graph visualization."""
+        gr = await _resolve_graph(auth)
+        nodes = await gr.get_nodes()
+        color_map = {
+            "Person": "#4CAF50",
+            "Technology": "#2196F3",
+            "Project": "#FF9800",
+            "Service": "#9C27B0",
+        }
+        vis_nodes = []
+        vis_edges = []
+        for node in nodes:
+            attrs = node.attributes or {}
+            tooltip = f"{node.type}: {node.name}"
+            if attrs:
+                tooltip += "\n" + "\n".join(f"{k}: {v}" for k, v in attrs.items())
+            vis_nodes.append({
+                "id": node.key,
+                "label": node.name,
+                "group": node.type,
+                "color": color_map.get(node.type, "#607D8B"),
+                "title": tooltip,
+            })
+
+        all_edges = await gr.get_edges()
+        seen: set[tuple[str, str, str]] = set()
+        for edge in all_edges:
+            key = (edge.from_node, edge.to_node, edge.relation)
+            if key not in seen:
+                seen.add(key)
+                vis_edges.append({
+                    "from": edge.from_node,
+                    "to": edge.to_node,
+                    "label": edge.relation,
+                    "arrows": "to",
+                })
+
+        return {"nodes": vis_nodes, "edges": vis_edges}
+
+    @app.get("/graph")
+    async def graph_ui():
+        """Serve the graph visualization HTML page."""
+        html_path = Path(__file__).parent.parent / "static" / "graph.html"
+        if html_path.exists():
+            return HTMLResponse(html_path.read_text())
+        return HTMLResponse("<h1>Graph UI not found</h1>", status_code=404)
 
     app.include_router(v1)
     return app

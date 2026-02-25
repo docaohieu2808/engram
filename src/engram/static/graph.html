@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engram — Memory Graph</title>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  #header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  #header h1 { font-size: 16px; font-weight: 600; color: #a0c4ff; }
+  #search { flex: 1; max-width: 300px; padding: 6px 12px; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 6px; color: #e0e0e0; font-size: 13px; outline: none; }
+  #search:focus { border-color: #2196F3; }
+  #stats { font-size: 12px; color: #888; margin-left: auto; }
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #graph-container { flex: 1; }
+  #panel { width: 260px; background: #16213e; border-left: 1px solid #0f3460; padding: 16px; overflow-y: auto; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
+  #panel h2 { font-size: 13px; font-weight: 600; color: #a0c4ff; text-transform: uppercase; letter-spacing: 0.05em; }
+  #node-info { font-size: 12px; line-height: 1.6; color: #ccc; }
+  #node-info .node-name { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  #node-info .node-type { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-bottom: 8px; }
+  #node-info .attr-row { display: flex; gap: 6px; margin-top: 2px; }
+  #node-info .attr-key { color: #888; min-width: 80px; }
+  #node-info .edges-title { margin-top: 10px; font-weight: 600; color: #a0c4ff; font-size: 11px; text-transform: uppercase; }
+  #node-info .edge-item { padding: 3px 0; border-bottom: 1px solid #0f3460; color: #aaa; }
+  #node-info .edge-item span { color: #e0e0e0; }
+  #legend { font-size: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; font-size: 14px; }
+  #error { display: none; color: #f44336; font-size: 13px; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>Engram Memory Graph</h1>
+  <input id="search" type="text" placeholder="Search nodes..." />
+  <div id="stats">Loading...</div>
+</div>
+<div id="main">
+  <div id="graph-container">
+    <div id="loading">Loading graph data...</div>
+    <div id="error"></div>
+  </div>
+  <div id="panel">
+    <div>
+      <h2>Node Details</h2>
+      <div id="node-info"><span style="color:#666">Click a node to see details</span></div>
+    </div>
+    <div>
+      <h2>Legend</h2>
+      <div id="legend"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLOR_MAP = {
+  Person: '#4CAF50', Technology: '#2196F3', Project: '#FF9800',
+  Service: '#9C27B0', default: '#607D8B'
+};
+
+let network = null;
+let allNodes = [], allEdges = [];
+let nodesDataset, edgesDataset;
+
+async function loadGraph() {
+  try {
+    const res = await fetch('/api/v1/graph/data');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    allNodes = data.nodes || [];
+    allEdges = data.edges || [];
+    renderGraph(allNodes, allEdges);
+    renderLegend(allNodes);
+    updateStats(allNodes.length, allEdges.length);
+  } catch (e) {
+    document.getElementById('loading').style.display = 'none';
+    const err = document.getElementById('error');
+    err.style.display = 'block';
+    err.textContent = 'Failed to load graph: ' + e.message + '. Make sure engram serve is running.';
+  }
+}
+
+function renderGraph(nodes, edges) {
+  document.getElementById('loading').style.display = 'none';
+
+  nodesDataset = new vis.DataSet(nodes.map(n => ({
+    ...n,
+    font: { color: '#e0e0e0', size: 12 },
+    borderWidth: 1,
+    borderWidthSelected: 2,
+  })));
+  edgesDataset = new vis.DataSet(edges.map(e => ({
+    ...e,
+    font: { color: '#aaa', size: 10, align: 'middle' },
+    color: { color: '#334', hover: '#2196F3', highlight: '#2196F3' },
+    smooth: { type: 'curvedCW', roundness: 0.1 },
+  })));
+
+  const container = document.getElementById('graph-container');
+  const options = {
+    physics: {
+      enabled: true,
+      forceAtlas2Based: { gravitationalConstant: -50, springLength: 100, springConstant: 0.08 },
+      solver: 'forceAtlas2Based',
+      stabilization: { iterations: 150 },
+    },
+    interaction: { hover: true, tooltipDelay: 200 },
+    nodes: { shape: 'dot', size: 16 },
+    edges: { arrows: { to: { enabled: true, scaleFactor: 0.6 } } },
+    background: { color: '#1a1a2e' },
+  };
+
+  network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);
+  network.on('click', params => {
+    if (params.nodes.length > 0) showNodeDetails(params.nodes[0]);
+    else clearNodeDetails();
+  });
+}
+
+function showNodeDetails(nodeId) {
+  const node = allNodes.find(n => n.id === nodeId);
+  if (!node) return;
+
+  const connectedEdges = allEdges.filter(e => e.from === nodeId || e.to === nodeId);
+  const color = COLOR_MAP[node.group] || COLOR_MAP.default;
+
+  let html = `<div class="node-name">${node.label}</div>`;
+  html += `<span class="node-type" style="background:${color}22;color:${color};border:1px solid ${color}44">${node.group}</span>`;
+
+  // Parse tooltip for attributes
+  const lines = (node.title || '').split('\n').slice(1);
+  if (lines.length > 0) {
+    html += '<div style="margin-top:6px">';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const [k, ...rest] = line.split(':');
+      html += `<div class="attr-row"><span class="attr-key">${k}:</span><span>${rest.join(':').trim()}</span></div>`;
+    }
+    html += '</div>';
+  }
+
+  if (connectedEdges.length > 0) {
+    html += `<div class="edges-title">Connections (${connectedEdges.length})</div>`;
+    connectedEdges.slice(0, 10).forEach(e => {
+      const dir = e.from === nodeId ? '→' : '←';
+      const otherId = e.from === nodeId ? e.to : e.from;
+      const other = allNodes.find(n => n.id === otherId);
+      const otherLabel = other ? other.label : otherId;
+      html += `<div class="edge-item">${dir} <span>${e.label}</span> ${otherLabel}</div>`;
+    });
+    if (connectedEdges.length > 10) html += `<div style="color:#666;margin-top:4px">+${connectedEdges.length - 10} more</div>`;
+  }
+
+  document.getElementById('node-info').innerHTML = html;
+}
+
+function clearNodeDetails() {
+  document.getElementById('node-info').innerHTML = '<span style="color:#666">Click a node to see details</span>';
+}
+
+function renderLegend(nodes) {
+  const types = [...new Set(nodes.map(n => n.group))].sort();
+  const container = document.getElementById('legend');
+  container.innerHTML = types.map(t => {
+    const color = COLOR_MAP[t] || COLOR_MAP.default;
+    return `<div class="legend-item"><div class="legend-dot" style="background:${color}"></div><span>${t}</span></div>`;
+  }).join('') || '<span style="color:#666">No nodes</span>';
+}
+
+function updateStats(nodeCount, edgeCount) {
+  document.getElementById('stats').textContent = `${nodeCount} nodes · ${edgeCount} edges`;
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!network || !nodesDataset) return;
+
+  if (!q) {
+    nodesDataset.update(allNodes.map(n => ({ id: n.id, opacity: 1 })));
+    return;
+  }
+
+  const matched = new Set(allNodes.filter(n => n.label.toLowerCase().includes(q)).map(n => n.id));
+  nodesDataset.update(allNodes.map(n => ({
+    id: n.id,
+    opacity: matched.has(n.id) ? 1 : 0.15,
+    borderWidth: matched.has(n.id) ? 3 : 1,
+  })));
+
+  if (matched.size > 0) network.fit({ nodes: [...matched], animation: true });
+});
+
+loadGraph();
+</script>
+</body>
+</html>

@@ -324,6 +324,17 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         console.print(table)
 
     @app.command()
+    def graph(
+        port: int = typer.Option(8100, "--port", "-p", help="Server port"),
+    ):
+        """Open graph visualization in browser."""
+        import webbrowser
+        url = f"http://localhost:{port}/graph"
+        webbrowser.open(url)
+        console.print(f"Opening graph UI at [cyan]{url}[/cyan]")
+        console.print("[dim]Make sure 'engram serve' is running.[/dim]")
+
+    @app.command()
     def serve(
         port: Optional[int] = typer.Option(None, "--port", "-p"),
         host: Optional[str] = typer.Option(None, "--host"),
