@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engram — Memory Dashboard</title>
+<link rel="stylesheet" href="/static/ui.css">
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <h1>Engram</h1>
+    <nav id="tabs">
+      <button data-tab="dashboard" class="active">Dashboard</button>
+      <button data-tab="memories">Memories</button>
+      <button data-tab="graph">Graph</button>
+      <button data-tab="think">Think</button>
+      <button data-tab="audit">Audit</button>
+      <button data-tab="settings">Settings</button>
+    </nav>
+    <input id="search-global" type="text" placeholder="Search (Ctrl+K)" />
+  </div>
+  <div id="content">
+    <div id="tab-dashboard" class="tab-panel active"></div>
+    <div id="tab-memories" class="tab-panel"></div>
+    <div id="tab-graph" class="tab-panel"></div>
+    <div id="tab-think" class="tab-panel"></div>
+    <div id="tab-audit" class="tab-panel"></div>
+    <div id="tab-settings" class="tab-panel"></div>
+  </div>
+</div>
+<div id="toast-container"></div>
+<div id="modal-root"></div>
+
+<script src="/static/lib/api.js"></script>
+<script src="/static/ui.js"></script>
+<script src="/static/components/dashboard.js"></script>
+<script src="/static/components/memories.js"></script>
+<script src="/static/components/graph.js"></script>
+<script src="/static/components/think.js"></script>
+<script src="/static/components/audit.js"></script>
+<script src="/static/components/settings.js"></script>
+<script>App.init();</script>
+</body>
+</html>

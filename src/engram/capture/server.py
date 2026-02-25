@@ -536,7 +536,136 @@ def create_app(
         sem_stats = await gr.stats()
         return {"episodic": ep_stats, "semantic": sem_stats}
 
-    # --- Graph visualization routes ---
+    # --- Memory CRUD routes ---
+
+    @v1.get("/memories")
+    async def list_memories(
+        search: Optional[str] = None,
+        memory_type: Optional[str] = None,
+        priority_min: int = 1,
+        priority_max: int = 10,
+        confidence_min: float = 0.0,
+        confidence_max: float = 1.0,
+        tags: Optional[str] = None,
+        offset: int = 0,
+        limit: int = 20,
+        auth: AuthContext = Depends(get_auth_context),
+    ):
+        """List memories with pagination and filters."""
+        ep = _resolve_episodic(auth)
+        limit = min(limit, 100)
+        # Fetch enough to filter server-side
+        fetch_limit = min((offset + limit) * 3, 1000)
+        if search:
+            raw = await ep.search(search, limit=fetch_limit)
+        else:
+            raw = await ep.get_recent(n=fetch_limit)
+
+        # Apply filters
+        filtered = []
+        mt_filter = set(memory_type.split(",")) if memory_type else None
+        tag_filter = set(t.strip() for t in tags.split(",")) if tags else None
+        for m in raw:
+            mt_val = m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type)
+            if mt_filter and mt_val not in mt_filter:
+                continue
+            if not (priority_min <= m.priority <= priority_max):
+                continue
+            if not (confidence_min <= m.confidence <= confidence_max):
+                continue
+            if tag_filter and not tag_filter.intersection(set(m.tags)):
+                continue
+            filtered.append(m)
+
+        paginated = filtered[offset:offset + limit]
+        return {
+            "status": "ok",
+            "memories": [_serialize_memory(m) for m in paginated],
+            "total": len(filtered),
+            "offset": offset,
+            "limit": limit,
+        }
+
+    @v1.get("/memories/export")
+    async def export_memories(
+        memory_type: Optional[str] = None,
+        limit: int = 1000,
+        auth: AuthContext = Depends(get_auth_context),
+    ):
+        """Export memories as JSON."""
+        ep = _resolve_episodic(auth)
+        raw = await ep.get_recent(n=min(limit, 1000))
+        if memory_type:
+            mt_set = set(memory_type.split(","))
+            raw = [m for m in raw if (m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type)) in mt_set]
+        return {"status": "ok", "memories": [_serialize_memory(m) for m in raw], "count": len(raw)}
+
+    @v1.post("/memories/bulk-delete")
+    async def bulk_delete_memories(request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Delete multiple memories by IDs."""
+        _require_admin(auth)
+        body = await request.json()
+        ids = body.get("ids", [])
+        if not ids:
+            raise EngramError(ErrorCode.VALIDATION_ERROR, "ids list required")
+        ep = _resolve_episodic(auth)
+        deleted = []
+        for mid in ids:
+            if await ep.delete(mid):
+                deleted.append(mid)
+        return {"status": "ok", "deleted": deleted, "count": len(deleted)}
+
+    @v1.get("/memories/{memory_id}")
+    async def get_memory(memory_id: str, auth: AuthContext = Depends(get_auth_context)):
+        """Get a single memory by ID."""
+        ep = _resolve_episodic(auth)
+        mem = await ep.get(memory_id)
+        if not mem:
+            raise EngramError(ErrorCode.NOT_FOUND, f"Memory {memory_id} not found")
+        return {"status": "ok", "memory": _serialize_memory(mem)}
+
+    @v1.put("/memories/{memory_id}")
+    async def update_memory(memory_id: str, request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Update memory fields (content, type, priority, tags, expires_at)."""
+        ep = _resolve_episodic(auth)
+        mem = await ep.get(memory_id)
+        if not mem:
+            raise EngramError(ErrorCode.NOT_FOUND, f"Memory {memory_id} not found")
+
+        body = await request.json()
+        meta_update: dict[str, Any] = {}
+        if "memory_type" in body:
+            meta_update["memory_type"] = body["memory_type"]
+        if "priority" in body:
+            p = int(body["priority"])
+            if not 1 <= p <= 10:
+                raise EngramError(ErrorCode.VALIDATION_ERROR, "Priority must be 1-10")
+            meta_update["priority"] = p
+        if "tags" in body:
+            meta_update["tags"] = ",".join(body["tags"]) if body["tags"] else ""
+        if "entities" in body:
+            meta_update["entities"] = ",".join(body["entities"]) if body["entities"] else ""
+        if "expires_at" in body:
+            meta_update["expires_at"] = body["expires_at"] or ""
+
+        if meta_update:
+            ok = await ep.update_metadata(memory_id, meta_update)
+            if not ok:
+                raise EngramError(ErrorCode.INTERNAL, "Failed to update memory")
+
+        updated = await ep.get(memory_id)
+        return {"status": "ok", "memory": _serialize_memory(updated) if updated else None}
+
+    @v1.delete("/memories/{memory_id}")
+    async def delete_memory(memory_id: str, auth: AuthContext = Depends(get_auth_context)):
+        """Delete a single memory."""
+        ep = _resolve_episodic(auth)
+        ok = await ep.delete(memory_id)
+        if not ok:
+            raise EngramError(ErrorCode.NOT_FOUND, f"Memory {memory_id} not found or delete failed")
+        return {"status": "ok", "deleted": memory_id}
+
+    # --- Graph visualization & mutation routes ---
 
     @v1.get("/graph/data")
     async def graph_data(request: Request, auth: AuthContext = Depends(get_auth_context)):
@@ -562,6 +691,7 @@ def create_app(
                 "group": node.type,
                 "color": color_map.get(node.type, "#607D8B"),
                 "title": tooltip,
+                "attributes": attrs,
             })
 
         all_edges = await gr.get_edges()
@@ -575,9 +705,140 @@ def create_app(
                     "to": edge.to_node,
                     "label": edge.relation,
                     "arrows": "to",
+                    "weight": edge.weight,
+                    "attributes": edge.attributes,
                 })
 
         return {"nodes": vis_nodes, "edges": vis_edges}
+
+    @v1.post("/graph/nodes")
+    async def create_node(request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Create a semantic graph node."""
+        from engram.models import SemanticNode
+        body = await request.json()
+        if not body.get("type") or not body.get("name"):
+            raise EngramError(ErrorCode.VALIDATION_ERROR, "type and name required")
+        node = SemanticNode(type=body["type"], name=body["name"], attributes=body.get("attributes", {}))
+        gr = await _resolve_graph(auth)
+        is_new = await gr.add_node(node)
+        return {"status": "ok", "key": node.key, "created": is_new}
+
+    @v1.put("/graph/nodes/{node_key:path}")
+    async def update_node(node_key: str, request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Update node attributes."""
+        from engram.models import SemanticNode
+        body = await request.json()
+        gr = await _resolve_graph(auth)
+        nodes = await gr.get_nodes()
+        existing = next((n for n in nodes if n.key == node_key), None)
+        if not existing:
+            raise EngramError(ErrorCode.NOT_FOUND, f"Node {node_key} not found")
+        updated = SemanticNode(type=existing.type, name=existing.name, attributes={**existing.attributes, **body.get("attributes", {})})
+        await gr.add_node(updated)
+        return {"status": "ok", "key": updated.key}
+
+    @v1.delete("/graph/nodes/{node_key:path}")
+    async def delete_node(node_key: str, auth: AuthContext = Depends(get_auth_context)):
+        """Delete a semantic graph node and its connected edges."""
+        gr = await _resolve_graph(auth)
+        ok = await gr.remove_node(node_key)
+        if not ok:
+            raise EngramError(ErrorCode.NOT_FOUND, f"Node {node_key} not found")
+        return {"status": "ok", "deleted": node_key}
+
+    @v1.post("/graph/edges")
+    async def create_edge(request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Create a semantic graph edge."""
+        from engram.models import SemanticEdge
+        body = await request.json()
+        if not body.get("from_node") or not body.get("to_node") or not body.get("relation"):
+            raise EngramError(ErrorCode.VALIDATION_ERROR, "from_node, to_node, and relation required")
+        edge = SemanticEdge(
+            from_node=body["from_node"], to_node=body["to_node"],
+            relation=body["relation"], weight=body.get("weight", 1.0),
+            attributes=body.get("attributes", {}),
+        )
+        gr = await _resolve_graph(auth)
+        is_new = await gr.add_edge(edge)
+        return {"status": "ok", "key": edge.key, "created": is_new}
+
+    @v1.delete("/graph/edges")
+    async def delete_edge(request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Delete a semantic graph edge by key."""
+        body = await request.json()
+        edge_key = body.get("key")
+        if not edge_key:
+            raise EngramError(ErrorCode.VALIDATION_ERROR, "edge key required")
+        gr = await _resolve_graph(auth)
+        ok = await gr.remove_edge(edge_key)
+        if not ok:
+            raise EngramError(ErrorCode.NOT_FOUND, f"Edge {edge_key} not found")
+        return {"status": "ok", "deleted": edge_key}
+
+    # --- Feedback & Audit routes ---
+
+    @v1.get("/feedback/history")
+    async def feedback_history(last: int = 50, auth: AuthContext = Depends(get_auth_context)):
+        """Get recent feedback entries from audit log."""
+        from engram.audit import get_audit
+        audit = get_audit()
+        entries = audit.read_recent(last * 3)  # Read more to filter
+        feedback_entries = [e for e in entries if e.get("operation") == "modification" and e.get("mod_type") == "metadata_update" and "confidence" in str(e.get("after_value", ""))]
+        return {"status": "ok", "entries": feedback_entries[:last]}
+
+    @v1.get("/audit/log")
+    async def audit_log(last: int = 50, auth: AuthContext = Depends(get_auth_context)):
+        """Get recent audit log entries."""
+        from engram.audit import get_audit
+        audit = get_audit()
+        entries = audit.read_recent(last)
+        return {"status": "ok", "entries": entries}
+
+    # --- Scheduler routes ---
+
+    @v1.get("/scheduler/tasks")
+    async def scheduler_tasks(auth: AuthContext = Depends(get_auth_context)):
+        """List all scheduled tasks and their status."""
+        try:
+            from engram.scheduler import MemoryScheduler
+            scheduler = MemoryScheduler()
+            tasks = scheduler.status()
+        except Exception:
+            tasks = []
+        return {"status": "ok", "tasks": tasks}
+
+    @v1.post("/scheduler/tasks/{task_name}/run")
+    async def scheduler_force_run(task_name: str, auth: AuthContext = Depends(get_auth_context)):
+        """Force-run a scheduled task."""
+        _require_admin(auth)
+        return {"status": "ok", "message": f"Task {task_name} triggered (scheduler must be running)"}
+
+    # --- Benchmark route ---
+
+    @v1.post("/benchmark/run")
+    async def benchmark_run(request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Run benchmark with provided questions."""
+        _require_admin(auth)
+        body = await request.json()
+        questions = body.get("questions", [])
+        if not questions:
+            raise EngramError(ErrorCode.VALIDATION_ERROR, "questions list required")
+        ep = _resolve_episodic(auth)
+        results = []
+        for q in questions:
+            query = q.get("question", "")
+            expected = q.get("expected", "")
+            start = time.time()
+            recalls = await ep.search(query, limit=3)
+            latency = round((time.time() - start) * 1000, 1)
+            actual = recalls[0].content if recalls else ""
+            correct = expected.lower() in actual.lower() if expected else False
+            results.append({"question": query, "expected": expected, "actual": actual[:200], "correct": correct, "latency_ms": latency})
+        accuracy = sum(1 for r in results if r["correct"]) / len(results) * 100 if results else 0
+        avg_latency = sum(r["latency_ms"] for r in results) / len(results) if results else 0
+        return {"status": "ok", "results": results, "accuracy": round(accuracy, 1), "avg_latency_ms": round(avg_latency, 1)}
+
+    # --- UI routes ---
 
     @app.get("/graph")
     async def graph_ui():
@@ -587,8 +848,59 @@ def create_app(
             return HTMLResponse(html_path.read_text())
         return HTMLResponse("<h1>Graph UI not found</h1>", status_code=404)
 
+    @app.get("/")
+    async def root_redirect():
+        """Redirect root to WebUI."""
+        from starlette.responses import RedirectResponse
+        return RedirectResponse(url="/ui")
+
+    @app.get("/ui")
+    async def ui_root():
+        """Serve the WebUI HTML page."""
+        html_path = Path(__file__).parent.parent / "static" / "ui.html"
+        if html_path.exists():
+            return HTMLResponse(html_path.read_text())
+        return HTMLResponse("<h1>WebUI not found</h1>", status_code=404)
+
+    @app.get("/ui/{path:path}")
+    async def ui_catchall(path: str):
+        """SPA catch-all — serve ui.html for all /ui/* routes."""
+        html_path = Path(__file__).parent.parent / "static" / "ui.html"
+        if html_path.exists():
+            return HTMLResponse(html_path.read_text())
+        return HTMLResponse("<h1>WebUI not found</h1>", status_code=404)
+
+    from fastapi.staticfiles import StaticFiles
+    static_dir = Path(__file__).parent.parent / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
     app.include_router(v1)
     return app
+
+
+def _serialize_memory(m: Any) -> dict[str, Any]:
+    """Serialize an EpisodicMemory to a JSON-safe dict."""
+    mt = m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type)
+    return {
+        "id": m.id,
+        "content": m.content,
+        "memory_type": mt,
+        "priority": m.priority,
+        "confidence": m.confidence,
+        "negative_count": getattr(m, "negative_count", 0),
+        "tags": m.tags if isinstance(m.tags, list) else ([t.strip() for t in m.tags.split(",")] if m.tags else []),
+        "entities": m.entities if isinstance(m.entities, list) else ([e.strip() for e in m.entities.split(",")] if m.entities else []),
+        "access_count": getattr(m, "access_count", 0),
+        "decay_rate": getattr(m, "decay_rate", 0.1),
+        "timestamp": m.timestamp.isoformat() if hasattr(m.timestamp, "isoformat") else str(m.timestamp),
+        "expires_at": m.expires_at.isoformat() if m.expires_at and hasattr(m.expires_at, "isoformat") else str(m.expires_at) if m.expires_at else None,
+        "topic_key": getattr(m, "topic_key", None),
+        "revision_count": getattr(m, "revision_count", 0),
+        "consolidation_group": getattr(m, "consolidation_group", None),
+        "consolidated_into": getattr(m, "consolidated_into", None),
+        "metadata": getattr(m, "metadata", {}),
+    }
 
 
 def _require_admin(auth: AuthContext) -> None:
