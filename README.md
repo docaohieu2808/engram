@@ -2,13 +2,14 @@
 
 **Memory traces for AI agents — Think like humans.**
 
-![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-270+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-506+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.3.1-blue)
 
 Dual-memory AI system combining episodic (vector) + semantic (graph) memory with LLM reasoning. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment. Exposes CLI, MCP, and versioned HTTP API (/api/v1/).
 
 ## Features
 
 - **Dual Memory** — Episodic (ChromaDB) + Semantic (PostgreSQL/SQLite) with LLM synthesis
+- **Recall Pipeline** — Query decision, entity resolution, parallel search fusion, learning feedback
 - **Multi-Tenancy** — Isolated per-tenant stores, row-level isolation in PostgreSQL
 - **Authentication** — JWT + API keys with RBAC (ADMIN, AGENT, READER), optional
 - **Caching** — Redis-backed result caching with per-endpoint TTLs
@@ -106,6 +107,16 @@ For Claude Code users, engram ships Stop + SessionEnd hooks that capture every c
 ```
 
 ## CLI Reference
+
+### Recall Pipeline (v0.3.1)
+
+```bash
+engram resolve <query> [--context "..."]              # Entity/temporal resolution
+engram feedback <id> [--positive|--negative]          # Record feedback on memory
+engram audit [--last N]                               # View retrieval audit log
+engram benchmark --questions file.json                # Run accuracy benchmarks
+engram recall <query> [--resolve-entities] [--resolve-temporal]  # Enhanced recall
+```
 
 ### Episodic Memory
 
@@ -246,6 +257,28 @@ audit:
 telemetry:
   enabled: false  # Requires telemetry extra
   otlp_endpoint: http://localhost:4317
+
+recall:
+  enabled: true
+  decision_skip_trivial: true
+  entity_resolution_enabled: true
+  parallel_search_enabled: true
+  feedback_enabled: true
+  auto_consolidate_threshold: 20
+  retrieval_audit_enabled: true
+
+ingestion:
+  auto_memory_enabled: true
+  guard_enabled: true
+
+feedback:
+  confidence_positive_delta: 0.15
+  confidence_negative_delta: 0.2
+  auto_delete_threshold: 3
+
+resolution:
+  temporal_enabled: true
+  pronoun_enabled: true
 ```
 
 ### Key Environment Variables
@@ -261,6 +294,12 @@ ENGRAM_RATE_LIMIT_ENABLED             # Enable rate limiting
 ENGRAM_RATE_LIMIT_REQUESTS_PER_MINUTE # Default 60
 ENGRAM_AUDIT_ENABLED                  # Enable audit logs
 ENGRAM_TELEMETRY_ENABLED              # Enable OpenTelemetry
+ENGRAM_RECALL_ENABLED                 # Enable recall pipeline (v0.3.1)
+ENGRAM_INGESTION_AUTO_MEMORY_ENABLED  # Detect save-worthy messages (v0.3.1)
+ENGRAM_INGESTION_GUARD_ENABLED        # Block prompt injection (v0.3.1)
+ENGRAM_FEEDBACK_ENABLED               # Enable feedback loop (v0.3.1)
+ENGRAM_RESOLUTION_TEMPORAL_ENABLED    # Temporal entity resolution (v0.3.1)
+ENGRAM_RESOLUTION_PRONOUN_ENABLED     # Pronoun resolution via LLM (v0.3.1)
 ```
 
 **Note:** Environment variables override YAML; `${VARIABLE}` syntax in YAML is expanded at load time.
@@ -316,15 +355,23 @@ Available MCP tools:
 | Tool | Description |
 |------|-------------|
 | `engram_remember` | Store memory with type, priority, tags, and optional namespace |
-| `engram_recall` | Search episodic memories by similarity with optional tag/type/namespace filters |
+| `engram_recall` | Search episodic memories (compact format by default, v0.3.1+) |
+| `engram_resolve` | Entity/temporal resolution for query context (v0.3.1+) |
+| `engram_feedback` | Record positive/negative feedback on memories (v0.3.1+) |
 | `engram_think` | Reason across episodic + semantic memory via LLM |
 | `engram_summarize` | Summarize recent N memories into key insights via LLM |
 | `engram_cleanup` | Delete all expired memories from the episodic store |
 | `engram_status` | Show memory statistics |
+| `engram_get_memory` | Retrieve full memory content by ID or prefix (v0.3.0+) |
+| `engram_timeline` | Chronological context around a memory (v0.3.0+) |
 | `engram_add_entity` | Add entity node to knowledge graph |
 | `engram_add_relation` | Add relationship edge between entities |
 | `engram_query_graph` | Query knowledge graph by keyword, type, or relatedness |
 | `engram_ingest` | Dual ingest: extract entities + store memories from messages |
+| `engram_session_start` | Begin new conversation session (v0.3.0+) |
+| `engram_session_end` | End active session with optional summary (v0.3.0+) |
+| `engram_session_summary` | Get summary of completed session (v0.3.0+) |
+| `engram_session_context` | Retrieve memories from active session (v0.3.0+) |
 
 ## HTTP API
 
@@ -403,10 +450,11 @@ See [deployment-guide.md](docs/deployment-guide.md) for Docker Compose with Post
 
 ## Test Coverage
 
-- **270+ tests** across all modules
+- **506+ tests** across all modules (159 new in v0.3.1)
 - **75%+ code coverage** target
 - **CI/CD:** GitHub Actions runs full test suite on every PR and commit
 - **Load tests:** Marked as excluded from CI; run separately in staging
+- **Recall pipeline tests:** Decision, resolution, search, feedback, auto-memory, guard, benchmarking
 
 ```bash
 # Run all tests
@@ -414,12 +462,28 @@ pytest tests/ -v
 
 # Run with coverage
 pytest tests/ --cov=src/engram --cov-report=html
+
+# Run recall pipeline tests only
+pytest tests/ -k "recall or resolution or feedback or decision" -v
 ```
 
 ---
 
-## Enterprise Features (v0.2.0)
+## Advanced Features
 
+### Recall Pipeline (v0.3.1)
+✓ Query decision engine (skip trivial <10ms)
+✓ Entity resolution (temporal + pronoun)
+✓ Parallel search fusion (multi-source)
+✓ Learning feedback loop (adaptive confidence)
+✓ Auto-memory detection (save-worthy messages)
+✓ Poisoning guard (injection prevention)
+✓ Auto-consolidation (after N messages)
+✓ Retrieval audit logging (JSONL)
+✓ Benchmarking framework (accuracy by type)
+✓ 506 tests, 159 new (v0.3.1)
+
+### Enterprise Features (v0.2.0+)
 ✓ Multi-tenancy with contextvar isolation
 ✓ JWT + API key authentication (optional, backward compat)
 ✓ PostgreSQL semantic graph backend (SQLite default)
@@ -428,7 +492,15 @@ pytest tests/ --cov=src/engram --cov-report=html
 ✓ Docker + GitHub Actions CI/CD
 ✓ Health checks + backup/restore
 ✓ API versioning (/api/v1/) with error codes
-✓ 270 tests, 21 bug fixes
+
+### Memory Features (v0.3.0+)
+✓ Activation-based recall (composite scoring)
+✓ Ebbinghaus decay modeling (retention scoring)
+✓ Memory consolidation (Jaccard clustering)
+✓ Session lifecycle management
+✓ Git sync (compressed JSONL chunks)
+✓ Terminal UI (interactive explorer)
+✓ Progressive disclosure (compact recall)
 
 ---
 

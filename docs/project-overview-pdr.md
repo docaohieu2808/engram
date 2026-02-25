@@ -11,7 +11,7 @@ Engram is a dual-memory AI agent system that thinks like humans. It combines:
 
 Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI).
 
-**Version:** 0.3.0 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI | **Tests:** 380+ | **License:** MIT
+**Version:** 0.3.0 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline | **Tests:** 506+ | **License:** MIT
 
 ---
 
@@ -44,6 +44,17 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **Smart routing:** Keyword classification routes queries to internal or federated providers
 - **Circuit breaker:** Providers auto-disable after consecutive errors; re-enable manually
 - **Plugin system:** Third-party adapters via `entry_points(group="engram.providers")`
+
+### Recall Pipeline (v0.3.1)
+- **Query Decision:** Trivial message skip (ok, thanks, emoji)
+- **Entity Resolution:** Temporal (Vietnamese+English regex) + pronoun resolution (LLM with fallback)
+- **Parallel Search:** Multi-source (ChromaDB semantic + entity graph + keyword fallback) with fusion
+- **Learning Pipeline:** Feedback loop (±0.15/0.2 confidence), auto-delete after 3× negative + low confidence
+- **Auto-Memory Detection:** Detect save-worthy messages (Save: prefix, identity, preferences, decisions)
+- **Poisoning Guard:** Block prompt injection, special tokens, instruction overrides
+- **Auto-Consolidate:** Trigger consolidation after N messages (default 20)
+- **Retrieval Audit:** JSONL log for all recall operations
+- **Benchmarking:** Run question sets, measure accuracy by type
 
 ### Extensibility
 - **Pluggable semantic backend:** SQLite (default) or PostgreSQL
@@ -277,6 +288,23 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **FR23.6** Memory detail view: full content, metadata, related memories
 - **Acceptance:** TUI loads within 1s; search returns results in <500ms; drill-down shows full memory
 
+#### FR24: Recall Pipeline (v0.3.1)
+- **FR24.1** Query Decision: Skip trivial messages (ok, thanks, hello, emoji) via regex
+- **FR24.2** Entity Resolution: Temporal (Vietnamese+English regex, no LLM) + Pronoun (gemini-flash with fallback)
+- **FR24.3** Parallel Search: Multi-source (ChromaDB semantic + entity graph + keyword fallback) with fusion
+- **FR24.4** Fusion: Dedup by content hash, score ranking
+- **FR24.5** Feedback Loop: Detect positive/negative feedback, adjust confidence ±0.15/0.2, auto-delete after 3× negative + low confidence
+- **FR24.6** Auto-Memory: Detect save-worthy messages (Save: prefix, identity, preferences, decisions), skip sensitive data
+- **FR24.7** Poisoning Guard: Block prompt injection (ignore instructions, you are now, special tokens)
+- **FR24.8** Auto-Consolidate: Trigger consolidation after N messages (default 20)
+- **FR24.9** Retrieval Audit: JSONL audit log for all recall operations
+- **FR24.10** Benchmarking: Run question sets, measure accuracy by type
+- **FR24.11** New CLI commands: `engram resolve`, `engram feedback`, `engram audit`, `engram benchmark`, `engram recall --resolve-entities --resolve-temporal`
+- **FR24.12** New Config sections: ResolutionConfig, RecallPipelineConfig, FeedbackConfig, IngestionConfig, RetrievalAuditConfig
+- **FR24.13** New Models: Entity, ResolvedText, SearchResult, FeedbackType, MemoryCandidate
+- **FR24.14** EpisodicMemory new fields: confidence (float, default 1.0), negative_count (int, default 0)
+- **Acceptance:** Trivial queries skip <10ms; entity resolution <500ms; parallel search <2s; feedback loop tracks accuracy
+
 ---
 
 ### Non-Functional Requirements
@@ -292,7 +320,7 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **Multi-tenant:** Support 1000+ tenants with LRU eviction
 - **Memory limit:** Graph cache max 100 instances (configurable)
 - **Connection pooling:** asyncpg min 5, max 20 per process
-- **Test coverage:** 75%+ code coverage; 345 tests
+- **Test coverage:** 75%+ code coverage; 506+ tests
 
 #### NFR3: Reliability
 - **Availability:** 99.9% uptime target (health checks every 30s)
@@ -373,6 +401,20 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 | discovery.local | true | bool | Scan localhost ports for known services |
 | discovery.hosts | [] | list | Additional remote hosts to scan |
 | discovery.endpoints | [] | list | Direct endpoint URLs to probe |
+| recall.enabled | true | bool | Enable recall pipeline |
+| recall.decision_skip_trivial | true | bool | Skip trivial queries (ok, thanks, emoji) |
+| recall.entity_resolution_enabled | true | bool | Enable entity/temporal resolution |
+| recall.parallel_search_enabled | true | bool | Enable multi-source search fusion |
+| recall.feedback_enabled | true | bool | Enable feedback loop tracking |
+| recall.auto_consolidate_threshold | 20 | int | Messages before auto-consolidate |
+| recall.retrieval_audit_enabled | true | bool | Enable JSONL audit logging |
+| ingestion.auto_memory_enabled | true | bool | Detect save-worthy messages |
+| ingestion.guard_enabled | true | bool | Block prompt injection |
+| feedback.confidence_positive_delta | 0.15 | float | Confidence boost on positive feedback |
+| feedback.confidence_negative_delta | 0.2 | float | Confidence penalty on negative feedback |
+| feedback.auto_delete_threshold | 3 | int | Negatives before auto-delete |
+| resolution.temporal_enabled | true | bool | Temporal entity resolution |
+| resolution.pronoun_enabled | true | bool | Pronoun resolution via LLM |
 
 ---
 
@@ -438,6 +480,19 @@ engram serve
 ---
 
 ## Change Log
+
+**v0.3.1** (2026-02-25) — Recall Pipeline Upgrade
+- Query Decision: Skip trivial messages (ok, thanks, hello, emoji) via regex
+- Entity Resolution: Temporal (Vietnamese+English) + pronoun resolution (LLM with fallback)
+- Parallel Search: Multi-source fusion (ChromaDB semantic + entity graph + keyword fallback)
+- Learning Pipeline: Feedback loop (±0.15/0.2 confidence), auto-delete after 3× negative
+- Auto-Memory: Detect save-worthy messages, skip sensitive data
+- Poisoning Guard: Block prompt injection (ignore instructions, special tokens)
+- Auto-Consolidate: Trigger after N messages (default 20)
+- Retrieval Audit: JSONL audit log for all recall operations
+- Benchmarking: Run question sets, measure accuracy by type
+- New CLI: `engram resolve`, `engram feedback`, `engram audit`, `engram benchmark`
+- 506+ tests (up from 380)
 
 **v0.3.0** (2026-02-25) — Activation-Based Recall + Consolidation + TUI
 - Privacy tag stripping: `<private>...</private>` → `[REDACTED]` before storage

@@ -2,6 +2,31 @@
 
 ## Version History
 
+### v0.3.1 (Completed — 2026-02-25)
+**Recall Pipeline Upgrade**
+
+Extends v0.3.0 with intelligent query processing, entity resolution, adaptive learning, and benchmarking:
+
+**Phase 25-28: Core Recall Pipeline** ✓
+- Phase 25: Query Decision — Trivial message skip (regex: ok, thanks, hello, emoji)
+- Phase 26: Entity Resolution — Temporal (Vietnamese+English) + pronoun (LLM with fallback)
+- Phase 27: Parallel Search — Multi-source fusion (ChromaDB + entity graph + keyword)
+- Phase 28: Learning Pipeline — Feedback loop (±0.15/0.2), auto-delete after 3× negative
+
+**Phase 29: Auto-Memory & Guard** ✓
+- Detect save-worthy messages (Save: prefix, identity, preferences, decisions)
+- Skip sensitive data (passwords, API keys, tokens)
+- Block prompt injection (ignore instructions, special tokens)
+
+**Phase 30: Optimization & Auditing** ✓
+- Auto-consolidate after N messages (default 20)
+- Retrieval audit log (JSONL per operation)
+- Benchmarking framework (accuracy by question type)
+
+**Current stats:** Trivial queries skip <10ms, parallel search <2s, 506+ tests passing.
+
+---
+
 ### v0.3.0 (Completed — 2026-02-25)
 **Activation-Based Recall + Memory Consolidation + User Interfaces**
 
@@ -191,7 +216,7 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 
 ---
 
-## v0.3.1+ (Planned — Q2/Q3 2026)
+## v0.3.2+ (Planned — Q2/Q3 2026)
 **Advanced Querying & Performance**
 
 ### Features
@@ -312,6 +337,18 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 
 **v0.2.0 Total:** 345 tests | 32 bug fixes (21 original + 11 v0.2)
 
+### v0.3.1 Phases (Completed)
+| Phase | Status | Tests |
+|-------|--------|-------|
+| 25. Query Decision | ✓ Complete | 25+ |
+| 26. Entity Resolution | ✓ Complete | 45+ |
+| 27. Parallel Search | ✓ Complete | 40+ |
+| 28. Learning Pipeline | ✓ Complete | 35+ |
+| 29. Auto-Memory & Guard | ✓ Complete | 30+ |
+| 30. Auto-Consolidate & Audit | ✓ Complete | 20+ |
+
+**v0.3.1 Total:** 506+ tests (126 new)
+
 ### v0.3.0 Phases (Completed)
 | Phase | Status | Tests |
 |-------|--------|-------|
@@ -373,6 +410,23 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 - [x] Security hardening: SSRF, SQL injection, timing attacks, RBAC path normalization
 - [x] /api/v1/think uses federated providers
 
+### v0.3.1 (Completed)
+- [x] Query decision (skip trivial messages <10ms)
+- [x] Entity resolution (temporal + pronoun with LLM fallback)
+- [x] Parallel search fusion (multi-source + dedup)
+- [x] Learning pipeline (feedback loop with adaptive confidence)
+- [x] Auto-memory detection (save-worthy messages)
+- [x] Poisoning guard (block prompt injection)
+- [x] Auto-consolidation (trigger after N messages)
+- [x] Retrieval audit log (JSONL per operation)
+- [x] Benchmarking framework (accuracy by type)
+- [x] Enhanced CLI commands (resolve, feedback, audit, benchmark)
+- [x] 506+ tests (159 new)
+- [ ] 80%+ coverage (in progress)
+- [ ] Advanced graph queries (path finding, patterns) — v0.3.2+
+- [ ] GraphQL endpoint operational — v0.3.2+
+- [ ] Streaming WebSocket support — v0.3.2+
+
 ### v0.3.0 (Completed)
 - [x] Ebbinghaus decay model for retention scoring
 - [x] Typed relationships with weights (SemanticEdge)
@@ -386,10 +440,6 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 - [x] Git sync (compressed JSONL chunks to .engram/ with manifest tracking)
 - [x] TUI (interactive terminal interface with 4 screens)
 - [x] 380+ tests
-- [ ] 80%+ coverage (in progress)
-- [ ] Advanced graph queries (path finding, patterns) — v0.3.1+
-- [ ] GraphQL endpoint operational — v0.3.1+
-- [ ] Streaming WebSocket support — v0.3.1+
 
 ### v0.4.0 (Target)
 - [ ] Multi-node cluster operational (3+ nodes)
@@ -429,7 +479,8 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 |---------|-------------|-------|--------|
 | v0.2.0 | 2026-02-25 | Enterprise + Federation + Security | ✓ Released |
 | v0.3.0 | 2026-02-25 | Activation-Based Recall + Consolidation + TUI | ✓ Released |
-| v0.3.1+ | 2026-06-30 | Advanced Queries + Performance | Planned |
+| v0.3.1 | 2026-02-25 | Recall Pipeline + Entity Resolution + Learning | ✓ Released |
+| v0.3.2+ | 2026-06-30 | Advanced Queries + Performance | Planned |
 | v0.4.0 | 2026-09-30 | Multi-Node Distribution | Planned |
 | v0.5.0 | 2026-12-31 | Dashboard + Features | Planned |
 | v1.0.0 | 2027-03-31 | Production Release | Planned |

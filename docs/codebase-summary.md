@@ -1,7 +1,7 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.3.0 is a dual-memory AI agent system combining episodic (vector) and semantic (graph) memory with LLM reasoning, advanced memory activation/consolidation, session lifecycle management, and a terminal UI. ~3200 LoC, 380+ tests, Python 3.11+.
+Engram v0.3.1 is a dual-memory AI agent system with intelligent recall pipeline combining episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, and advanced query processing. ~3800 LoC, 506+ tests, Python 3.11+.
 
 **Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `session/store.py` (sessions), `tui/` (terminal UI), `sync/git_sync.py` (git export).
 
@@ -138,6 +138,92 @@ Graph query DSL and utilities.
 - **Filtering:** By node type, relation type, connection distance
 - **Results:** Nodes, edges, connectivity stats
 - **New (v0.3.0):** Weight-aware result scoring
+
+---
+
+### `src/engram/recall/` — Intelligent Query Processing (v0.3.1)
+
+#### `decision.py` (50 LOC) — **NEW (v0.3.1)**
+Query decision engine for trivial message detection.
+- Regex patterns: "ok", "thanks", "hello", emoji
+- Returns empty result <10ms without vector search
+- Prevents processing noise
+
+#### `entity_resolver.py` (180 LOC) — **NEW (v0.3.1)**
+Entity and temporal resolution for context extraction.
+- **Temporal:** Vietnamese+English date regex (no LLM cost)
+- **Pronoun:** LLM-based (gemini-flash) with fallback to direct match
+- Methods: resolve_temporal(), resolve_pronoun(), resolve_text()
+
+#### `parallel_search.py` (200 LOC) — **NEW (v0.3.1)**
+Multi-source search with fusion and deduplication.
+- **Sources:** ChromaDB semantic, entity graph keyword, keyword fallback
+- **Fusion:** Parallel async, dedup by content hash, score ranking
+- **SearchResult:** content, score (0-1), source, metadata, resolved_entities
+- Top-K selection after merging
+
+---
+
+### `src/engram/feedback/` — Adaptive Learning (v0.3.1)
+
+#### `loop.py` (120 LOC) — **NEW (v0.3.1)**
+Feedback loop for tracking and improving recall accuracy.
+- Track positive/negative feedback on memories
+- Adjust confidence: +0.15 (positive), -0.2 (negative)
+- Auto-delete: if negative_count >= 3 AND confidence < threshold
+- Methods: record_feedback(), get_confidence(), should_auto_delete()
+
+---
+
+### `src/engram/ingestion/` — Advanced Ingestion (v0.3.1)
+
+#### `auto_memory.py` (130 LOC) — **NEW (v0.3.1)**
+Auto-detection of save-worthy messages.
+- Patterns: "Save: " prefix, identity (I am, my name), preferences (like, prefer), decisions (decided)
+- Sensitive data skip: passwords, API keys, tokens, PII regex
+- Auto-remember without user intervention
+- Config: IngestionConfig (enabled, sensitive_patterns)
+
+#### `guard.py` (100 LOC) — **NEW (v0.3.1)**
+Prompt injection prevention.
+- Block patterns: "ignore instructions", "you are now", "forget", special tokens
+- Filter before storage, log attempts
+- Protects semantic graph integrity
+- Config: GuardConfig (enabled, blocked_patterns)
+
+---
+
+### `src/engram/consolidation/auto_trigger.py` — Auto-Consolidate (v0.3.1)
+
+#### `auto_trigger.py` (80 LOC) — **NEW (v0.3.1)**
+Auto-trigger consolidation after message threshold.
+- Trigger after N messages (default 20, configurable)
+- Async, non-blocking
+- Reduces memory redundancy over time
+- Methods: should_consolidate(), trigger_if_needed()
+
+---
+
+### `src/engram/retrieval_audit_log.py` — Query Logging (v0.3.1)
+
+#### `retrieval_audit_log.py` (100 LOC) — **NEW (v0.3.1)**
+JSONL append-only audit logging for all recall operations.
+- Tracks: timestamp, query, results_count, source, latency_ms, resolved_entities
+- Enables debugging and pattern analysis
+- Path: ~/.engram/retrieval_audit.jsonl (configurable)
+- Methods: log_recall(), log_resolution(), log_feedback()
+
+---
+
+### `src/engram/benchmark/` — Accuracy Measurement (v0.3.1)
+
+#### `runner.py` (150 LOC) — **NEW (v0.3.1)**
+Benchmark framework for measuring recall accuracy.
+- Load question sets (JSON: {question, golden_answer, type})
+- Compare model answers vs. golden answers
+- Metrics: exact match, semantic similarity (cosine), F1 score
+- Report by question type (factual, reasoning, etc.)
+- Methods: run_benchmark(), evaluate_answer(), generate_report()
 
 ---
 
@@ -427,19 +513,20 @@ Load and validate schemas; enforce type constraints on graph operations.
 | Metric | Value |
 |--------|-------|
 | Python version | 3.11+ |
-| Total LOC | ~3200 |
-| Test count | 380+ |
-| Modules | 25+ |
+| Total LOC | ~3800 |
+| Test count | 506+ |
+| Modules | 30+ |
 | Endpoints | 13 (HTTP) |
-| CLI commands | 30+ |
+| CLI commands | 35+ |
 | MCP tools | 12 (8 original + 4 session) |
-| Config fields | 55+ |
+| Config fields | 70+ |
 | Supported roles | 3 (ADMIN, AGENT, READER) |
 | Max tenants cached | 100 (graphs), 1000 (episodic) |
 | Provider adapter types | 4 (rest, file, postgres, mcp) |
 | Known auto-discoverable services | 5 (Cognee, Mem0, LightRAG, OpenClaw, Graphiti) |
 | TUI screens | 4 (Dashboard, Search, Recent, Sessions) |
 | Session storage | JSON files (~.engram/sessions) |
+| Recall pipeline components | 8 (decision, resolver, search, feedback, auto-memory, guard, auto-trigger, audit, benchmark) |
 
 ---
 
@@ -465,9 +552,40 @@ Load and validate schemas; enforce type constraints on graph operations.
 
 ---
 
+## Features (v0.3.1 — Recall Pipeline)
+
+**4-phase delivery (v0.3.1):**
+
+1. Core Recall Pipeline — Query decision, entity resolution, parallel search fusion
+2. Learning Pipeline — Feedback loop, auto-memory detection, poisoning guard
+3. Optimization — Auto-consolidation, retrieval audit log, benchmarking
+4. CLI — Enhanced recall command, feedback tracking, audit log viewer, benchmark runner
+
+**506+ tests:** 159 new tests for recall pipeline components.
+
+---
+
+## Features (v0.3.0)
+
+**11-phase delivery (v0.3.0):**
+
+1. Ebbinghaus Decay — Retention scoring via access history
+2. Typed Relationships + Weight — SemanticEdge weights for path scoring
+3. Activation-Based Recall — Composite scoring (similarity/retention/recency/frequency)
+4. Memory Consolidation — Jaccard clustering + LLM summarization
+5. OpenClaw Watcher — Watchdog/inotify for JSONL sessions
+6. Privacy Tag Stripping — `<private>...</private>` → `[REDACTED]`
+7. Topic Key Upsert — Same topic_key updates existing memory with revision_count
+8. Progressive Disclosure — Compact recall, get_memory, timeline MCP tools
+9. Session Lifecycle — Session start/end/summary/context with auto session_id
+10. Git Sync — Compressed JSONL chunks to .engram/ with manifest tracking
+11. TUI — Interactive terminal interface (textual library)
+
+---
+
 ## Features (v0.2.0)
 
-**13-phase delivery:**
+**13-phase delivery (v0.2.0):**
 
 1. Configuration Foundation — YAML + env vars, structured logging
 2. PostgreSQL Backend — Pluggable semantic graph (SQLite default)
@@ -479,9 +597,7 @@ Load and validate schemas; enforce type constraints on graph operations.
 8. Docker & CI/CD — GitHub Actions, automated testing + release
 9. Health Checks — Liveness + readiness probes, backup/restore
 10. Test Expansion — 270 → 345 tests
-11. **Federation System** — REST/File/Postgres/MCP adapters, auto-discovery, circuit breaker
-12. **Security Hardening** — SSRF, SQL injection, timing attack, RBAC normalization, JWT validation
-13. **Bug Fixes (11)** — federated think, UTC datetime, McpAdapter cleanup, graph O(V), node cache
-
-**Bug fixes:** 32 total. Active: 31 episodic memories, OpenClaw file provider connected.
+11. Federation System — REST/File/Postgres/MCP adapters, auto-discovery, circuit breaker
+12. Security Hardening — SSRF, SQL injection, timing attack, RBAC normalization, JWT validation
+13. Bug Fixes (11) — federated think, UTC datetime, McpAdapter cleanup, graph O(V), node cache
 

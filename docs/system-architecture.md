@@ -329,7 +329,82 @@ discovery:
 
 ---
 
-### Layer 3g: Terminal UI (v0.3.0)
+### Layer 3g: Recall Pipeline (v0.3.1)
+
+**Path:** `src/engram/recall/`, `src/engram/ingestion/`, `src/engram/feedback/`, `src/engram/benchmark/`
+
+**Purpose:** Enhanced query processing with intelligent decision-making, entity resolution, multi-source search, and adaptive learning.
+
+**Components:**
+
+- **Query Decision** (`decision.py`) — Trivial message detection
+  - Regex patterns: "ok", "thanks", "hello", emoji
+  - Skips vector search <10ms, returns empty
+  - Prevents processing noise
+
+- **Entity Resolver** (`entity_resolver.py`) — Context extraction
+  - **Temporal:** Vietnamese+English date regex (no LLM), patterns: "hôm nay", "tuần trước", "yesterday", etc.
+  - **Pronoun:** LLM-based resolution (gemini-flash) with fallback to direct matching
+  - Methods: resolve_temporal(), resolve_pronoun(), resolve_text()
+
+- **Parallel Search** (`parallel_search.py`) — Multi-source fusion
+  - **Sources:** ChromaDB semantic search, entity graph keyword match, keyword fallback
+  - **Fusion:** Parallel async queries, dedup by content hash, score ranking (0-1)
+  - **SearchResult:** content, score, source, metadata, resolved_entities
+  - Returns top-K after fusion
+
+- **Feedback Loop** (`feedback/loop.py`) — Adaptive confidence
+  - Track positive/negative feedback on memories
+  - Adjust confidence: +0.15 (positive), -0.2 (negative)
+  - Auto-delete: memory if negative_count >= 3 AND confidence < threshold
+  - Improves result quality over time
+
+- **Auto-Memory** (`capture/auto_memory.py`) — Selective ingestion
+  - Detect save-worthy messages: "Save: " prefix, identity, preferences, decisions
+  - Skip sensitive data: passwords, API keys, tokens, PII patterns
+  - Automatically remember without user intervention
+
+- **Poisoning Guard** (`ingestion/guard.py`) — Injection prevention
+  - Block prompt injection patterns: "ignore instructions", "you are now", "forget", special tokens
+  - Filter before storage, log attempts
+  - Protects semantic graph integrity
+
+- **Auto-Consolidate** (`consolidation/auto_trigger.py`) — Periodic cleanup
+  - Trigger consolidation after N messages (default 20)
+  - Runs async, doesn't block main flow
+  - Reduces memory redundancy
+
+- **Retrieval Audit** (`retrieval_audit_log.py`) — Query logging
+  - JSONL append-only log: timestamp, query, results_count, source, latency_ms
+  - Tracks recall patterns, debugging
+
+- **Benchmarking** (`benchmark/runner.py`) — Accuracy measurement
+  - Load question sets (JSON format)
+  - Compare model answers vs. golden answers
+  - Metrics: exact match, semantic similarity, F1 score
+  - Report by question type (factual, reasoning, etc.)
+
+**Data Flow:**
+```
+1. Query → QueryDecision (skip trivial?)
+2. → EntityResolver (extract temporal/pronoun context)
+3. → ParallelSearch (multi-source search + fusion)
+4. → FeedbackLoop (retrieve + check confidence)
+5. → AutoMemory (detect save-worthy → remember)
+6. → PoisoningGuard (block injection attempts)
+7. → AutoTrigger (consolidate if threshold reached)
+8. → RetrievalAuditLog (log operation)
+```
+
+**Config:** RecallPipelineConfig, FeedbackConfig, IngestionConfig, ResolutionConfig, RetrievalAuditConfig
+
+**New Models:** Entity, ResolvedText, SearchResult, FeedbackType, MemoryCandidate
+
+**New EpisodicMemory Fields:** confidence (float, default 1.0), negative_count (int, default 0)
+
+---
+
+### Layer 3h: Terminal UI (v0.3.0)
 
 **Path:** `src/engram/tui/`
 
@@ -356,7 +431,7 @@ discovery:
 
 ---
 
-### Layer 3h: Progressive Disclosure (MCP) (v0.3.0)
+### Layer 3i: Progressive Disclosure (MCP) (v0.3.0)
 
 **Path:** `src/engram/mcp/episodic_tools.py` (extended)
 

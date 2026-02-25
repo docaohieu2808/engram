@@ -298,6 +298,36 @@ EOF
 | ENGRAM_TELEMETRY_SAMPLE_RATE | 0.1 | Trace sample rate (0-1) |
 | ENGRAM_TELEMETRY_SERVICE_NAME | engram | Service name in traces |
 
+### Recall Pipeline (v0.3.1)
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| ENGRAM_RECALL_ENABLED | true | Enable recall pipeline |
+| ENGRAM_RECALL_DECISION_SKIP_TRIVIAL | true | Skip trivial queries |
+| ENGRAM_RECALL_ENTITY_RESOLUTION_ENABLED | true | Enable entity resolution |
+| ENGRAM_RECALL_PARALLEL_SEARCH_ENABLED | true | Enable multi-source search |
+| ENGRAM_RECALL_FEEDBACK_ENABLED | true | Enable feedback loop |
+| ENGRAM_RECALL_AUTO_CONSOLIDATE_THRESHOLD | 20 | Messages before consolidate |
+| ENGRAM_RECALL_RETRIEVAL_AUDIT_ENABLED | true | Enable retrieval audit log |
+
+### Ingestion Guard (v0.3.1)
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| ENGRAM_INGESTION_AUTO_MEMORY_ENABLED | true | Detect save-worthy messages |
+| ENGRAM_INGESTION_GUARD_ENABLED | true | Block prompt injection |
+
+### Feedback Loop (v0.3.1)
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| ENGRAM_FEEDBACK_CONFIDENCE_POSITIVE_DELTA | 0.15 | Positive feedback boost |
+| ENGRAM_FEEDBACK_CONFIDENCE_NEGATIVE_DELTA | 0.2 | Negative feedback penalty |
+| ENGRAM_FEEDBACK_AUTO_DELETE_THRESHOLD | 3 | Negatives before auto-delete |
+
+### Entity Resolution (v0.3.1)
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| ENGRAM_RESOLUTION_TEMPORAL_ENABLED | true | Temporal resolution (no LLM) |
+| ENGRAM_RESOLUTION_PRONOUN_ENABLED | true | Pronoun resolution (LLM) |
+
 ---
 
 ## Configuration File
