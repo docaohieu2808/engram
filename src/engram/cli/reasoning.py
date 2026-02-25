@@ -15,6 +15,7 @@ def register(app: typer.Typer, get_config) -> None:
 
     def _get_engine():
         from engram.episodic.store import EpisodicStore
+        from engram.providers.registry import ProviderRegistry
         from engram.reasoning.engine import ReasoningEngine
         from engram.semantic import create_graph
         cfg = get_config()
@@ -22,7 +23,13 @@ def register(app: typer.Typer, get_config) -> None:
             cfg.episodic, cfg.embedding, on_remember_hook=cfg.hooks.on_remember
         )
         graph = create_graph(cfg.semantic)
-        return ReasoningEngine(episodic, graph, model=cfg.llm.model, on_think_hook=cfg.hooks.on_think)
+        registry = ProviderRegistry()
+        registry.load_from_config(cfg)
+        providers = registry.get_active()
+        return ReasoningEngine(
+            episodic, graph, model=cfg.llm.model,
+            on_think_hook=cfg.hooks.on_think, providers=providers,
+        )
 
     @app.command()
     def think(question: str = typer.Argument(..., help="Question to reason about")):
