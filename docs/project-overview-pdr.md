@@ -183,6 +183,51 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **FR12.6** JWT secret minimum length validation at startup
 - **Acceptance:** All six controls verified via unit tests
 
+#### FR13: Ebbinghaus Decay (v0.3.0)
+- **FR13.1** Retention score formula: `e^(-decay_rate * days / (1 + 0.1 * access_count))`
+- **FR13.2** EpisodicMemory tracks: access_count, last_accessed, decay_rate
+- **FR13.3** Config options: episodic.decay_rate, episodic.decay_enabled
+- **FR13.4** Env vars: ENGRAM_EPISODIC_DECAY_RATE, ENGRAM_EPISODIC_DECAY_ENABLED
+- **FR13.5** CLI: `engram decay --limit N` shows retention report
+- **FR13.6** Soft scoring (retention used in composite scoring), hard TTL (expires_at) unchanged
+- **Acceptance:** Retention scores calculated correctly; access_count increments on recall
+
+#### FR14: Typed Relationships with Weight (v0.3.0)
+- **FR14.1** SemanticEdge now includes: weight: float (default 1.0), attributes: dict
+- **FR14.2** SQLite + PostgreSQL backends migrated non-destructively
+- **FR14.3** Schema validation is warn-only (never blocks)
+- **FR14.4** Weight used in path scoring for weighted graph queries
+- **FR14.5** Existing data gets default values on migration
+- **Acceptance:** Weighted edges queryable; queries return weight in results
+
+#### FR15: Activation-Based Recall (v0.3.0)
+- **FR15.1** Composite score: `similarity*0.5 + retention*0.2 + recency*0.15 + frequency*0.15`
+- **FR15.2** Components: similarity (ChromaDB cosine), retention (Ebbinghaus), recency (days), frequency (access_count)
+- **FR15.3** ScoringConfig: similarity_weight, retention_weight, recency_weight, frequency_weight
+- **FR15.4** Env vars: ENGRAM_SCORING_SIMILARITY_WEIGHT, ENGRAM_SCORING_RETENTION_WEIGHT, etc.
+- **FR15.5** search() batch-updates access_count + last_accessed on each recall
+- **Acceptance:** recall() returns results ranked by composite score; activation tracking works
+
+#### FR16: Memory Consolidation (v0.3.0)
+- **FR16.1** Jaccard similarity clustering of entity/tag sets
+- **FR16.2** LLM summarization of each cluster → stored as CONTEXT memory
+- **FR16.3** New package: src/engram/consolidation/engine.py
+- **FR16.4** ConsolidationEngine: cluster() → summarize() → store()
+- **FR16.5** EpisodicMemory fields: consolidation_group, consolidated_into
+- **FR16.6** Config: ConsolidationConfig (enabled, min_cluster_size, similarity_threshold)
+- **FR16.7** CLI: `engram consolidate --limit N`
+- **Acceptance:** consolidate() reduces redundancy; summaries are coherent
+
+#### FR17: OpenClaw Realtime Watcher (v0.3.0)
+- **FR17.1** Watchdog/inotify-based watcher for ~/.openclaw/agents/main/sessions/*.jsonl
+- **FR17.2** Per-file byte position tracking; parses JSONL format
+- **FR17.3** Captures user/assistant messages only (skips toolCall/toolResult/session/custom/error)
+- **FR17.4** Cleans tags like [message_id: ...]
+- **FR17.5** Integrated into `engram watch --daemon` (runs parallel with inbox watcher)
+- **FR17.6** Config: capture.openclaw.enabled, capture.openclaw.sessions_dir
+- **FR17.7** Systemd user service for auto-start on boot
+- **Acceptance:** New OpenClaw sessions detected in realtime; messages ingested cleanly
+
 ---
 
 ### Non-Functional Requirements

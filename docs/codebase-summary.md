@@ -83,19 +83,23 @@ Health checks for liveness and readiness probes.
 
 ### `src/engram/episodic/` — Vector memory (ChromaDB)
 
-#### `store.py` (380 LOC)
+#### `store.py` (420 LOC)
 ChromaDB vector database wrapper.
 - **Collections:** One per namespace (tenant_id)
 - **Chunking:** Auto-splits long content (>1000 chars) into 800-char chunks with overlap
-- **Metadata:** memory_type, priority, tags, expires, created_at, updated_at
+- **Metadata:** memory_type, priority, tags, expires, created_at, updated_at, **access_count, last_accessed, decay_rate** (v0.3.0)
 - **Methods:** remember(), recall(), cleanup(), get(), count()
 - **Hooks:** Fires on_remember webhook after insert (fire-and-forget)
 - **Fallback embedding:** Gemini (default, 3072 dims) or all-MiniLM-L6-v2 (384 dims)
+- **New (v0.3.0):** Batch updates to access_count + last_accessed on recall()
+- **New (v0.3.0):** Ebbinghaus decay scoring: `retention = e^(-decay_rate * days / (1 + 0.1 * access_count))`
 
-#### `search.py` (120 LOC)
-Search utilities: embedding generation, similarity scoring, filtering.
+#### `search.py` (180 LOC)
+Search utilities: embedding generation, similarity scoring, activation-based recall.
 - **search_similar():** Vector search with optional tag/type filters
 - **chunk_text():** Split text with configurable chunk size + overlap
+- **New (v0.3.0):** Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
+- **New (v0.3.0):** ScoringConfig with configurable weights
 
 ---
 
@@ -105,30 +109,34 @@ Search utilities: embedding generation, similarity scoring, filtering.
 Abstract backend interface — supports SQLite and PostgreSQL.
 - **Methods:** create_graph(), load_graph(), save_graph(), close()
 
-#### `sqlite_backend.py` (200 LOC)
+#### `sqlite_backend.py` (220 LOC)
 SQLite semantic graph backend.
-- **Schema:** Nodes (id, key, type, attributes_json), Edges (source_id, target_id, relation, metadata_json)
+- **Schema:** Nodes (id, key, type, attributes_json), Edges (source_id, target_id, relation, metadata_json, **weight, attributes**) (v0.3.0)
 - **File:** ~/.engram/semantic.db or tenant-specific .{tenant_id}.db
 - **Operations:** Add/remove nodes & edges, find related, query
+- **New (v0.3.0):** Non-destructive migration adds weight/attributes columns with defaults
 
-#### `pg_backend.py` (200 LOC)
+#### `pg_backend.py` (220 LOC)
 PostgreSQL semantic graph backend (Phase 2, enterprise upgrade).
-- **Schema:** Same tables, adds tenant_id column for multi-tenant isolation
+- **Schema:** Same tables, adds tenant_id column for multi-tenant isolation, **weight + attributes** (v0.3.0)
 - **Connection pool:** asyncpg, configurable pool_min (5) and pool_max (20)
 - **Async:** Full async/await support via asyncpg
+- **New (v0.3.0):** Non-destructive migration maintains backward compatibility
 
-#### `graph.py` (250 LOC)
+#### `graph.py` (280 LOC)
 NetworkX wrapper for in-memory graph operations.
 - **Nodes:** Entities with type and attributes
-- **Edges:** Relationships with type metadata
+- **Edges:** Relationships with type metadata, **weight: float (default 1.0), attributes: dict** (v0.3.0)
 - **Queries:** Related entities, path finding, subgraph extraction
 - **Methods:** add_node(), add_edge(), query(), relate(), remove_*()
+- **New (v0.3.0):** Weight-aware scoring in path queries
 
-#### `query.py` (120 LOC)
+#### `query.py` (140 LOC)
 Graph query DSL and utilities.
 - **query():** Find nodes by keyword/type/related_to with pagination
 - **Filtering:** By node type, relation type, connection distance
 - **Results:** Nodes, edges, connectivity stats
+- **New (v0.3.0):** Weight-aware result scoring
 
 ---
 
@@ -193,6 +201,20 @@ Combines episodic + semantic memory, feeds to LLM for synthesis.
 
 ---
 
+### `src/engram/consolidation/` — Memory Consolidation (v0.3.0)
+
+#### `engine.py` (200 LOC) — **NEW (v0.3.0)**
+Consolidates redundant episodic memories via Jaccard clustering + LLM summarization.
+- **ConsolidationEngine:** Clusters memories by entity/tag set similarity
+  - `consolidate(limit, similarity_threshold)` → groups + summarizes clusters
+  - Stores results as CONTEXT memory type with consolidation_group tracking
+- **Clustering:** Jaccard similarity on entity/tag sets
+- **LLM Synthesis:** Summarizes each cluster into single insight
+- **Config:** ConsolidationConfig (enabled, min_cluster_size, similarity_threshold)
+- **CLI:** `engram consolidate --limit N` shows consolidation report
+
+---
+
 ### `src/engram/capture/` — External agent integration
 
 #### `server.py` (590 LOC) — HTTP API
@@ -225,6 +247,16 @@ File system watcher for inbox auto-ingest.
 - **Polls** ~/.engram/inbox/ every N seconds for new .json files
 - **Processes:** Message arrays, extracts entities, stores memories
 - **Daemon:** Runs via engram watch --daemon
+
+#### `openclaw_watcher.py` (150 LOC) — **NEW (v0.3.0)**
+Watchdog/inotify-based realtime watcher for OpenClaw session streams.
+- **Target:** `~/.openclaw/agents/main/sessions/*.jsonl`
+- **Parser:** Reads JSONL format, tracks per-file byte positions
+- **Filters:** Captures user/assistant messages only (skips toolCall/toolResult/session/custom/error)
+- **Cleaner:** Removes message ID tags like `[message_id: ...]`
+- **Integration:** Runs parallel with inbox watcher in `engram watch --daemon`
+- **Config:** `capture.openclaw.enabled`, `capture.openclaw.sessions_dir`
+- **Systemd:** Auto-start service available for boot integration
 
 ---
 

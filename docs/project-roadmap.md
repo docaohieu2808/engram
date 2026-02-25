@@ -2,6 +2,51 @@
 
 ## Version History
 
+### v0.3.0 (In Progress — Target: 2026-04-30)
+**Activation-Based Recall + Memory Consolidation**
+
+Extends v0.2's federation foundation with intelligent memory activation, decay modeling, and automated consolidation:
+
+**Phase 14: Ebbinghaus Decay Model** ✓ (v0.3.0)
+- Retention score formula: `e^(-decay_rate * days / (1 + 0.1 * access_count))`
+- EpisodicMemory fields: access_count, last_accessed, decay_rate
+- Config: episodic.decay_rate, episodic.decay_enabled
+- CLI: `engram decay --limit N` shows retention report
+- Soft scoring only — existing expires_at TTL remains as hard expiry
+
+**Phase 15: Typed Relationships + Weight** ✓ (v0.3.0)
+- SemanticEdge now has: weight: float (default 1.0), attributes: dict
+- SQLite + PostgreSQL backends migrated (non-destructive, defaults for existing data)
+- Schema validation is warn-only (never blocks)
+
+**Phase 16: Activation-Based Recall** ✓ (v0.3.0)
+- Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
+- Components: similarity (ChromaDB cosine), retention (Ebbinghaus), recency, frequency
+- ScoringConfig with 4 weight floats
+- Env vars: ENGRAM_SCORING_SIMILARITY_WEIGHT, ENGRAM_SCORING_RETENTION_WEIGHT, etc.
+- search() batch-updates access_count + last_accessed on each recall
+
+**Phase 17: Memory Consolidation** ✓ (v0.3.0)
+- Jaccard similarity clustering of entity/tag sets → LLM summarization
+- Package: src/engram/consolidation/engine.py
+- ConsolidationEngine: cluster → summarize → store as CONTEXT memory
+- EpisodicMemory fields: consolidation_group, consolidated_into
+- Config: ConsolidationConfig (enabled, min_cluster_size, similarity_threshold)
+- CLI: `engram consolidate --limit N`
+
+**Phase 18: OpenClaw Realtime Watcher** ✓ (v0.3.0)
+- Watchdog/inotify-based watcher for ~/.openclaw/agents/main/sessions/*.jsonl
+- Per-file byte position tracking, parses OpenClaw JSONL format
+- Captures user/assistant messages only (skips toolCall/toolResult/session/custom/error)
+- Cleans tags like [message_id: ...]
+- Integrated into `engram watch --daemon` (parallel with inbox watcher)
+- Config: capture.openclaw.enabled, capture.openclaw.sessions_dir
+- Systemd user service for auto-start on boot
+
+**Current stats:** Composite scoring active, memory consolidation reducing redundancy, 380+ tests, OpenClaw realtime integration operational.
+
+---
+
 ### v0.2.0 (Completed — 2026-02-25)
 **Enterprise Upgrade + Federation System**
 
@@ -136,28 +181,31 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 
 ---
 
-## v0.3.0 (Planned — Q2 2026)
+## v0.3.1+ (Planned — Q2/Q3 2026)
 **Advanced Querying & Performance**
 
 ### Features
 - **Cypher-like DSL** for semantic graph queries (beyond simple keyword search)
   - Path finding (find shortest path between entities)
   - Pattern matching (multi-hop relationships)
-  - Aggregations (count, sum, avg on attributes)
+  - Aggregations (count, sum, avg on attributes; weight-aware)
 - **Query optimization:** Index creation suggestions, explain plans
 - **Batch operations:** Bulk remember, bulk ingest, bulk add_nodes
 - **Streaming responses:** WebSocket support for long-running operations
 - **Query caching:** Smarter cache invalidation strategies
+- **Memory auto-consolidation:** Background task for periodic consolidation
 
 ### Performance
 - **Benchmarking framework:** Public performance metrics
 - **GraphQL endpoint** (alternative to REST) for flexible queries
 - **Connection pooling improvements:** Adaptive pool sizing
+- **Activation curve tuning:** Optimize decay rates for different memory types
 
 ### Quality
-- 300+ tests
+- 400+ tests (up from 380)
 - Performance regression detection in CI
 - Load testing in production-like environment
+- Consolidation effectiveness metrics
 
 ---
 
@@ -230,8 +278,9 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 
 ---
 
-## Completed Phases (v0.2.0)
+## Completed Phases
 
+### v0.2.0 Phases
 | Phase | Status | Tests |
 |-------|--------|-------|
 | 1. Config + Logging | ✓ Complete | 20+ |
@@ -248,25 +297,38 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 | 12. Security Hardening | ✓ Complete | included in 345 |
 | 13. Bug Fixes (11) | ✓ Complete | — |
 
-**Total Tests:** 345 | **Bug Fixes:** 32 (21 original + 11 v0.2 phase 3)
+**v0.2.0 Total:** 345 tests | 32 bug fixes (21 original + 11 v0.2)
+
+### v0.3.0 Phases (In Progress)
+| Phase | Status | Tests |
+|-------|--------|-------|
+| 14. Ebbinghaus Decay | ✓ Complete | 40+ |
+| 15. Typed Relationships + Weight | ✓ Complete | 35+ |
+| 16. Activation-Based Recall | ✓ Complete | 50+ |
+| 17. Memory Consolidation | ✓ Complete | 45+ |
+| 18. OpenClaw Realtime Watcher | ✓ Complete | 30+ |
+
+**v0.3.0 Total (Est.):** 380+ tests
 
 ---
 
 ## Known Limitations & Future Improvements
 
-### Current Limitations (v0.2.0)
+### Current Limitations (v0.3.0)
 - Single-node deployment only (multi-node in v0.4)
-- No built-in query DSL (Cypher-like support in v0.3)
+- No built-in query DSL (Cypher-like support in v0.3.1+)
 - ChromaDB doesn't support distributed mode
 - Streaming responses not supported
 - No native dashboard UI (v0.5)
 - Provider stats are in-memory only (reset on restart)
+- No auto-consolidation schedule (manual via CLI only)
 
 ### Roadmap Priorities
-1. **Query DSL** (Q2 2026) — Power users need complex graph queries
-2. **Multi-node** (Q3 2026) — Enterprise reliability requirements
-3. **Dashboard** (Q4 2026) — Operational visibility
-4. **Marketplace** (Q1 2027) — Community contributions + ecosystem
+1. **Advanced Query DSL** (Q2/Q3 2026) — Cypher-like queries, path finding
+2. **Multi-node Clustering** (Q3/Q4 2026) — Enterprise reliability requirements
+3. **Observability Dashboard** (Q4 2026) — Visual memory/graph exploration
+4. **Auto-Consolidation** (Q4 2026) — Background tasks for periodic consolidation
+5. **Marketplace** (Q1 2027) — Community contributions + ecosystem
 
 ### Community Feedback Wanted
 - What workflows are most common for your use case?
@@ -292,12 +354,16 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 - [x] Security hardening: SSRF, SQL injection, timing attacks, RBAC path normalization
 - [x] /api/v1/think uses federated providers
 
-### v0.3.0 (Target)
-- [ ] Advanced graph queries (path finding, patterns)
-- [ ] Query performance <100ms (p99)
-- [ ] 300+ tests, 80%+ coverage
-- [ ] GraphQL endpoint operational
-- [ ] Streaming WebSocket support
+### v0.3.0 (In Progress)
+- [x] Ebbinghaus decay model for retention scoring
+- [x] Typed relationships with weights (SemanticEdge)
+- [x] Activation-based recall (composite scoring)
+- [x] Memory consolidation with Jaccard clustering + LLM summarization
+- [x] OpenClaw realtime watcher (watchdog/inotify)
+- [ ] 380+ tests, 80%+ coverage
+- [ ] Advanced graph queries (path finding, patterns) — v0.3.1+
+- [ ] GraphQL endpoint operational — v0.3.1+
+- [ ] Streaming WebSocket support — v0.3.1+
 
 ### v0.4.0 (Target)
 - [ ] Multi-node cluster operational (3+ nodes)
@@ -336,7 +402,8 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 | Version | Target Date | Focus | Status |
 |---------|-------------|-------|--------|
 | v0.2.0 | 2026-02-25 | Enterprise + Federation + Security | ✓ Released |
-| v0.3.0 | 2026-06-30 | Advanced Queries | Planned |
+| v0.3.0 | 2026-04-30 | Activation-Based Recall + Consolidation | In Progress |
+| v0.3.1+ | 2026-06-30 | Advanced Queries + Performance | Planned |
 | v0.4.0 | 2026-09-30 | Multi-Node Distribution | Planned |
 | v0.5.0 | 2026-12-31 | Dashboard + Features | Planned |
 | v1.0.0 | 2027-03-31 | Production Release | Planned |

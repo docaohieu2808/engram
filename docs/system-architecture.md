@@ -100,10 +100,14 @@ All three interfaces (CLI, MCP, HTTP) share the same memory layers.
 - **EpisodicStore** (`store.py`) — ChromaDB wrapper
   - One collection per tenant (namespace)
   - Auto-chunks content >1000 chars (800-char chunks with overlap)
-  - Metadata: memory_type, priority, tags, expires, created_at, updated_at
-- **Search** (`search.py`) — Embedding & similarity scoring
+  - Metadata: memory_type, priority, tags, expires, created_at, updated_at, access_count, last_accessed, decay_rate
+  - **New (v0.3.0):** Activation-based recall with access_count + last_accessed tracking
+  - **New (v0.3.0):** Ebbinghaus decay scoring for memory retention
+- **Search** (`search.py`) — Embedding & similarity scoring + activation
   - Gemini embeddings (3072 dims) or fallback (384 dims)
   - Tag/type filtering on recall
+  - **New (v0.3.0):** Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
+  - **New (v0.3.0):** Batch updates to access_count + last_accessed on recall()
 - **Models** — MemoryType enum (fact, decision, error, todo, preference, context, workflow)
 
 **Operations:**
@@ -134,9 +138,11 @@ cleanup() → int  # deleted count
   - PostgreSQL implementation (`pg_backend.py`)
 - **Graph** (`graph.py`) — NetworkX wrapper (in-memory query engine)
   - Nodes: typed entities with attributes
-  - Edges: relationships with metadata
+  - Edges: relationships with metadata, **weight: float (default 1.0), attributes: dict**
   - Operations: add/remove, query, relate, path finding
+  - **New (v0.3.0):** Weighted edges support for scoring path relationships
 - **Query DSL** (`query.py`) — Find nodes by keyword/type/relatedness with pagination
+  - **New (v0.3.0):** Weight-aware scoring in path finding queries
 
 **Schema:**
 - **SQLite:** Single table schema
@@ -225,6 +231,23 @@ discovery:
   hosts: []            # additional remote hosts
   endpoints: []        # direct endpoint URLs to probe
 ```
+
+---
+
+### Layer 3b: Memory Consolidation (v0.3.0)
+
+**Path:** `src/engram/consolidation/`
+
+**Purpose:** Automatically cluster and summarize related episodic memories via LLM synthesis, reducing redundancy and improving recall efficiency.
+
+**Components:**
+- **ConsolidationEngine** (`engine.py`) — Jaccard-based clustering + LLM summarization
+  - `consolidate(limit, similarity_threshold)` → clusters + summaries stored as CONTEXT memory
+  - Tracks consolidation_group, consolidated_into fields on EpisodicMemory
+  - LLM summarizes semantically similar memory clusters
+- **Config:** ConsolidationConfig (enabled, min_cluster_size, similarity_threshold)
+
+**Storage:** Consolidated memories stored as CONTEXT type in episodic store with metadata linking to cluster members.
 
 ---
 
