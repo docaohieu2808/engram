@@ -151,8 +151,9 @@ class ReasoningEngine:
             from engram.recall.parallel_search import ParallelSearcher
             searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config)
             search_results = await searcher.search(question, limit=5)
-            # Format parallel search results for the synthesis prompt
-            episodic_context = "\n".join(
+            # Format parallel search results grouped by memory type for LLM context
+            from engram.recall.fusion_formatter import format_for_llm
+            episodic_context = format_for_llm(search_results) or "\n".join(
                 f"[{r.source}] (score={r.score:.2f}) {r.content}" for r in search_results
             )
             # Use SearchResult list as episodic_results proxy for downstream synthesis

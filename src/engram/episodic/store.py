@@ -151,6 +151,18 @@ class EpisodicStore:
                 logger.warning("Poisoning guard blocked: %s", reason)
                 raise ValueError(f"Content rejected: {reason}")
 
+        # Resolve temporal references (e.g. "hôm nay" → annotated ISO date)
+        try:
+            from engram.recall.temporal_resolver import resolve_temporal
+            resolved_content, resolved_date = resolve_temporal(content)
+            if resolved_date:
+                content = resolved_content
+                if metadata is None:
+                    metadata = {}
+                metadata["resolved_date"] = resolved_date
+        except Exception as _te:
+            logger.debug("Temporal resolution skipped: %s", _te)
+
         # Topic key upsert: update existing memory if same topic_key exists
         if topic_key:
             existing = await self._find_by_topic_key(topic_key)

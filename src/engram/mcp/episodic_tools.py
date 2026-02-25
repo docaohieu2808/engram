@@ -87,6 +87,18 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         if should_skip_recall(query):
             return "No memories found."
 
+        # Resolve pronouns using entity graph context (best-effort, graceful fallback)
+        try:
+            graph = get_graph()
+            if graph:
+                nodes = await graph.query(query)
+                person_names = [n.name for n in nodes if n.type == "Person"][:5]
+                if person_names:
+                    from engram.recall.pronoun_resolver import resolve_pronouns
+                    query = resolve_pronouns(query, person_names)
+        except Exception:
+            pass  # graceful fallback — never block recall on resolution failure
+
         if start_date or end_date:
             from engram.episodic.search import temporal_search
             results = await temporal_search(store, query, start_date, end_date, limit)
@@ -279,6 +291,28 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
                 count += 1
 
         return f"Ingested: {count} memories, {len(result.nodes)} entities, {len(result.edges)} relations"
+
+    @mcp.tool()
+    async def engram_feedback(
+        memory_id: str,
+        feedback: str,
+        namespace: str | None = None,
+    ) -> str:
+        """Provide feedback on a recalled memory to improve future retrieval.
+
+        Args:
+            memory_id: Full or 8-char prefix of memory ID
+            feedback: "positive" (correct/helpful) or "negative" (wrong/unhelpful)
+            namespace: Override namespace
+        """
+        store = _get_store(get_episodic, get_config, namespace)
+        from engram.feedback.auto_adjust import adjust_memory
+        result = await adjust_memory(store, memory_id, feedback)
+        if result.get("error"):
+            return f"Error: {result['error']}"
+        if result["action"] == "deleted":
+            return f"Memory {memory_id[:8]} auto-deleted (3× negative, confidence {result['confidence']:.2f})"
+        return f"Memory {memory_id[:8]} adjusted: confidence={result['confidence']:.2f}, importance={result['importance']}"
 
 
 def _get_store(get_episodic, get_config, namespace: str | None):

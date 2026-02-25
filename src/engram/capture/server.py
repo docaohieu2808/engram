@@ -489,6 +489,25 @@ def create_app(
             await cache.set(auth.tenant_id, "query", cache_params, result, ttl=_cfg.cache.query_ttl)
         return result
 
+    @v1.post("/feedback")
+    async def feedback_endpoint(request: Request, auth: AuthContext = Depends(get_auth_context)):
+        """Provide feedback on a memory to adjust confidence/importance.
+
+        Body: {"memory_id": "...", "feedback": "positive"|"negative"}
+        """
+        body = await request.json()
+        memory_id = body.get("memory_id")
+        feedback = body.get("feedback")
+        if not memory_id or feedback not in ("positive", "negative"):
+            return JSONResponse(
+                {"error": "memory_id and feedback (positive/negative) required"},
+                status_code=400,
+            )
+        ep = _resolve_episodic(auth)
+        from engram.feedback.auto_adjust import adjust_memory
+        result = await adjust_memory(ep, memory_id, feedback)
+        return {"status": "ok", **result}
+
     @v1.post("/cleanup")
     async def cleanup(auth: AuthContext = Depends(get_auth_context)):
         """Delete all expired memories from episodic store."""

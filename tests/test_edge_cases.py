@@ -170,7 +170,9 @@ class TestTTLExpiry:
         await episodic_store.remember(content, expires_at=future)
 
         results = await episodic_store.search("expire tomorrow")
-        assert any(r.content == content for r in results)
+        # Temporal resolver annotates "tomorrow" with ISO date, so stored content
+        # starts with the original text followed by "(ngày YYYY-MM-DD)"
+        assert any(r.content.startswith(content) for r in results)
 
     @pytest.mark.asyncio
     async def test_cleanup_expired_removes_past_memories(self, episodic_store):
