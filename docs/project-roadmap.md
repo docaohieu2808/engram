@@ -555,7 +555,7 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 
 ### Development Setup
 ```bash
-git clone https://github.com/engram/engram.git
+git clone https://github.com/docaohieu2808/engram.git
 cd engram
 pip install -e ".[dev]"
 pytest tests/ -v
@@ -576,7 +576,7 @@ pytest tests/ -v
 - **GitHub Issues:** Bug reports and feature requests
 - **GitHub Discussions:** Q&A, architecture discussions, ideas
 - **Twitter/X:** Release announcements, blog posts
-- **Email:** support@engram.io (enterprise)
+- **Email:** contact@docaohieu.com (enterprise)
 
 ### Response Times
 - **Critical bugs:** <4 hours

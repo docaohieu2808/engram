@@ -28,7 +28,7 @@ Dual-memory AI system combining episodic (vector) + semantic (graph) memory with
 
 ```bash
 # From source
-git clone https://github.com/engram/engram.git
+git clone https://github.com/docaohieu2808/engram.git
 cd engram
 pip install -e .
 
@@ -522,7 +522,7 @@ pytest tests/ -k "recall or resolution or feedback or decision" -v
 
 ## Support & Community
 
-- **GitHub:** https://github.com/engram/engram
+- **GitHub:** https://github.com/docaohieu2808/engram
 - **Issues:** Report bugs and request features
 - **Discussions:** Questions, architecture discussions, ideas
 - **Contributing:** Pull requests welcome (see [CONTRIBUTING.md](CONTRIBUTING.md))
