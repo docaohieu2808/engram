@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import logging
 import time
 import uuid
 from typing import Any, Optional
@@ -27,6 +28,8 @@ from engram.rate_limiter import RateLimiter
 from engram.reasoning.engine import ReasoningEngine
 from engram.semantic.graph import SemanticGraph
 from engram.tenant import StoreFactory, TenantContext
+
+logger = logging.getLogger("engram")
 
 
 # --- Request/Response Models ---
@@ -84,27 +87,26 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Per-tenant sliding-window rate limiting. Skips when rate_limiter is None."""
 
-    def __init__(self, app: Any, rate_limiter: RateLimiter | None = None) -> None:
+    def __init__(self, app: Any, rate_limiter: RateLimiter | None = None, jwt_secret: str = "") -> None:
         super().__init__(app)
         self._limiter = rate_limiter
+        self._jwt_secret = jwt_secret
 
     def _extract_tenant_id(self, request: Request) -> str:
-        """Extract tenant_id from JWT bearer token (C1 fix: no header spoofing).
+        """Extract tenant_id from JWT bearer token with signature verification.
 
-        Falls back to client IP when auth is not in use or token is missing/invalid.
+        When jwt_secret is configured, decodes the token with full verification so
+        an attacker cannot forge an arbitrary tenant_id to bypass rate limits.
+        Falls back to client IP when no secret is configured or token is missing/invalid.
         Never reads X-Tenant-ID header — that header is unauthenticated and spoofable.
         """
         import jwt as _jwt
 
         auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
+        if auth_header.startswith("Bearer ") and self._jwt_secret:
             token = auth_header[7:]
             try:
-                # Decode without verification just to extract tenant_id for rate limiting.
-                # Full signature verification happens in get_auth_context; here we only
-                # need a stable, client-supplied-but-hard-to-fabricate identifier.
-                # We use options={"verify_signature": False} for rate-limit bucketing only.
-                data = _jwt.decode(token, options={"verify_signature": False}, algorithms=["HS256"])
+                data = _jwt.decode(token, self._jwt_secret, algorithms=["HS256"])
                 tenant_id = data.get("tenant_id") or data.get("sub")
                 if tenant_id and isinstance(tenant_id, str):
                     return tenant_id
@@ -177,7 +179,7 @@ def create_app(
     # Starlette middleware order: last added = outermost (first to run)
     app.add_middleware(CorrelationIdMiddleware)
     if rate_limiter is not None:
-        app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter)
+        app.add_middleware(RateLimitMiddleware, rate_limiter=rate_limiter, jwt_secret=_cfg.auth.jwt_secret)
     app.add_middleware(
         CORSMiddleware,
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -208,6 +210,7 @@ def create_app(
 
     @app.exception_handler(Exception)
     async def generic_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled error: %s", exc)
         return JSONResponse(status_code=500, content=ErrorResponse.internal().model_dump())
 
     def _resolve_episodic(auth: AuthContext) -> EpisodicStore:
@@ -215,7 +218,8 @@ def create_app(
         if store_factory is not None:
             TenantContext.set(auth.tenant_id)
             return store_factory.get_episodic(auth.tenant_id)
-        assert episodic is not None
+        if episodic is None:
+            raise EngramError(ErrorCode.INTERNAL, "Episodic store not configured")
         return episodic
 
     async def _resolve_graph(auth: AuthContext) -> SemanticGraph:
@@ -223,7 +227,8 @@ def create_app(
         if store_factory is not None:
             TenantContext.set(auth.tenant_id)
             return await store_factory.get_graph(auth.tenant_id)
-        assert graph is not None
+        if graph is None:
+            raise EngramError(ErrorCode.INTERNAL, "Semantic graph not configured")
         return graph
 
     def _resolve_engine(auth: AuthContext, ep: EpisodicStore, gr: SemanticGraph) -> ReasoningEngine:

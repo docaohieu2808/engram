@@ -29,6 +29,13 @@ WORKDIR /app
 # Default data directory (overridable via env / volume)
 ENV ENGRAM_DATA_DIR=/data
 
+# Create non-root user for security
+RUN useradd -r -u 1000 -s /sbin/nologin engram \
+    && mkdir -p /data \
+    && chown engram:engram /data
+
+USER engram
+
 EXPOSE 8765
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

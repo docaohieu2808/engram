@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
 
 import litellm
 
@@ -152,7 +151,7 @@ class ConsolidationEngine:
         )
         prompt = _CONSOLIDATION_PROMPT.format(memories=memory_texts)
 
-        response = litellm.completion(
+        response = await litellm.acompletion(
             model=self._model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,

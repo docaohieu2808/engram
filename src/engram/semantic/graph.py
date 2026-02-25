@@ -21,13 +21,14 @@ logger = logging.getLogger("engram")
 class SemanticGraph:
     """NetworkX in-memory graph with pluggable storage backend (SQLite or PostgreSQL)."""
 
-    def __init__(self, backend: GraphBackend, audit: "AuditLogger | None" = None, tenant_id: str = "default") -> None:
+    def __init__(self, backend: GraphBackend, audit: "AuditLogger | None" = None, tenant_id: str = "default", max_nodes: int = 50_000) -> None:
         self._graph: nx.DiGraph = nx.DiGraph()
         self._backend = backend
         self._loaded: bool = False  # deferred loading flag
         self._initialized: bool = False  # backend.initialize() called flag
         self._audit = audit
         self._tenant_id = tenant_id  # M10: used in audit log calls
+        self._max_nodes = max_nodes
 
     async def _ensure_loaded(self) -> None:
         """Initialize backend and load graph on first access."""
@@ -36,7 +37,14 @@ class SemanticGraph:
         if not self._initialized:
             await self._backend.initialize()
             self._initialized = True
-        for key, type_, name, attrs in await self._backend.load_nodes():
+        nodes = await self._backend.load_nodes()
+        if len(nodes) > self._max_nodes:
+            logger.warning(
+                "Graph has %d nodes (max_nodes=%d). Loading first %d only.",
+                len(nodes), self._max_nodes, self._max_nodes,
+            )
+            nodes = nodes[:self._max_nodes]
+        for key, type_, name, attrs in nodes:
             node = SemanticNode(type=type_, name=name, attributes=json.loads(attrs or "{}"))
             self._graph.add_node(key, data=node)
         for row in await self._backend.load_edges():

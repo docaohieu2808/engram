@@ -30,4 +30,4 @@ def create_graph(
         from engram.semantic.sqlite_backend import SqliteBackend
         backend = SqliteBackend(config.path)
 
-    return SemanticGraph(backend, audit=audit, tenant_id=tenant_id)
+    return SemanticGraph(backend, audit=audit, tenant_id=tenant_id, max_nodes=config.max_nodes)

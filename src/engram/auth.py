@@ -66,6 +66,7 @@ def _save_api_keys(keys: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(keys, f, indent=2)
+    os.chmod(path, 0o600)  # Restrict to owner-only read/write
 
 
 def _hash_key(key: str) -> str:

@@ -35,6 +35,7 @@ class SemanticConfig(BaseModel):
     dsn: str = "${ENGRAM_SEMANTIC_DSN}"
     pool_min: int = 5
     pool_max: int = 20
+    max_nodes: int = 50_000  # Safety cap; log warning if exceeded
 
     model_config = {"populate_by_name": True}
 

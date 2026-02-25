@@ -6,6 +6,8 @@ dimension mismatch when switching between providers (e.g. default 384 vs gemini 
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import json
 import logging
 import math
@@ -34,16 +36,11 @@ _EMBEDDING_DIMS: dict[str, int] = {
 }
 
 
-_default_ef = None
-
-
+@functools.lru_cache(maxsize=1)
 def _get_default_ef():
     """Lazy-load ChromaDB's default embedding function (all-MiniLM-L6-v2, 384d)."""
-    global _default_ef
-    if _default_ef is None:
-        from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-        _default_ef = DefaultEmbeddingFunction()
-    return _default_ef
+    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+    return DefaultEmbeddingFunction()
 
 
 def _get_embeddings(model: str, texts: list[str], expected_dim: int | None = None) -> list[list[float]]:
@@ -173,7 +170,7 @@ class EpisodicStore:
         try:
             collection = self._ensure_collection()
             self._detect_embedding_dim()
-            embeddings = _get_embeddings(self._embed_model, [content], self._embedding_dim)
+            embeddings = await asyncio.to_thread(_get_embeddings, self._embed_model, [content], self._embedding_dim)
             new_dim = len(embeddings[0])
             if self._embedding_dim is not None and new_dim != self._embedding_dim:
                 raise ValueError(
@@ -181,7 +178,8 @@ class EpisodicStore:
                     "Use a consistent embedding model or reset the collection."
                 )
             self._embedding_dim = self._embedding_dim or new_dim
-            collection.add(
+            await asyncio.to_thread(
+                collection.add,
                 ids=[memory_id],
                 documents=[content],
                 embeddings=embeddings,
@@ -254,7 +252,7 @@ class EpisodicStore:
             collection = self._ensure_collection()
             self._detect_embedding_dim()
             # Single batch embedding call
-            embeddings = _get_embeddings(self._embed_model, documents, self._embedding_dim)
+            embeddings = await asyncio.to_thread(_get_embeddings, self._embed_model, documents, self._embedding_dim)
             new_dim = len(embeddings[0])
             if self._embedding_dim is not None and new_dim != self._embedding_dim:
                 raise ValueError(
@@ -262,7 +260,8 @@ class EpisodicStore:
                 )
             self._embedding_dim = self._embedding_dim or new_dim
             # Single upsert call for all memories
-            collection.upsert(
+            await asyncio.to_thread(
+                collection.upsert,
                 ids=ids,
                 documents=documents,
                 embeddings=embeddings,
@@ -291,15 +290,16 @@ class EpisodicStore:
         try:
             collection = self._ensure_collection()
             self._detect_embedding_dim()
-            query_embedding = _get_embeddings(self._embed_model, [query], self._embedding_dim)
+            query_embedding = await asyncio.to_thread(_get_embeddings, self._embed_model, [query], self._embedding_dim)
+            coll_count = await asyncio.to_thread(collection.count)
             kwargs: dict[str, Any] = {
                 "query_embeddings": query_embedding,
-                "n_results": min(limit, collection.count() or 1),
+                "n_results": min(limit, coll_count or 1),
             }
             if filters:
                 kwargs["where"] = filters
 
-            results = collection.query(**kwargs)
+            results = await asyncio.to_thread(collection.query, **kwargs)
         except Exception as e:
             raise RuntimeError(f"Search failed: {e}") from e
 
@@ -359,7 +359,7 @@ class EpisodicStore:
         # Fire-and-forget access tracking update
         if access_ids:
             try:
-                collection.update(ids=access_ids, metadatas=access_metas)
+                await asyncio.to_thread(collection.update, ids=access_ids, metadatas=access_metas)
             except Exception as e:
                 logger.debug("Access tracking update failed: %s", e)
 
@@ -369,11 +369,11 @@ class EpisodicStore:
         """Delete all expired memories. Returns count deleted."""
         try:
             collection = self._ensure_collection()
-            count = collection.count()
+            count = await asyncio.to_thread(collection.count)
             if count == 0:
                 return 0
             # Fetch all memories (no vector query needed)
-            result = collection.get(include=["metadatas"])
+            result = await asyncio.to_thread(collection.get, include=["metadatas"])
         except Exception as e:
             raise RuntimeError(f"Cleanup failed: {e}") from e
 
@@ -394,7 +394,7 @@ class EpisodicStore:
                     pass
 
         if expired_ids:
-            collection.delete(ids=expired_ids)
+            await asyncio.to_thread(collection.delete, ids=expired_ids)
 
         return len(expired_ids)
 
@@ -402,10 +402,11 @@ class EpisodicStore:
         """Retrieve the most recent N memories sorted by timestamp descending."""
         try:
             collection = self._ensure_collection()
-            count = collection.count()
+            count = await asyncio.to_thread(collection.count)
             if count == 0:
                 return []
-            result = collection.get(
+            result = await asyncio.to_thread(
+                collection.get,
                 include=["documents", "metadatas"],
                 limit=min(n * 2, count),  # Fetch extra to allow sorting
             )
@@ -425,7 +426,7 @@ class EpisodicStore:
     async def get(self, id: str) -> EpisodicMemory | None:
         """Retrieve a single memory by ID."""
         try:
-            result = self._ensure_collection().get(ids=[id])
+            result = await asyncio.to_thread(self._ensure_collection().get, ids=[id])
         except Exception:
             return None
 
@@ -439,7 +440,7 @@ class EpisodicStore:
     async def delete(self, id: str) -> bool:
         """Delete a memory by ID. Returns True if deleted."""
         try:
-            self._ensure_collection().delete(ids=[id])
+            await asyncio.to_thread(self._ensure_collection().delete, ids=[id])
             return True
         except Exception:
             return False
@@ -447,7 +448,7 @@ class EpisodicStore:
     async def stats(self) -> dict[str, Any]:
         """Return collection statistics including embedding dimension."""
         collection = self._ensure_collection()
-        count = collection.count()
+        count = await asyncio.to_thread(collection.count)
         self._detect_embedding_dim()
         result: dict[str, Any] = {
             "count": count,
@@ -463,7 +464,7 @@ class EpisodicStore:
         """Update metadata fields on an existing memory. Returns True on success."""
         try:
             collection = self._ensure_collection()
-            collection.update(ids=[mem_id], metadatas=[metadata])
+            await asyncio.to_thread(collection.update, ids=[mem_id], metadatas=[metadata])
             return True
         except Exception as e:
             logger.warning("Failed to update metadata for %s: %s", mem_id, e)
@@ -489,7 +490,7 @@ class EpisodicStore:
         """Find memory ID by topic_key using ChromaDB where filter."""
         try:
             collection = self._ensure_collection()
-            result = collection.get(where={"topic_key": topic_key})
+            result = await asyncio.to_thread(collection.get, where={"topic_key": topic_key})
             if result["ids"]:
                 return result["ids"][0]
         except Exception:
@@ -503,12 +504,12 @@ class EpisodicStore:
     ) -> str:
         """Re-embed and update existing topic-keyed memory."""
         collection = self._ensure_collection()
-        existing = collection.get(ids=[mem_id], include=["metadatas"])
+        existing = await asyncio.to_thread(collection.get, ids=[mem_id], include=["metadatas"])
         old_meta = existing["metadatas"][0] if existing["metadatas"] else {}
         revision = int(old_meta.get("revision_count", 0)) + 1
 
         self._detect_embedding_dim()
-        embeddings = _get_embeddings(self._embed_model, [content], self._embedding_dim)
+        embeddings = await asyncio.to_thread(_get_embeddings, self._embed_model, [content], self._embedding_dim)
 
         new_meta: dict[str, Any] = {
             "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
@@ -524,7 +525,8 @@ class EpisodicStore:
         if metadata:
             new_meta.update(metadata)
 
-        collection.update(
+        await asyncio.to_thread(
+            collection.update,
             ids=[mem_id], documents=[content],
             embeddings=embeddings, metadatas=[new_meta],
         )
