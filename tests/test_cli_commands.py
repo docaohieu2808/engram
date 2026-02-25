@@ -109,7 +109,7 @@ def test_recall_basic(mock_episodic_store, mock_graph):
     mock_graph.query = AsyncMock(return_value=[])
     with patch("engram.cli.episodic._get_episodic", return_value=mock_episodic_store), \
          patch("engram.cli.episodic._get_semantic", return_value=mock_graph):
-        result = runner.invoke(app, ["recall", "test query"])
+        result = runner.invoke(app, ["recall", "test query", "--no-federation"])
     assert result.exit_code == 0
     assert "test fact" in result.output
 
@@ -118,7 +118,7 @@ def test_recall_with_limit(mock_episodic_store, mock_graph):
     mock_graph.query = AsyncMock(return_value=[])
     with patch("engram.cli.episodic._get_episodic", return_value=mock_episodic_store), \
          patch("engram.cli.episodic._get_semantic", return_value=mock_graph):
-        result = runner.invoke(app, ["recall", "test query", "--limit", "3"])
+        result = runner.invoke(app, ["recall", "test query", "--limit", "3", "--no-federation"])
     assert result.exit_code == 0
     call_kwargs = mock_episodic_store.search.call_args
     assert call_kwargs.kwargs.get("limit") == 3 or call_kwargs.args[1] == 3
@@ -128,7 +128,7 @@ def test_recall_with_type_filter(mock_episodic_store, mock_graph):
     mock_graph.query = AsyncMock(return_value=[])
     with patch("engram.cli.episodic._get_episodic", return_value=mock_episodic_store), \
          patch("engram.cli.episodic._get_semantic", return_value=mock_graph):
-        result = runner.invoke(app, ["recall", "test", "--type", "fact"])
+        result = runner.invoke(app, ["recall", "test", "--type", "fact", "--no-federation"])
     assert result.exit_code == 0
 
 
@@ -136,7 +136,7 @@ def test_recall_with_tags(mock_episodic_store, mock_graph):
     mock_graph.query = AsyncMock(return_value=[])
     with patch("engram.cli.episodic._get_episodic", return_value=mock_episodic_store), \
          patch("engram.cli.episodic._get_semantic", return_value=mock_graph):
-        result = runner.invoke(app, ["recall", "test", "--tags", "deploy"])
+        result = runner.invoke(app, ["recall", "test", "--tags", "deploy", "--no-federation"])
     assert result.exit_code == 0
 
 
@@ -145,9 +145,38 @@ def test_recall_no_results(mock_episodic_store, mock_graph):
     mock_graph.query = AsyncMock(return_value=[])
     with patch("engram.cli.episodic._get_episodic", return_value=mock_episodic_store), \
          patch("engram.cli.episodic._get_semantic", return_value=mock_graph):
-        result = runner.invoke(app, ["recall", "nothing matches"])
+        result = runner.invoke(app, ["recall", "nothing matches", "--no-federation"])
     assert result.exit_code == 0
     assert "No memories found" in result.output
+
+
+def test_recall_with_federation(mock_episodic_store, mock_graph):
+    """Recall includes federated provider results when providers are active."""
+    from engram.providers.base import ProviderResult
+    mock_episodic_store.search = AsyncMock(return_value=[])
+    mock_graph.query = AsyncMock(return_value=[])
+    mock_registry = MagicMock()
+    mock_registry.get_active.return_value = [MagicMock()]
+    provider_hit = ProviderResult(content="docs: deploy with docker", score=0.9, source="file")
+    with patch("engram.cli.episodic._get_episodic", return_value=mock_episodic_store), \
+         patch("engram.cli.episodic._get_semantic", return_value=mock_graph), \
+         patch("engram.cli._get_config", return_value=MagicMock()), \
+         patch("engram.providers.registry.ProviderRegistry", return_value=mock_registry), \
+         patch("engram.providers.router.federated_search", new=AsyncMock(return_value=[provider_hit])):
+        result = runner.invoke(app, ["recall", "how to deploy"])
+    assert result.exit_code == 0
+    assert "deploy with docker" in result.output
+
+
+def test_recall_no_federation_flag_skips_providers(mock_episodic_store, mock_graph):
+    """--no-federation flag prevents provider search."""
+    mock_graph.query = AsyncMock(return_value=[])
+    with patch("engram.cli.episodic._get_episodic", return_value=mock_episodic_store), \
+         patch("engram.cli.episodic._get_semantic", return_value=mock_graph), \
+         patch("engram.providers.registry.ProviderRegistry") as mock_reg_cls:
+        result = runner.invoke(app, ["recall", "test", "--no-federation"])
+    assert result.exit_code == 0
+    mock_reg_cls.assert_not_called()
 
 
 # --- think tests ---

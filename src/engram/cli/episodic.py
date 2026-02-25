@@ -85,8 +85,9 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         limit: int = typer.Option(5, "--limit", "-l"),
         type: Optional[str] = typer.Option(None, "--type", "-t"),
         tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags to filter by"),
+        no_federation: bool = typer.Option(False, "--no-federation", help="Skip federated provider search"),
     ):
-        """Search episodic memories."""
+        """Search episodic memories and federated providers."""
         store = _get_episodic(get_config, _resolve_namespace())
         filters = {}
         if type:
@@ -113,7 +114,21 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
                 for edge in related.get(node.name, {}).get("edges", [])[:5]:
                     console.print(f"  [dim]{edge.from_node} --{edge.relation}--> {edge.to_node}[/dim]")
 
-        if not results and not graph_nodes:
+        # Federated search across external providers
+        provider_results = []
+        if not no_federation:
+            from engram.providers.registry import ProviderRegistry
+            from engram.providers.router import federated_search
+            cfg = get_config()
+            registry = ProviderRegistry()
+            registry.load_from_config(cfg)
+            providers = registry.get_active()
+            if providers:
+                provider_results = run_async(federated_search(query, providers, limit=limit))
+                for r in provider_results:
+                    console.print(f"[magenta]\\[{r.source}][/magenta] {r.content[:300]}")
+
+        if not results and not graph_nodes and not provider_results:
             console.print("[dim]No memories found.[/dim]")
             return
 
