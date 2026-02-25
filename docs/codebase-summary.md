@@ -1,9 +1,9 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.3.1 is a dual-memory AI agent system with intelligent recall pipeline combining episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, and advanced query processing. ~3800 LoC, 506+ tests, Python 3.11+.
+Engram v0.3.2 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, and automated maintenance. Combines episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, and background scheduler. ~4200 LoC, 545+ tests, Python 3.11+.
 
-**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `session/store.py` (sessions), `tui/` (terminal UI), `sync/git_sync.py` (git export).
+**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `constitution.py` (LLM governance), `resource_tier.py` (degradation), `scheduler.py` (background tasks), `audit.py` (mutation log).
 
 ---
 
@@ -62,11 +62,40 @@ Sliding-window rate limiting via Redis (optional).
 - **Per-tenant:** Limits keyed by tenant_id or IP
 - **Headers:** X-RateLimit-Limit, -Remaining, -Reset; Retry-After
 
-#### `audit.py` (100 LOC)
-Audit logging for compliance (optional, disabled by default).
+#### `audit.py` (100 LOC — extended v0.3.2)
+Audit logging for compliance (optional, disabled by default) + memory mutation trail.
 - **Backend:** File-based JSONL (one record per line)
 - **Records:** {timestamp, tenant_id, user_id, action, resource, status, metadata}
 - **Path:** ~/.engram/audit.jsonl (configurable)
+- **New (v0.3.2):** `log_modification(mod_type, before, after, reversible)` — per-mutation trail
+- **New (v0.3.2):** `read_recent(n)` — retrieve last N audit entries
+- **MODIFICATION_TYPES:** memory_create, memory_delete, memory_update, metadata_update, config_change, batch_create, cleanup_expired
+
+#### `resource_tier.py` (120 LOC) — **NEW (v0.3.2)**
+Resource-aware LLM call management with 4-tier degradation.
+- **ResourceMonitor:** Sliding-window success/failure tracker for LLM calls
+- **Tiers:** FULL → STANDARD → BASIC → READONLY
+- **BASIC behavior:** Returns raw recall results without LLM synthesis
+- **Auto-recovery:** Promotes tier after 60s cooldown without failures
+- **Integration:** think() and summarize() in reasoning engine check tier before LLM calls
+- **CLI:** `engram resource-status`
+
+#### `constitution.py` (100 LOC) — **NEW (v0.3.2)**
+Data governance via constitutional constraints injected into LLM prompts.
+- **3 Laws:** namespace isolation, no fabrication, audit rights
+- **Auto-creation:** ~/.engram/constitution.md generated on first load
+- **Tamper detection:** SHA-256 hash stored alongside constitution file
+- **Prompt injection:** Compact prefix prepended to all reasoning + summarize calls
+- **CLI:** `engram constitution-status`
+
+#### `scheduler.py` (150 LOC) — **NEW (v0.3.2)**
+Asyncio-based background task scheduler for periodic maintenance.
+- **Pattern:** Recursive setTimeout (each task schedules its own next run after completion)
+- **Default tasks:** cleanup_expired (daily), consolidate_memories (6h, LLM), decay_report (daily)
+- **Tier awareness:** Skips LLM-dependent tasks on BASIC tier
+- **Persistence:** ~/.engram/scheduler_state.json tracks last run, next run, task history
+- **Auto-start:** Launched by `engram watch`
+- **CLI:** `engram scheduler-status`
 
 #### `backup.py` (150 LOC)
 Backup and restore utilities for memory snapshots.
@@ -94,6 +123,7 @@ ChromaDB vector database wrapper.
 - **New (v0.3.0):** Topic key upsert — same topic_key updates existing memory with revision_count
 - **New (v0.3.0):** Session_id auto-injection from active SessionStore
 - **New (v0.3.0):** Batch updates to access_count + last_accessed on recall()
+- **New (v0.3.2):** Audit trail wired into remember(), delete(), update_metadata(), _update_topic(), cleanup_expired()
 
 #### `search.py` (180 LOC)
 Search utilities: embedding generation, similarity scoring, activation-based recall.
@@ -279,12 +309,14 @@ Spawns an MCP server subprocess and calls a tool via stdio.
 
 ### `src/engram/reasoning/` — LLM synthesis
 
-#### `engine.py` (200 LOC)
+#### `engine.py` (200 LOC — extended v0.3.2)
 Combines episodic + semantic memory, feeds to LLM for synthesis.
 - **Providers:** Gemini (default) via litellm
 - **Operations:** think() (Q&A), summarize() (key insights), ingest() (extract entities + remember)
 - **Prompts:** Calibrated for dual-memory reasoning
 - **Caching:** Optional Redis caching for expensive LLM calls
+- **New (v0.3.2):** ResourceMonitor tier check before LLM calls; BASIC tier returns raw recall
+- **New (v0.3.2):** Constitution prefix injected into think() and summarize() prompts
 
 ---
 
@@ -441,10 +473,13 @@ Watchdog/inotify-based realtime watcher for OpenClaw session streams.
 - `engram providers stats` — Query/hit/error counts per provider
 - `engram providers add --name <n> --url <u> [--type <t>]` — Add provider by URL or path
 
-#### `system.py` (100 LOC)
+#### `system.py` (100 LOC — extended v0.3.2)
 - `engram status` — Memory counts + graph stats
 - `engram dump` — Export JSON
 - `engram serve [--host] [--port]` — Start HTTP API
+- `engram resource-status` — Show current resource tier and LLM call window stats
+- `engram constitution-status` — Show constitution laws and SHA-256 hash verification
+- `engram scheduler-status` — Show scheduled tasks with last/next run times
 
 ---
 
@@ -513,9 +548,9 @@ Load and validate schemas; enforce type constraints on graph operations.
 | Metric | Value |
 |--------|-------|
 | Python version | 3.11+ |
-| Total LOC | ~3800 |
-| Test count | 506+ |
-| Modules | 30+ |
+| Total LOC | ~4200 |
+| Test count | 545+ |
+| Modules | 34+ |
 | Endpoints | 13 (HTTP) |
 | CLI commands | 35+ |
 | MCP tools | 12 (8 original + 4 session) |
@@ -549,6 +584,19 @@ Load and validate schemas; enforce type constraints on graph operations.
 | redis | 5.0.0+ | Cache + rate limiting (optional, Phase 5) |
 | pytest | 7.0+ | Testing (dev) |
 | opentelemetry-* | 1.20+ | Observability (optional, Phase 7, via telemetry extra) |
+
+---
+
+## Features (v0.3.2 — Brain Features)
+
+**4 brain-only features (v0.3.2):**
+
+1. Memory Audit Trail — Traceable before/after log wired into all EpisodicStore mutations
+2. Resource-Aware Retrieval — 4-tier degradation with auto-recovery (ResourceMonitor)
+3. Data Constitution — SHA-256 governance with prompt injection (3 laws)
+4. Consolidation Scheduler — Asyncio overlap-safe background tasks with tier awareness
+
+**545+ tests:** 39 new tests for brain features.
 
 ---
 

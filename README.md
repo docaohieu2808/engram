@@ -2,7 +2,7 @@
 
 **Memory traces for AI agents — Think like humans.**
 
-![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-506+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.3.1-blue)
+![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-545+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.3.2-blue)
 
 Dual-memory AI system combining episodic (vector) + semantic (graph) memory with LLM reasoning. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment. Exposes CLI, MCP, and versioned HTTP API (/api/v1/).
 
@@ -19,6 +19,10 @@ Dual-memory AI system combining episodic (vector) + semantic (graph) memory with
 - **Deployment** — Docker Compose, Kubernetes-ready, health checks
 - **Backup/Restore** — Memory snapshots, point-in-time recovery
 - **Configuration** — YAML + env vars + CLI with type casting
+- **Memory Audit Trail** — Traceable before/after log for every mutation (create, update, delete, cleanup)
+- **Resource-Aware Retrieval** — 4-tier degradation (FULL→STANDARD→BASIC→READONLY) with auto-recovery
+- **Data Constitution** — 3-law governance with SHA-256 tamper detection, injected into every LLM prompt
+- **Consolidation Scheduler** — Asyncio-based background tasks (cleanup, consolidation, decay) with tier-aware execution
 
 ## Installation
 
@@ -206,8 +210,11 @@ engram config set hooks.on_remember http://localhost:9000/webhook
 ```bash
 engram status                           # Memory stats (episodic count, node/edge count)
 engram dump                             # Export all memory data to JSON
-engram watch [--daemon]                 # Watch inbox for chat files, auto-ingest on arrival
+engram watch [--daemon]                 # Watch inbox for chat files, auto-ingest on arrival (starts scheduler)
 engram serve [--host 127.0.0.1] [--port 8765]  # Start HTTP API server
+engram resource-status                  # Show current resource tier and LLM call window stats
+engram constitution-status              # Show constitution laws and SHA-256 hash verification
+engram scheduler-status                 # Show scheduled tasks, last run times, and state
 ```
 
 ## Configuration
@@ -443,18 +450,20 @@ See [deployment-guide.md](docs/deployment-guide.md) for Docker Compose with Post
 - **[System Architecture](docs/system-architecture.md)** — Design, data flow, deployment patterns
 - **[Code Standards](docs/code-standards.md)** — Conventions, patterns, best practices
 - **[Deployment Guide](docs/deployment-guide.md)** — Docker, Kubernetes, environment variables, auth setup
-- **[Codebase Summary](docs/codebase-summary.md)** — Module inventory, 85k tokens, metrics
+- **[Codebase Summary](docs/codebase-summary.md)** — Module inventory, metrics
 - **[Project Roadmap](docs/project-roadmap.md)** — v0.3.0 → v1.0.0, completed phases, future work
+- **[Changelog](docs/project-changelog.md)** — Full version history with added/changed/fixed entries
 
 ---
 
 ## Test Coverage
 
-- **506+ tests** across all modules (159 new in v0.3.1)
+- **545+ tests** across all modules (39 new in v0.3.2)
 - **75%+ code coverage** target
 - **CI/CD:** GitHub Actions runs full test suite on every PR and commit
 - **Load tests:** Marked as excluded from CI; run separately in staging
 - **Recall pipeline tests:** Decision, resolution, search, feedback, auto-memory, guard, benchmarking
+- **Brain feature tests:** Audit trail, resource tier, constitution, scheduler
 
 ```bash
 # Run all tests
@@ -470,6 +479,13 @@ pytest tests/ -k "recall or resolution or feedback or decision" -v
 ---
 
 ## Advanced Features
+
+### Brain Features (v0.3.2)
+✓ Memory audit trail — before/after log for every mutation (create, update, delete, cleanup, batch)
+✓ Resource-aware retrieval — 4-tier degradation (FULL→STANDARD→BASIC→READONLY), 60s auto-recovery
+✓ Data constitution — 3 laws (namespace isolation, no fabrication, audit rights), SHA-256 tamper detection
+✓ Consolidation scheduler — asyncio background tasks (cleanup daily, consolidate 6h, decay daily), tier-aware
+✓ 545 tests, 39 new (v0.3.2)
 
 ### Recall Pipeline (v0.3.1)
 ✓ Query decision engine (skip trivial <10ms)

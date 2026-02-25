@@ -2,6 +2,43 @@
 
 ## Version History
 
+### v0.3.2 (Completed — 2026-02-25)
+**Brain Features — Audit Trail, Resource Awareness, Constitution, Scheduler**
+
+4 brain-only features improving reliability, governance, and operational autonomy:
+
+**Memory Audit Trail** ✓
+- `log_modification()` records before/after values, mod_type, reversible flag
+- `read_recent(n)` retrieves last N audit entries
+- Wired into: remember(), delete(), update_metadata(), _update_topic(), cleanup_expired()
+- MODIFICATION_TYPES: memory_create, memory_delete, memory_update, metadata_update, config_change, batch_create, cleanup_expired
+
+**Resource-Aware Retrieval** ✓
+- ResourceMonitor tracks LLM success/failure with sliding window
+- 4 tiers: FULL → STANDARD → BASIC → READONLY
+- BASIC tier returns raw results without LLM synthesis (degraded but functional)
+- Auto-recovers to higher tier after 60s cooldown
+- CLI: `engram resource-status`
+
+**Data Constitution** ✓
+- 3 laws: namespace isolation, no fabrication, audit rights
+- Auto-creates ~/.engram/constitution.md on first load
+- SHA-256 hash verification for tamper detection
+- Compact prefix injected into every LLM prompt (reasoning + summarize)
+- CLI: `engram constitution-status`
+
+**Consolidation Scheduler** ✓
+- Asyncio recursive setTimeout pattern (overlap-safe)
+- 3 default tasks: cleanup_expired (daily), consolidate_memories (6h, requires LLM), decay_report (daily)
+- Respects resource tier — skips LLM tasks on BASIC tier
+- State persisted to ~/.engram/scheduler_state.json
+- Starts automatically with `engram watch`
+- CLI: `engram scheduler-status`
+
+**Current stats:** 545 tests passing (506 existing + 39 new).
+
+---
+
 ### v0.3.1 (Completed — 2026-02-25)
 **Recall Pipeline Upgrade**
 
@@ -337,6 +374,16 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 
 **v0.2.0 Total:** 345 tests | 32 bug fixes (21 original + 11 v0.2)
 
+### v0.3.2 Phases (Completed)
+| Phase | Status | Tests |
+|-------|--------|-------|
+| 31. Memory Audit Trail | ✓ Complete | 12+ |
+| 32. Resource-Aware Retrieval | ✓ Complete | 10+ |
+| 33. Data Constitution | ✓ Complete | 9+ |
+| 34. Consolidation Scheduler | ✓ Complete | 8+ |
+
+**v0.3.2 Total:** 545 tests (39 new)
+
 ### v0.3.1 Phases (Completed)
 | Phase | Status | Tests |
 |-------|--------|-------|
@@ -410,6 +457,14 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 - [x] Security hardening: SSRF, SQL injection, timing attacks, RBAC path normalization
 - [x] /api/v1/think uses federated providers
 
+### v0.3.2 (Completed)
+- [x] Memory audit trail wired into all EpisodicStore mutations
+- [x] Resource-aware retrieval with 4-tier degradation and auto-recovery
+- [x] Data constitution with SHA-256 tamper detection and prompt injection
+- [x] Consolidation scheduler with asyncio overlap-safe pattern
+- [x] New CLI: resource-status, constitution-status, scheduler-status
+- [x] 545 tests (39 new)
+
 ### v0.3.1 (Completed)
 - [x] Query decision (skip trivial messages <10ms)
 - [x] Entity resolution (temporal + pronoun with LLM fallback)
@@ -480,7 +535,8 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 | v0.2.0 | 2026-02-25 | Enterprise + Federation + Security | ✓ Released |
 | v0.3.0 | 2026-02-25 | Activation-Based Recall + Consolidation + TUI | ✓ Released |
 | v0.3.1 | 2026-02-25 | Recall Pipeline + Entity Resolution + Learning | ✓ Released |
-| v0.3.2+ | 2026-06-30 | Advanced Queries + Performance | Planned |
+| v0.3.2 | 2026-02-25 | Brain Features (Audit Trail, Resource Tier, Constitution, Scheduler) | ✓ Released |
+| v0.3.3+ | 2026-06-30 | Advanced Queries + Performance | Planned |
 | v0.4.0 | 2026-09-30 | Multi-Node Distribution | Planned |
 | v0.5.0 | 2026-12-31 | Dashboard + Features | Planned |
 | v1.0.0 | 2027-03-31 | Production Release | Planned |

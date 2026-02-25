@@ -11,7 +11,7 @@ Engram is a dual-memory AI agent system that thinks like humans. It combines:
 
 Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI).
 
-**Version:** 0.3.0 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline | **Tests:** 506+ | **License:** MIT
+**Version:** 0.3.2 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline + Brain Features | **Tests:** 545+ | **License:** MIT
 
 ---
 
@@ -55,6 +55,12 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **Auto-Consolidate:** Trigger consolidation after N messages (default 20)
 - **Retrieval Audit:** JSONL log for all recall operations
 - **Benchmarking:** Run question sets, measure accuracy by type
+
+### Brain Features (v0.3.2)
+- **Memory Audit Trail:** Structured before/after log for every mutation — MODIFICATION_TYPES: memory_create, memory_delete, memory_update, metadata_update, config_change, batch_create, cleanup_expired
+- **Resource-Aware Retrieval:** ResourceMonitor with sliding window tracks LLM call success/failure; 4 tiers (FULL, STANDARD, BASIC, READONLY); BASIC returns raw results without synthesis; auto-recovery after 60s cooldown
+- **Data Constitution:** 3 laws (namespace isolation, no fabrication, audit rights); auto-creates ~/.engram/constitution.md on first load; SHA-256 tamper detection; compact prefix injected into every LLM prompt
+- **Consolidation Scheduler:** Asyncio recursive setTimeout pattern (overlap-safe); 3 default tasks (cleanup_expired daily, consolidate_memories 6h, decay_report daily); respects resource tier; state persisted to ~/.engram/scheduler_state.json; starts automatically with `engram watch`
 
 ### Extensibility
 - **Pluggable semantic backend:** SQLite (default) or PostgreSQL
@@ -305,6 +311,39 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **FR24.14** EpisodicMemory new fields: confidence (float, default 1.0), negative_count (int, default 0)
 - **Acceptance:** Trivial queries skip <10ms; entity resolution <500ms; parallel search <2s; feedback loop tracks accuracy
 
+#### FR25: Memory Audit Trail (v0.3.2)
+- **FR25.1** `log_modification()` records action, before/after values, mod_type, reversible flag, timestamp
+- **FR25.2** `read_recent(n)` retrieves last N audit entries
+- **FR25.3** Wired into: remember(), delete(), update_metadata(), _update_topic(), cleanup_expired()
+- **FR25.4** MODIFICATION_TYPES: memory_create, memory_delete, memory_update, metadata_update, config_change, batch_create, cleanup_expired
+- **Acceptance:** Every episodic mutation produces a traceable audit entry with before/after diff
+
+#### FR26: Resource-Aware Retrieval (v0.3.2)
+- **FR26.1** ResourceMonitor tracks LLM call success/failure with configurable sliding window
+- **FR26.2** 4 tiers: FULL (all features), STANDARD (reduced), BASIC (no synthesis), READONLY (no LLM calls)
+- **FR26.3** think() and summarize() check tier before issuing LLM calls
+- **FR26.4** BASIC tier returns raw recall results without LLM synthesis (degraded but functional)
+- **FR26.5** Auto-recovers to higher tier after 60s cooldown without failures
+- **FR26.6** CLI: `engram resource-status` shows current tier and window stats
+- **Acceptance:** System degrades gracefully on LLM failures; tier auto-recovers
+
+#### FR27: Data Constitution (v0.3.2)
+- **FR27.1** 3 laws enforced: namespace isolation, no fabrication, audit rights
+- **FR27.2** Auto-creates ~/.engram/constitution.md on first load
+- **FR27.3** SHA-256 hash verification detects tampering
+- **FR27.4** Compact prefix injected into reasoning engine and summarize prompts
+- **FR27.5** CLI: `engram constitution-status` shows laws + hash verification result
+- **Acceptance:** LLM prompts always include constitution prefix; tampered constitution file detected
+
+#### FR28: Consolidation Scheduler (v0.3.2)
+- **FR28.1** Asyncio-based recursive setTimeout pattern prevents task overlap
+- **FR28.2** 3 default tasks: cleanup_expired (daily), consolidate_memories (every 6h, requires LLM), decay_report (daily)
+- **FR28.3** Respects resource tier — skips LLM-dependent tasks on BASIC tier
+- **FR28.4** State persisted to ~/.engram/scheduler_state.json (last run, next run, task list)
+- **FR28.5** Starts automatically when `engram watch` runs
+- **FR28.6** CLI: `engram scheduler-status` shows all tasks with last/next run times
+- **Acceptance:** Tasks run on schedule; no overlap; skipped tasks logged; state survives restart
+
 ---
 
 ### Non-Functional Requirements
@@ -320,7 +359,7 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **Multi-tenant:** Support 1000+ tenants with LRU eviction
 - **Memory limit:** Graph cache max 100 instances (configurable)
 - **Connection pooling:** asyncpg min 5, max 20 per process
-- **Test coverage:** 75%+ code coverage; 506+ tests
+- **Test coverage:** 75%+ code coverage; 545+ tests
 
 #### NFR3: Reliability
 - **Availability:** 99.9% uptime target (health checks every 30s)
@@ -480,6 +519,14 @@ engram serve
 ---
 
 ## Change Log
+
+**v0.3.2** (2026-02-25) — Brain Features
+- Memory Audit Trail: traceable before/after log for every episodic mutation
+- Resource-Aware Retrieval: 4-tier degradation (FULL→STANDARD→BASIC→READONLY) with auto-recovery
+- Data Constitution: 3-law governance injected into every LLM prompt, SHA-256 tamper detection
+- Consolidation Scheduler: asyncio background tasks (cleanup daily, consolidate 6h, decay daily), tier-aware
+- New CLI: `engram resource-status`, `engram constitution-status`, `engram scheduler-status`
+- 545+ tests (39 new)
 
 **v0.3.1** (2026-02-25) — Recall Pipeline Upgrade
 - Query Decision: Skip trivial messages (ok, thanks, hello, emoji) via regex

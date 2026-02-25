@@ -404,30 +404,31 @@ discovery:
 
 ---
 
-### Layer 3h: Terminal UI (v0.3.0)
+### Layers 3h–3k: Brain Features (v0.3.2)
+
+Four new modules providing operational reliability and LLM governance. See **[brain-features-architecture.md](./brain-features-architecture.md)** for full detail.
+
+| Layer | Module | Purpose |
+|-------|--------|---------|
+| 3h | `audit.py` (extended) | Traceable before/after log for every episodic mutation |
+| 3i | `resource_tier.py` | 4-tier LLM degradation (FULL→STANDARD→BASIC→READONLY), 60s auto-recovery |
+| 3j | `constitution.py` | 3-law governance prefix injected into every LLM prompt, SHA-256 tamper detection |
+| 3k | `scheduler.py` | Asyncio overlap-safe background tasks (cleanup daily, consolidate 6h, decay daily) |
+
+CLI commands added: `engram resource-status`, `engram constitution-status`, `engram scheduler-status`
+
+---
+
+### Layer 3l: Terminal UI (v0.3.0)
 
 **Path:** `src/engram/tui/`
 
-**Purpose:** Provide interactive terminal interface for exploring memories, searching, and managing sessions.
+**Purpose:** Interactive terminal interface for exploring memories, searching, and managing sessions.
 
 **Components:**
-- **TUI App** (textual library-based)
-  - **Screens:**
-    - Dashboard: Memory statistics, session count, recent activity
-    - Search: Live query with results (debounced, <500ms)
-    - Recent: Timeline view of recent memories
-    - Sessions: Active/archived sessions with drill-down
-  - **Navigation:** Vim keys (h/j/k/l), tab keys (d/s/r/e), row select for detail view
-  - **Detail view:** Full memory content + metadata + related memories
-- **CLI:** engram tui launches interactive interface
-- **Performance:** Load time <1s, search <500ms
-- **Dependencies:** textual (optional via pip install engram[tui])
-
-**Screens:**
-- dashboard.py: Home screen with stats
-- search.py: Query with live results
-- recent.py: Timeline view of 50 most recent memories
-- sessions.py: Session management + context
+- **TUI App** (textual library) — 4 screens: Dashboard (stats), Search (live query, <500ms), Recent (timeline), Sessions (active/archived + drill-down)
+- **Navigation:** Vim keys (h/j/k/l), tab keys (d/s/r/e), row select → detail view (full content + metadata + related)
+- **CLI:** `engram tui`; optional dep: `pip install engram[tui]`; load time <1s
 
 ---
 
