@@ -174,6 +174,11 @@ class DiscoveryConfig(BaseModel):
     endpoints: list[str] = Field(default_factory=list)
 
 
+class SessionConfig(BaseModel):
+    """Session lifecycle configuration."""
+    sessions_dir: str = "~/.engram/sessions"
+
+
 class Config(BaseModel):
     episodic: EpisodicConfig = Field(default_factory=EpisodicConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
@@ -193,6 +198,7 @@ class Config(BaseModel):
     consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
     providers: list[ProviderEntry] = Field(default_factory=list)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
 
 
 # --- Helpers ---
@@ -279,6 +285,7 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "CONSOLIDATION_ENABLED": ("consolidation", "enabled"),
     "CONSOLIDATION_MIN_CLUSTER_SIZE": ("consolidation", "min_cluster_size"),
     "CONSOLIDATION_SIMILARITY_THRESHOLD": ("consolidation", "similarity_threshold"),
+    "SESSION_SESSIONS_DIR": ("session", "sessions_dir"),
 }
 
 def _get_section_models() -> dict[str, type[BaseModel]]:
@@ -300,6 +307,7 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "rate_limit": RateLimitConfig,
         "scoring": ScoringConfig,
         "consolidation": ConsolidationConfig,
+        "session": SessionConfig,
     }
 
 

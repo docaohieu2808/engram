@@ -56,6 +56,9 @@ class EpisodicMemory(BaseModel):
     # Consolidation fields
     consolidation_group: str | None = None
     consolidated_into: str | None = None
+    # Topic key upsert fields
+    topic_key: str | None = None
+    revision_count: int = 0
 
     @field_validator("priority")
     @classmethod

@@ -78,6 +78,7 @@ from engram.cli import config_cmd as _config_cmd_mod  # noqa: E402
 from engram.cli import auth_cmd as _auth_cmd_mod  # noqa: E402
 from engram.cli import backup_cmd as _backup_cmd_mod  # noqa: E402
 from engram.cli import providers_cmd as _providers_cmd_mod  # noqa: E402
+from engram.cli import sync_cmd as _sync_cmd_mod  # noqa: E402
 
 _episodic_mod.register(app, _get_config, get_namespace=_get_namespace)
 _semantic_mod.register(app, add_app, remove_app, _get_config)
@@ -95,6 +96,7 @@ _config_cmd_mod.register(
 _auth_cmd_mod.register(auth_app, _get_config)
 _backup_cmd_mod.register(app, _get_config)
 _providers_cmd_mod.register(app, providers_app, _get_config)
+_sync_cmd_mod.register(app, _get_config)
 
 if __name__ == "__main__":
     app()

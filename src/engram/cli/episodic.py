@@ -57,6 +57,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         priority: int = typer.Option(5, "--priority", "-p", help="Priority (1-10)"),
         tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags, e.g. 'deploy,prod'"),
         expires: Optional[str] = typer.Option(None, "--expires", help="Expiry duration, e.g. '7d', '24h', '30m'"),
+        topic_key: Optional[str] = typer.Option(None, "--topic-key", help="Unique key; updates existing memory if same key exists"),
     ):
         """Store a memory in episodic store."""
         store = _get_episodic(get_config, _resolve_namespace())
@@ -71,6 +72,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             priority=priority,
             tags=tag_list,
             expires_at=expires_at,
+            topic_key=topic_key,
         ))
         suffix = ""
         if tag_list:

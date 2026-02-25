@@ -12,6 +12,7 @@ from engram.models import MemoryType
 # Control characters to strip: 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F, 0x7F
 # Keep: 0x09 (tab), 0x0A (newline), 0x0D (carriage return)
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_PRIVATE_TAG_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 
 
 def sanitize_content(text: str, max_length: int = 10240) -> str:
@@ -29,6 +30,9 @@ def sanitize_content(text: str, max_length: int = 10240) -> str:
     """
     if not isinstance(text, str):
         raise TypeError(f"Content must be a string, got {type(text).__name__}")
+
+    # Redact private tagged content before any other processing
+    text = _PRIVATE_TAG_RE.sub("[REDACTED]", text)
 
     # Strip disallowed control characters (keep tab, newline, carriage return)
     cleaned = _CONTROL_CHAR_RE.sub("", text)

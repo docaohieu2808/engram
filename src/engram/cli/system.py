@@ -208,6 +208,43 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         else:
             console.print(f"[green]Consolidated into {len(new_ids)} summary memories.[/green]")
 
+    @app.command("session-start")
+    def session_start():
+        """Start a new memory session."""
+        from engram.session.store import SessionStore
+        cfg = get_config()
+        store = SessionStore(cfg.session.sessions_dir)
+        s = store.start(namespace=_resolve_namespace() or "default")
+        console.print(f"[green]Session started[/green] (id={s.id[:8]})")
+
+    @app.command("session-end")
+    def session_end():
+        """End the current session."""
+        from engram.session.store import SessionStore
+        cfg = get_config()
+        store = SessionStore(cfg.session.sessions_dir)
+        s = store.end()
+        if s:
+            console.print(f"[green]Session ended[/green] (id={s.id[:8]})")
+        else:
+            console.print("[yellow]No active session.[/yellow]")
+
+    @app.command()
+    def tui():
+        """Launch the Engram Terminal UI for browsing memories interactively."""
+        try:
+            from engram.tui.app import EngramTUI
+        except ImportError:
+            console.print("[red]TUI requires textual. Install with: pip install engram[tui][/red]")
+            raise typer.Exit(1)
+
+        from engram.session.store import SessionStore
+        cfg = get_config()
+        episodic = _get_episodic()
+        session_store = SessionStore(cfg.session.sessions_dir)
+        tui_app = EngramTUI(episodic, session_store)
+        tui_app.run()
+
     @app.command()
     def serve(
         port: Optional[int] = typer.Option(None, "--port", "-p"),

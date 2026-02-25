@@ -19,6 +19,7 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         entities: list[str] | None = None,
         tags: list[str] | None = None,
         namespace: str | None = None,
+        topic_key: str | None = None,
     ) -> str:
         """Store a memory in engram's episodic (vector) memory.
 
@@ -29,6 +30,7 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             entities: Optional list of related entity names to link with semantic graph
             tags: Optional list of tags for filtering
             namespace: Override config namespace for this operation
+            topic_key: Optional unique key — if same key exists, updates the existing memory instead of creating new
         """
         store = _get_store(get_episodic, get_config, namespace)
         try:
@@ -36,9 +38,21 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         except ValueError:
             valid = ", ".join(t.value for t in MemoryType)
             return f"Invalid memory_type '{memory_type}'. Valid: {valid}"
+        # Auto-inject session_id from active session
+        metadata = None
+        try:
+            from engram.session.store import SessionStore
+            cfg = get_config()
+            sess_store = SessionStore(cfg.session.sessions_dir)
+            active_id = sess_store.get_active_id()
+            if active_id:
+                metadata = {"session_id": active_id}
+        except Exception:
+            pass
         mem_id = await store.remember(
             content, memory_type=mem_type, priority=priority,
             entities=entities or [], tags=tags or [],
+            topic_key=topic_key, metadata=metadata,
         )
         return f"Remembered (id={mem_id[:8]}, type={memory_type}, priority={priority})"
 
@@ -49,8 +63,12 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         memory_type: str | None = None,
         tags: list[str] | None = None,
         namespace: str | None = None,
+        compact: bool = True,
     ) -> str:
         """Search episodic memories by semantic similarity.
+
+        By default returns compact format with 8-char ID prefix and 120-char preview.
+        Use compact=False for full content, or engram_get_memory(id) for a single full entry.
 
         Args:
             query: Search query text
@@ -58,6 +76,7 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             memory_type: Optional filter by type (fact, decision, preference, etc.)
             tags: Optional list of tags to filter by (all must match)
             namespace: Override config namespace for this operation
+            compact: If True (default), return short ID + truncated content; False returns full content
         """
         store = _get_store(get_episodic, get_config, namespace)
         filters = {"memory_type": memory_type} if memory_type else None
@@ -89,11 +108,109 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             return "No memories found."
 
         for mem in results:
-            ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
-            entities_str = f" [entities: {', '.join(mem.entities)}]" if mem.entities else ""
-            tags_str = f" [tags: {', '.join(mem.tags)}]" if mem.tags else ""
-            lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}{entities_str}{tags_str}")
+            if compact:
+                date = mem.timestamp.strftime("%Y-%m-%d %H:%M")
+                preview = mem.content[:120]
+                suffix = "..." if len(mem.content) > 120 else ""
+                entities_hint = f" [{', '.join(mem.entities)}]" if mem.entities else ""
+                tags_hint = f" #{','.join(mem.tags)}" if mem.tags else ""
+                lines.append(f"[{mem.id[:8]}] {date} ({mem.memory_type.value}) {preview}{suffix}{entities_hint}{tags_hint}")
+            else:
+                ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
+                entities_str = f" [entities: {', '.join(mem.entities)}]" if mem.entities else ""
+                tags_str = f" [tags: {', '.join(mem.tags)}]" if mem.tags else ""
+                lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}{entities_str}{tags_str}")
+
+        if compact and results:
+            lines.append("\nUse engram_get_memory(id) for full content.")
+
         return "\n".join(lines)
+
+    @mcp.tool()
+    async def engram_get_memory(
+        memory_id: str,
+        namespace: str | None = None,
+    ) -> str:
+        """Retrieve the full untruncated content of a specific memory by ID.
+
+        Supports full UUID or 8-character prefix from engram_recall output.
+
+        Args:
+            memory_id: Full UUID or 8-char prefix of the memory ID
+            namespace: Override config namespace for this operation
+        """
+        store = _get_store(get_episodic, get_config, namespace)
+        mem = await store.get(memory_id)
+        # Try prefix lookup if direct ID not found
+        if mem is None and len(memory_id) <= 8:
+            recent = await store.get_recent(n=200)
+            for m in recent:
+                if m.id.startswith(memory_id):
+                    mem = m
+                    break
+        if not mem:
+            return f"Memory '{memory_id}' not found."
+        lines = [
+            f"ID: {mem.id}",
+            f"Type: {mem.memory_type.value}  Priority: {mem.priority}",
+            f"Timestamp: {mem.timestamp.isoformat()}",
+        ]
+        if mem.topic_key:
+            lines.append(f"Topic Key: {mem.topic_key} (revision {mem.revision_count})")
+        lines.extend([
+            f"Tags: {', '.join(mem.tags) or 'none'}",
+            f"Entities: {', '.join(mem.entities) or 'none'}",
+            f"Access Count: {mem.access_count}",
+            "",
+            mem.content,
+        ])
+        return "\n".join(lines)
+
+    @mcp.tool()
+    async def engram_timeline(
+        memory_id: str,
+        window_minutes: int = 30,
+        namespace: str | None = None,
+    ) -> str:
+        """Return chronological context: memories created around the same time as a given memory.
+
+        Useful for understanding what was happening around a key event or decision.
+
+        Args:
+            memory_id: ID of the anchor memory (full UUID or 8-char prefix)
+            window_minutes: Minutes before/after to include (default 30)
+            namespace: Override config namespace for this operation
+        """
+        store = _get_store(get_episodic, get_config, namespace)
+        # Resolve anchor
+        anchor = await store.get(memory_id)
+        if anchor is None and len(memory_id) <= 8:
+            recent = await store.get_recent(n=200)
+            for m in recent:
+                if m.id.startswith(memory_id):
+                    anchor = m
+                    break
+        if not anchor:
+            return f"Memory '{memory_id}' not found."
+
+        from datetime import timedelta
+        window = timedelta(minutes=window_minutes)
+        all_recent = await store.get_recent(n=200)
+        nearby = [
+            m for m in all_recent
+            if abs((m.timestamp - anchor.timestamp).total_seconds()) <= window.total_seconds()
+            and m.id != anchor.id
+        ]
+        nearby.sort(key=lambda m: m.timestamp)
+
+        lines = [f"Timeline around [{memory_id[:8]}] (±{window_minutes}min):"]
+        for m in nearby:
+            ts = m.timestamp.strftime("%H:%M")
+            lines.append(f"  [{ts}] ({m.memory_type.value}) {m.content[:100]}")
+        # Show anchor
+        lines.append(f">>> [{anchor.timestamp.strftime('%H:%M')}] (anchor) {anchor.content[:100]}")
+
+        return "\n".join(lines) if len(nearby) > 0 else f"No nearby memories within ±{window_minutes}min."
 
     @mcp.tool()
     async def engram_cleanup(namespace: str | None = None) -> str:

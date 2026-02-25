@@ -38,6 +38,7 @@ telemetry = [
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp>=1.20",
 ]
+tui = ["textual>=0.50.0"]
 
 [project.scripts]
 engram = "engram.cli:app"

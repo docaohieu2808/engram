@@ -8,6 +8,7 @@ from mcp.server import FastMCP
 
 from engram.config import load_config
 from engram.episodic.store import EpisodicStore
+from engram.session.store import SessionStore
 from engram.providers.base import MemoryProvider
 from engram.providers.registry import ProviderRegistry
 from engram.reasoning.engine import ReasoningEngine
@@ -58,6 +59,13 @@ def _get_providers() -> list[MemoryProvider]:
     return _instances["providers"].get_active()
 
 
+def _get_session_store() -> SessionStore:
+    if "session_store" not in _instances:
+        cfg = _get_config()
+        _instances["session_store"] = SessionStore(cfg.session.sessions_dir)
+    return _instances["session_store"]
+
+
 def _get_engine() -> ReasoningEngine:
     if "engine" not in _instances:
         cfg = _get_config()
@@ -76,6 +84,9 @@ from engram.mcp import reasoning_tools as _rea  # noqa: E402
 _ep.register(mcp, _get_episodic, _get_graph, _get_config, get_providers=_get_providers)
 _sem.register(mcp, _get_graph)
 _rea.register(mcp, _get_engine, _get_episodic, _get_graph, get_providers=_get_providers)
+
+from engram.mcp import session_tools as _sess  # noqa: E402
+_sess.register(mcp, _get_session_store, _get_episodic)
 
 
 def main():

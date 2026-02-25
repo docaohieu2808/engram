@@ -137,9 +137,17 @@ class EpisodicStore:
         entities: list[str] | None = None,
         tags: list[str] | None = None,
         expires_at: datetime | None = None,
+        topic_key: str | None = None,
     ) -> str:
         """Store a memory and return its ID."""
         content = sanitize_content(content)
+
+        # Topic key upsert: update existing memory if same topic_key exists
+        if topic_key:
+            existing = await self._find_by_topic_key(topic_key)
+            if existing:
+                return await self._update_topic(existing, content, topic_key, metadata, entities, tags, priority, memory_type)
+
         memory_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
         entities = entities or []
@@ -154,6 +162,9 @@ class EpisodicStore:
             "access_count": 0,
             "decay_rate": self._default_decay_rate,
         }
+        if topic_key:
+            doc_metadata["topic_key"] = topic_key
+            doc_metadata["revision_count"] = 0
         if expires_at is not None:
             doc_metadata["expires_at"] = expires_at.isoformat()
         if metadata:
@@ -474,6 +485,52 @@ class EpisodicStore:
             if peek and peek.get("embeddings") and peek["embeddings"][0]:
                 self._embedding_dim = len(peek["embeddings"][0])
 
+    async def _find_by_topic_key(self, topic_key: str) -> str | None:
+        """Find memory ID by topic_key using ChromaDB where filter."""
+        try:
+            collection = self._ensure_collection()
+            result = collection.get(where={"topic_key": topic_key})
+            if result["ids"]:
+                return result["ids"][0]
+        except Exception:
+            pass
+        return None
+
+    async def _update_topic(
+        self, mem_id: str, content: str, topic_key: str,
+        metadata: dict[str, Any] | None, entities: list[str] | None,
+        tags: list[str] | None, priority: int, memory_type: MemoryType,
+    ) -> str:
+        """Re-embed and update existing topic-keyed memory."""
+        collection = self._ensure_collection()
+        existing = collection.get(ids=[mem_id], include=["metadatas"])
+        old_meta = existing["metadatas"][0] if existing["metadatas"] else {}
+        revision = int(old_meta.get("revision_count", 0)) + 1
+
+        self._detect_embedding_dim()
+        embeddings = _get_embeddings(self._embed_model, [content], self._embedding_dim)
+
+        new_meta: dict[str, Any] = {
+            "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
+            "priority": priority,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "entities": json.dumps(entities or []),
+            "tags": json.dumps(tags or []),
+            "access_count": int(old_meta.get("access_count", 0)),
+            "decay_rate": float(old_meta.get("decay_rate", self._default_decay_rate)),
+            "topic_key": topic_key,
+            "revision_count": revision,
+        }
+        if metadata:
+            new_meta.update(metadata)
+
+        collection.update(
+            ids=[mem_id], documents=[content],
+            embeddings=embeddings, metadatas=[new_meta],
+        )
+        logger.info("Updated topic-keyed memory %s (revision=%d)", mem_id[:8], revision)
+        return mem_id
+
 
 def _compute_activation_score(
     similarity: float,
@@ -569,11 +626,16 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
     consolidation_group = metadata.get("consolidation_group")
     consolidated_into = metadata.get("consolidated_into")
 
+    # Parse topic key fields
+    topic_key = metadata.get("topic_key")
+    revision_count = int(metadata.get("revision_count", 0))
+
     # Exclude internal fields from extra metadata
     _internal = {
         "memory_type", "priority", "timestamp", "entities", "tags", "expires_at",
         "access_count", "last_accessed", "decay_rate",
         "consolidation_group", "consolidated_into",
+        "topic_key", "revision_count",
     }
     extra = {k: v for k, v in metadata.items() if k not in _internal}
 
@@ -592,4 +654,6 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
         decay_rate=decay_rate,
         consolidation_group=consolidation_group,
         consolidated_into=consolidated_into,
+        topic_key=topic_key,
+        revision_count=revision_count,
     )
