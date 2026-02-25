@@ -37,6 +37,9 @@ class InboxWatcher:
         inbox_dir: str,
         ingest_fn: Callable[[list[dict[str, Any]]], Coroutine],
         poll_interval: int = 5,
+        auto_memory: bool = False,
+        episodic_store=None,
+        consolidation_trigger=None,
     ):
         self._inbox = Path(os.path.expanduser(inbox_dir))
         self._inbox.mkdir(parents=True, exist_ok=True)
@@ -48,6 +51,9 @@ class InboxWatcher:
         self._poll_interval = poll_interval
         self._running = False
         self._retry_counts: dict[str, int] = {}
+        self._auto_memory = auto_memory
+        self._episodic_store = episodic_store
+        self._consolidation_trigger = consolidation_trigger
 
     async def start(self) -> None:
         """Start polling loop. Recovers orphaned .processing files first."""
@@ -109,6 +115,26 @@ class InboxWatcher:
             if messages:
                 await self._ingest_fn(messages)
                 logger.info("Ingested %s (%d messages)", path.name, len(messages))
+
+                # Auto-memory: detect and save high-importance candidates
+                if self._auto_memory and self._episodic_store:
+                    from engram.capture.auto_memory import detect_candidates
+                    for msg in messages:
+                        content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
+                        if content:
+                            candidates = detect_candidates(content)
+                            for c in candidates:
+                                if c.importance >= 3:
+                                    await self._episodic_store.remember(c.content, memory_type=c.memory_type)
+
+                # Auto-consolidation trigger
+                if self._consolidation_trigger:
+                    try:
+                        triggered = await self._consolidation_trigger.on_message()
+                        if triggered:
+                            logger.info("Auto-consolidation triggered")
+                    except Exception as e:
+                        logger.warning("Auto-consolidation error: %s", e)
 
             ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             dest = self._processed_dir / f"{ts}_{path.name}"

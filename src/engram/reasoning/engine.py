@@ -71,6 +71,7 @@ class ReasoningEngine:
         model: str,
         on_think_hook: str | None = None,
         providers: list[MemoryProvider] | None = None,
+        recall_config=None,
     ):
         self._episodic = episodic
         self._graph = graph
@@ -79,6 +80,8 @@ class ReasoningEngine:
         self._providers = providers or []
         # Cache of graph node names to avoid full scan on every think() call
         self._node_names_cache: list[str] | None = None
+        self._recall_config = recall_config
+        self._parallel_search = getattr(recall_config, "parallel_search", False) if recall_config else False
 
     def invalidate_cache(self) -> None:
         """Invalidate entity hints cache (call when graph mutates)."""
@@ -144,7 +147,21 @@ class ReasoningEngine:
     async def think(self, question: str) -> str:
         """Answer a question by combining episodic, semantic, and federated memory."""
         # 1. Vector search for relevant episodic memories
-        episodic_results = await self._episodic.search(question, limit=5)
+        if self._parallel_search and self._episodic and self._graph:
+            from engram.recall.parallel_search import ParallelSearcher
+            searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config)
+            search_results = await searcher.search(question, limit=5)
+            # Format parallel search results for the synthesis prompt
+            episodic_context = "\n".join(
+                f"[{r.source}] (score={r.score:.2f}) {r.content}" for r in search_results
+            )
+            # Use SearchResult list as episodic_results proxy for downstream synthesis
+            episodic_results = search_results
+            _use_parallel = True
+        else:
+            episodic_results = await self._episodic.search(question, limit=5)
+            episodic_context = None
+            _use_parallel = False
 
         # 2. Find entity hints in question by matching against known nodes
         entity_hints = await self._extract_entity_hints(question)
@@ -166,12 +183,16 @@ class ReasoningEngine:
             if monitor.can_use_llm():
                 answer = await self._synthesize(
                     question, episodic_results, semantic_results, provider_results,
+                    episodic_context_override=episodic_context if _use_parallel else None,
                 )
             else:
                 # BASIC tier: return raw results without LLM synthesis
                 tier = monitor.get_tier()
                 logger.info("Resource tier %s — skipping LLM synthesis", tier.value)
-                answer = self._format_raw_results(episodic_results, semantic_results)
+                if _use_parallel:
+                    answer = episodic_context or "No relevant memories found for this question."
+                else:
+                    answer = self._format_raw_results(episodic_results, semantic_results)
         else:
             answer = "No relevant memories found for this question."
 
@@ -237,16 +258,20 @@ class ReasoningEngine:
         episodic: list[EpisodicMemory],
         semantic: dict[str, Any],
         provider_results: list | None = None,
+        episodic_context_override: str | None = None,
     ) -> str:
         """Use LLM to reason over combined memory results."""
         from engram.providers.base import ProviderResult
 
-        # Format episodic context
-        episodic_lines = []
-        for mem in episodic:
-            ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
-            episodic_lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}")
-        episodic_ctx = "\n".join(episodic_lines) if episodic_lines else "No episodic memories found."
+        # Format episodic context — use pre-built parallel search context if provided
+        if episodic_context_override is not None:
+            episodic_ctx = episodic_context_override or "No episodic memories found."
+        else:
+            episodic_lines = []
+            for mem in episodic:
+                ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
+                episodic_lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}")
+            episodic_ctx = "\n".join(episodic_lines) if episodic_lines else "No episodic memories found."
 
         # Format semantic context — include attributes for LLM synthesis
         semantic_lines = []

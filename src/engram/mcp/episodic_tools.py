@@ -64,6 +64,8 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         tags: list[str] | None = None,
         namespace: str | None = None,
         compact: bool = True,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> str:
         """Search episodic memories by semantic similarity.
 
@@ -77,10 +79,20 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             tags: Optional list of tags to filter by (all must match)
             namespace: Override config namespace for this operation
             compact: If True (default), return short ID + truncated content; False returns full content
+            start_date: Optional ISO date to filter memories after this date
+            end_date: Optional ISO date to filter memories before this date
         """
         store = _get_store(get_episodic, get_config, namespace)
-        filters = {"memory_type": memory_type} if memory_type else None
-        results = await store.search(query, limit=limit, filters=filters, tags=tags)
+        from engram.recall.decision import should_skip_recall
+        if should_skip_recall(query):
+            return "No memories found."
+
+        if start_date or end_date:
+            from engram.episodic.search import temporal_search
+            results = await temporal_search(store, query, start_date, end_date, limit)
+        else:
+            filters = {"memory_type": memory_type} if memory_type else None
+            results = await store.search(query, limit=limit, filters=filters, tags=tags)
 
         lines = []
 
@@ -280,4 +292,5 @@ def _get_store(get_episodic, get_config, namespace: str | None):
         cfg.episodic, cfg.embedding,
         namespace=namespace,
         on_remember_hook=cfg.hooks.on_remember,
+        guard_enabled=cfg.ingestion.poisoning_guard,
     )

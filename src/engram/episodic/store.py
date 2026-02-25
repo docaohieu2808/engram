@@ -95,6 +95,7 @@ class EpisodicStore:
         on_remember_hook: str | None = None,
         audit: AuditLogger | None = None,
         scoring: ScoringConfig | None = None,
+        guard_enabled: bool = False,
     ):
         import chromadb
         from pathlib import Path
@@ -116,6 +117,7 @@ class EpisodicStore:
         self._decay_enabled = getattr(config, "decay_enabled", True)
         self._default_decay_rate = getattr(config, "decay_rate", 0.1)
         self._scoring = scoring or ScoringConfig()
+        self._guard_enabled = guard_enabled
         # FTS5 full-text search index (always-on, no config needed)
         self._fts = FtsIndex()
 
@@ -141,6 +143,13 @@ class EpisodicStore:
     ) -> str:
         """Store a memory and return its ID."""
         content = sanitize_content(content)
+
+        if self._guard_enabled:
+            from engram.ingestion.guard import check_content
+            is_safe, reason = check_content(content)
+            if not is_safe:
+                logger.warning("Poisoning guard blocked: %s", reason)
+                raise ValueError(f"Content rejected: {reason}")
 
         # Topic key upsert: update existing memory if same topic_key exists
         if topic_key:
@@ -236,6 +245,12 @@ class EpisodicStore:
         for mem in memories:
             # M6 fix: sanitize content just like single remember() does
             content = sanitize_content(mem["content"])
+            if self._guard_enabled:
+                from engram.ingestion.guard import check_content
+                is_safe, reason = check_content(content)
+                if not is_safe:
+                    logger.warning("Poisoning guard blocked: %s", reason)
+                    raise ValueError(f"Content rejected: {reason}")
             memory_type = mem.get("memory_type", MemoryType.FACT)
             priority = mem.get("priority", 5)
             entities = mem.get("entities") or []

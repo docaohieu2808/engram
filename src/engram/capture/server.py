@@ -236,7 +236,7 @@ def create_app(
         if engine is not None:
             return engine
         # Build a per-request engine when using StoreFactory (use cached _cfg)
-        return ReasoningEngine(ep, gr, model=_cfg.llm.model, on_think_hook=_cfg.hooks.on_think)
+        return ReasoningEngine(ep, gr, model=_cfg.llm.model, on_think_hook=_cfg.hooks.on_think, recall_config=_cfg.recall_pipeline)
 
     # --- Root-level public routes ---
 
@@ -408,6 +408,10 @@ def create_app(
 
         include_graph: when True (default), also queries semantic graph for related entities.
         """
+        from engram.recall.decision import should_skip_recall
+        if should_skip_recall(query):
+            return {"status": "ok", "results": [], "graph_results": [], "total": 0, "offset": offset, "limit": limit}
+
         # Try cache first (uses cached _cfg)
         if cache is not None:
             cache_params = {"q": query, "limit": limit, "offset": offset, "mt": memory_type, "tags": tags, "ig": include_graph}
@@ -558,6 +562,8 @@ def run_server(
     import asyncio
     if config is None:
         config = load_config()
+    from engram.telemetry import setup_telemetry
+    setup_telemetry(config)
     app_cache, app_limiter = asyncio.run(_build_cache_and_limiter(config))
     app = create_app(episodic, graph, engine, ingest_fn, store_factory, app_cache, app_limiter, config)
     uvicorn.run(app, host=config.serve.host, port=config.serve.port)

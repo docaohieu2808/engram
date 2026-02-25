@@ -29,6 +29,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             cfg.episodic, cfg.embedding,
             namespace=_resolve_namespace(),
             on_remember_hook=cfg.hooks.on_remember,
+            guard_enabled=cfg.ingestion.poisoning_guard,
         )
 
     def _get_graph():
@@ -43,6 +44,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             _get_episodic(), _get_graph(),
             model=cfg.llm.model,
             on_think_hook=cfg.hooks.on_think,
+            recall_config=cfg.recall_pipeline,
         )
 
     def _get_extractor():
@@ -334,6 +336,9 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             cfg.serve.port = port
         if host:
             cfg.serve.host = host
+
+        from engram.telemetry import setup_telemetry
+        setup_telemetry(cfg)
 
         async def ingest_messages(messages):
             return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic)
