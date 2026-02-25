@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Optional
@@ -119,7 +120,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         daemon: bool = typer.Option(False, "--daemon", "-d"),
         stop: bool = typer.Option(False, "--stop"),
     ):
-        """Watch inbox for chat files and auto-ingest."""
+        """Watch inbox for chat files and auto-ingest. Also watches OpenClaw sessions if enabled."""
         from engram.capture.watcher import InboxWatcher, daemonize, is_daemon_running, stop_daemon
 
         if stop:
@@ -138,10 +139,26 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         async def ingest_messages(messages):
             return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic)
 
-        watcher = InboxWatcher(cfg.capture.inbox, ingest_messages, cfg.capture.poll_interval)
         if daemon:
             daemonize()
-        run_async(watcher.start())
+
+        async def _run_watchers():
+            tasks = []
+            # Inbox watcher (always)
+            inbox = InboxWatcher(cfg.capture.inbox, ingest_messages, cfg.capture.poll_interval)
+            tasks.append(asyncio.create_task(inbox.start()))
+            console.print("[dim]Inbox watcher started[/dim]")
+
+            # OpenClaw watcher (if enabled)
+            if cfg.capture.openclaw.enabled:
+                from engram.capture import openclaw_watcher as ocw
+                oc = ocw.OpenClawWatcher(cfg.capture.openclaw.sessions_dir, ingest_messages)
+                tasks.append(asyncio.create_task(oc.start()))
+                console.print("[dim]OpenClaw watcher started[/dim]")
+
+            await asyncio.gather(*tasks)
+
+        run_async(_run_watchers())
 
     @app.command()
     def serve(

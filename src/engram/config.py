@@ -37,10 +37,17 @@ class SemanticConfig(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class OpenClawCaptureConfig(BaseModel):
+    """OpenClaw realtime session capture via inotify/watchdog."""
+    enabled: bool = True
+    sessions_dir: str = "~/.openclaw/agents/main/sessions"
+
+
 class CaptureConfig(BaseModel):
     enabled: bool = True
     inbox: str = "~/.engram/inbox/"
     poll_interval: int = 5
+    openclaw: OpenClawCaptureConfig = Field(default_factory=OpenClawCaptureConfig)
 
 
 class LLMConfig(BaseModel):
@@ -242,6 +249,8 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "RATE_LIMIT_REDIS_URL": ("rate_limit", "redis_url"),
     "RATE_LIMIT_REQUESTS_PER_MINUTE": ("rate_limit", "requests_per_minute"),
     "RATE_LIMIT_BURST": ("rate_limit", "burst"),
+    "CAPTURE_OPENCLAW_ENABLED": ("capture.openclaw", "enabled"),
+    "CAPTURE_OPENCLAW_SESSIONS_DIR": ("capture.openclaw", "sessions_dir"),
 }
 
 def _get_section_models() -> dict[str, type[BaseModel]]:
