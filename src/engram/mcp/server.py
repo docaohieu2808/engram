@@ -75,7 +75,7 @@ from engram.mcp import reasoning_tools as _rea  # noqa: E402
 
 _ep.register(mcp, _get_episodic, _get_graph, _get_config, get_providers=_get_providers)
 _sem.register(mcp, _get_graph)
-_rea.register(mcp, _get_engine, _get_episodic, _get_graph)
+_rea.register(mcp, _get_engine, _get_episodic, _get_graph, get_providers=_get_providers)
 
 
 def main():

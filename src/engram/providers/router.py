@@ -10,6 +10,31 @@ from engram.providers.base import MemoryProvider, ProviderResult
 
 logger = logging.getLogger("engram.providers.router")
 
+# Queries needing LLM reasoning (why, how, explain, analyze)
+REASONING_KEYWORDS = {
+    "why", "how", "explain", "analyze", "reason", "cause",
+    "what made", "what caused", "what led", "what's the reason",
+    "compare", "difference between", "should i", "which is better",
+    "tại sao", "vì sao", "lý do", "nguyên nhân", "giải thích",
+    "như thế nào", "so sánh", "nên", "phân tích",
+}
+
+
+def classify_intent(query: str) -> str:
+    """Classify whether a query needs reasoning or just retrieval.
+
+    Returns 'think' for questions requiring LLM synthesis,
+    'recall' for simple memory lookups.
+    """
+    q_lower = query.lower()
+    if any(kw in q_lower for kw in REASONING_KEYWORDS):
+        return "think"
+    # Question marks with interrogative words suggest reasoning
+    if "?" in query and any(w in q_lower for w in ("what", "gì", "nào")):
+        return "think"
+    return "recall"
+
+
 # Queries matching these keywords skip external providers (fast path)
 INTERNAL_KEYWORDS = {
     "decision", "error", "preference", "todo", "context", "workflow",
