@@ -201,6 +201,12 @@ class EpisodicStore:
                 resource_id=memory_id,
                 details={"memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type},
             )
+            self._audit.log_modification(
+                tenant_id=self._namespace, actor="system",
+                mod_type="memory_create", resource_id=memory_id,
+                after_value=content[:500],
+                description=f"New {memory_type.value if isinstance(memory_type, MemoryType) else memory_type} memory (priority={priority})",
+            )
         return memory_id
 
     async def remember_batch(self, memories: list[dict[str, Any]]) -> list[str]:
@@ -395,6 +401,13 @@ class EpisodicStore:
 
         if expired_ids:
             await asyncio.to_thread(collection.delete, ids=expired_ids)
+            if self._audit:
+                self._audit.log_modification(
+                    tenant_id=self._namespace, actor="system",
+                    mod_type="cleanup_expired", resource_id="",
+                    after_value={"deleted_count": len(expired_ids), "ids": expired_ids[:20]},
+                    reversible=False, description=f"Cleaned up {len(expired_ids)} expired memories",
+                )
 
         return len(expired_ids)
 
@@ -440,7 +453,25 @@ class EpisodicStore:
     async def delete(self, id: str) -> bool:
         """Delete a memory by ID. Returns True if deleted."""
         try:
+            # Capture before-value for audit trail
+            before_content = None
+            if self._audit and self._audit.enabled:
+                try:
+                    result = await asyncio.to_thread(self._ensure_collection().get, ids=[id], include=["documents", "metadatas"])
+                    if result["ids"]:
+                        before_content = result["documents"][0] if result["documents"] else ""
+                except Exception:
+                    pass
+
             await asyncio.to_thread(self._ensure_collection().delete, ids=[id])
+
+            if self._audit:
+                self._audit.log_modification(
+                    tenant_id=self._namespace, actor="system",
+                    mod_type="memory_delete", resource_id=id,
+                    before_value=before_content, after_value=None,
+                    reversible=False, description="Memory deleted",
+                )
             return True
         except Exception:
             return False
@@ -464,7 +495,25 @@ class EpisodicStore:
         """Update metadata fields on an existing memory. Returns True on success."""
         try:
             collection = self._ensure_collection()
+            # Capture before-value for audit trail
+            before_meta = None
+            if self._audit and self._audit.enabled:
+                try:
+                    existing = await asyncio.to_thread(collection.get, ids=[mem_id], include=["metadatas"])
+                    if existing["metadatas"]:
+                        before_meta = {k: existing["metadatas"][0].get(k) for k in metadata}
+                except Exception:
+                    pass
+
             await asyncio.to_thread(collection.update, ids=[mem_id], metadatas=[metadata])
+
+            if self._audit:
+                self._audit.log_modification(
+                    tenant_id=self._namespace, actor="system",
+                    mod_type="metadata_update", resource_id=mem_id,
+                    before_value=before_meta, after_value=metadata,
+                    description=f"Updated fields: {', '.join(metadata.keys())}",
+                )
             return True
         except Exception as e:
             logger.warning("Failed to update metadata for %s: %s", mem_id, e)
@@ -525,11 +574,29 @@ class EpisodicStore:
         if metadata:
             new_meta.update(metadata)
 
+        # Get old content for audit trail
+        old_content = None
+        if self._audit and self._audit.enabled:
+            try:
+                old_doc = await asyncio.to_thread(collection.get, ids=[mem_id], include=["documents"])
+                if old_doc["documents"]:
+                    old_content = old_doc["documents"][0]
+            except Exception:
+                pass
+
         await asyncio.to_thread(
             collection.update,
             ids=[mem_id], documents=[content],
             embeddings=embeddings, metadatas=[new_meta],
         )
+
+        if self._audit:
+            self._audit.log_modification(
+                tenant_id=self._namespace, actor="system",
+                mod_type="memory_update", resource_id=mem_id,
+                before_value=old_content, after_value=content,
+                description=f"Topic-key upsert (revision={revision})",
+            )
         logger.info("Updated topic-keyed memory %s (revision=%d)", mem_id[:8], revision)
         return mem_id
 

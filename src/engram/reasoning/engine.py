@@ -9,11 +9,13 @@ from typing import Any
 
 import litellm
 
+from engram.constitution import get_constitution_prompt_prefix
 from engram.episodic.store import EpisodicStore
 from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, SemanticEdge, SemanticNode
 from engram.providers.base import MemoryProvider
 from engram.providers.router import federated_search
+from engram.resource_tier import ResourceTier, get_resource_monitor
 from engram.semantic.graph import SemanticGraph
 from engram.utils import strip_diacritics
 
@@ -101,7 +103,14 @@ class ReasoningEngine:
             memory_lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}")
         memories_text = "\n".join(memory_lines)
 
-        prompt = SUMMARIZE_PROMPT.format(memories=memories_text)
+        # Inject constitution as immutable prefix
+        constitution_prefix = get_constitution_prompt_prefix()
+        prompt = constitution_prefix + SUMMARIZE_PROMPT.format(memories=memories_text)
+
+        monitor = get_resource_monitor()
+        if not monitor.can_use_llm():
+            # Degraded mode: return raw memory list without LLM summarization
+            return f"[Resource tier: {monitor.get_tier().value} — LLM unavailable]\n\n" + memories_text
 
         try:
             response = await litellm.acompletion(
@@ -109,8 +118,16 @@ class ReasoningEngine:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
             )
+            monitor.record_success()
             summary = response.choices[0].message.content
         except Exception as e:
+            err_str = str(e).lower()
+            if any(k in err_str for k in ("rate", "429")):
+                monitor.record_failure("rate_limit")
+            elif any(k in err_str for k in ("quota", "billing")):
+                monitor.record_failure("quota")
+            else:
+                monitor.record_failure("transient")
             logger.error("Summarize LLM call failed: %s", e)
             return f"Summarization failed: {e}"
 
@@ -143,11 +160,18 @@ class ReasoningEngine:
             question, self._providers, limit=5, timeout_seconds=10.0,
         )
 
-        # 5. If we have results, use LLM to synthesize
+        # 5. If we have results, use LLM to synthesize (resource-aware)
+        monitor = get_resource_monitor()
         if episodic_results or semantic_results or provider_results:
-            answer = await self._synthesize(
-                question, episodic_results, semantic_results, provider_results,
-            )
+            if monitor.can_use_llm():
+                answer = await self._synthesize(
+                    question, episodic_results, semantic_results, provider_results,
+                )
+            else:
+                # BASIC tier: return raw results without LLM synthesis
+                tier = monitor.get_tier()
+                logger.info("Resource tier %s — skipping LLM synthesis", tier.value)
+                answer = self._format_raw_results(episodic_results, semantic_results)
         else:
             answer = "No relevant memories found for this question."
 
@@ -184,6 +208,28 @@ class ReasoningEngine:
                     break
 
         return found
+
+    def _format_raw_results(
+        self,
+        episodic: list[EpisodicMemory],
+        semantic: dict[str, Any],
+    ) -> str:
+        """Format raw memory results without LLM synthesis (degraded mode)."""
+        lines = ["[Resource-aware mode: returning raw memories without LLM synthesis]\n"]
+        if episodic:
+            lines.append("## Episodic Memories")
+            for mem in episodic:
+                ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
+                lines.append(f"- [{ts}] ({mem.memory_type.value}) {mem.content}")
+        if semantic:
+            lines.append("\n## Semantic Knowledge")
+            for entity, data in semantic.items():
+                lines.append(f"- {entity}")
+                if isinstance(data, dict):
+                    for n in data.get("nodes", []):
+                        if isinstance(n, SemanticNode):
+                            lines.append(f"  - [{n.type}] {n.name}")
+        return "\n".join(lines)
 
     async def _synthesize(
         self,
@@ -225,13 +271,16 @@ class ReasoningEngine:
                 provider_lines.append(f"[{r.source}] {r.content}")
         provider_ctx = "\n".join(provider_lines) if provider_lines else "No external knowledge found."
 
-        prompt = REASONING_PROMPT.format(
+        # Inject constitution as immutable prefix (Law I, II, III)
+        constitution_prefix = get_constitution_prompt_prefix()
+        prompt = constitution_prefix + REASONING_PROMPT.format(
             episodic_context=episodic_ctx,
             semantic_context=semantic_ctx,
             provider_context=provider_ctx,
             question=question,
         )
 
+        monitor = get_resource_monitor()
         last_exc: Exception | None = None
         for attempt in range(3):  # 1 initial + 2 retries
             try:
@@ -240,10 +289,18 @@ class ReasoningEngine:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
                 )
+                monitor.record_success()
                 return response.choices[0].message.content
             except Exception as e:
                 last_exc = e
                 err_str = str(e).lower()
+                # Classify error for resource monitor
+                if any(k in err_str for k in ("rate", "429")):
+                    monitor.record_failure("rate_limit")
+                elif any(k in err_str for k in ("quota", "billing", "402")):
+                    monitor.record_failure("quota")
+                else:
+                    monitor.record_failure("transient")
                 is_transient = any(k in err_str for k in ("connection", "rate", "timeout", "503", "429"))
                 if is_transient and attempt < 2:
                     logger.warning("Synthesis transient error (attempt %d): %s", attempt + 1, e)

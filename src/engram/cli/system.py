@@ -156,6 +156,18 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
                 tasks.append(asyncio.create_task(oc.start()))
                 console.print("[dim]OpenClaw watcher started[/dim]")
 
+            # Memory scheduler (consolidation + cleanup + decay report)
+            from engram.scheduler import create_default_scheduler
+            consolidation_engine = None
+            if cfg.consolidation.enabled:
+                from engram.consolidation.engine import ConsolidationEngine
+                consolidation_engine = ConsolidationEngine(
+                    _get_episodic(), model=cfg.llm.model, config=cfg.consolidation,
+                )
+            scheduler = create_default_scheduler(_get_episodic(), consolidation_engine)
+            scheduler.start()
+            console.print("[dim]Memory scheduler started[/dim]")
+
             await asyncio.gather(*tasks)
 
         run_async(_run_watchers())
@@ -244,6 +256,70 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         session_store = SessionStore(cfg.session.sessions_dir)
         tui_app = EngramTUI(episodic, session_store)
         tui_app.run()
+
+    @app.command("resource-status")
+    def resource_status():
+        """Show resource tier and LLM availability status."""
+        from engram.resource_tier import get_resource_monitor
+        monitor = get_resource_monitor()
+        status = monitor.status()
+        tier = status["tier"]
+        style = {"full": "green", "standard": "yellow", "basic": "red", "readonly": "red bold"}.get(tier, "white")
+        console.print(f"[bold]Resource Tier:[/bold] [{style}]{tier}[/{style}]")
+        console.print(f"  Recent failures: {status['recent_failures']}/{status['failure_threshold']}")
+        console.print(f"  Since last success: {status['seconds_since_last_success']}s")
+        if status["forced"]:
+            console.print(f"  [yellow]Forced tier: {status['forced']}[/yellow]")
+
+    @app.command("constitution-status")
+    def constitution_status():
+        """Show constitution status and hash."""
+        from engram.constitution import load_constitution, compute_constitution_hash, get_constitution_path
+        content = load_constitution()
+        hash_val = compute_constitution_hash(content)
+        path = get_constitution_path()
+        console.print(f"[bold]Data Constitution[/bold]")
+        console.print(f"  Path: {path}")
+        console.print(f"  Exists: {path.exists()}")
+        console.print(f"  Hash: {hash_val}")
+        console.print(f"  Laws: 3 (namespace isolation, no fabrication, audit rights)")
+
+    @app.command("scheduler-status")
+    def scheduler_status():
+        """Show memory scheduler task status."""
+        from engram.scheduler import create_default_scheduler
+
+        cfg = get_config()
+        consolidation_engine = None
+        if cfg.consolidation.enabled:
+            from engram.consolidation.engine import ConsolidationEngine
+            consolidation_engine = ConsolidationEngine(
+                _get_episodic(), model=cfg.llm.model, config=cfg.consolidation,
+            )
+
+        scheduler = create_default_scheduler(_get_episodic(), consolidation_engine)
+        tasks = scheduler.status()
+        if not tasks:
+            console.print("[dim]No scheduled tasks.[/dim]")
+            return
+
+        from rich.table import Table
+        table = Table(title="Memory Scheduler Tasks")
+        table.add_column("Task", style="cyan")
+        table.add_column("Interval", justify="right")
+        table.add_column("Runs", justify="right")
+        table.add_column("LLM?", justify="center")
+        table.add_column("Last Error")
+
+        for t in tasks:
+            hours = t["interval_seconds"] / 3600
+            interval = f"{hours:.0f}h" if hours >= 1 else f"{t['interval_seconds']}s"
+            table.add_row(
+                t["name"], interval, str(t["run_count"]),
+                "yes" if t["requires_llm"] else "no",
+                t["last_error"] or "[dim]none[/dim]",
+            )
+        console.print(table)
 
     @app.command()
     def serve(
