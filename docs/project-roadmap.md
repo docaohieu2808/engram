@@ -263,7 +263,7 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
   - Aggregations (count, sum, avg on attributes; weight-aware)
 - **Query optimization:** Index creation suggestions, explain plans
 - **Batch operations:** Bulk remember, bulk ingest, bulk add_nodes
-- **Streaming responses:** WebSocket support for long-running operations
+- **WebSocket API:** Real-time memory feed for multi-agent sync (live push on remember/delete/update across agents sharing namespace)
 - **Query caching:** Smarter cache invalidation strategies
 - **Memory auto-consolidation:** Background task for periodic consolidation
 - **TUI enhancements:** Export/import in TUI, session merge/split, bulk operations
