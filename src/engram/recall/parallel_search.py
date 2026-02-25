@@ -153,7 +153,7 @@ class ParallelSearcher:
         """Deduplicate by content hash, keep highest score, return top K."""
         seen: dict[str, SearchResult] = {}
         for r in results:
-            key = hashlib.md5(r.content.encode()).hexdigest()
+            key = hashlib.sha256(r.content.encode()).hexdigest()
             if key not in seen or r.score > seen[key].score:
                 seen[key] = r
         fused = sorted(seen.values(), key=lambda x: x.score, reverse=True)

@@ -392,35 +392,48 @@ class EpisodicStore:
         return memories
 
     async def cleanup_expired(self) -> int:
-        """Delete all expired memories. Returns count deleted."""
+        """Delete all expired memories. Returns count deleted.
+
+        Processes in paginated chunks of 1000 to avoid OOM on large stores.
+        """
+        _PAGE = 1000
         try:
             collection = self._ensure_collection()
-            count = await asyncio.to_thread(collection.count)
-            if count == 0:
+            total = await asyncio.to_thread(collection.count)
+            if total == 0:
                 return 0
-            # Fetch all memories (no vector query needed)
-            result = await asyncio.to_thread(collection.get, include=["metadatas"])
         except Exception as e:
             raise RuntimeError(f"Cleanup failed: {e}") from e
 
         now = datetime.now(timezone.utc)
         expired_ids: list[str] = []
 
-        for i, mem_id in enumerate(result["ids"]):
-            meta = result["metadatas"][i] if result["metadatas"] else {}
-            raw_expires = meta.get("expires_at")
-            if raw_expires:
-                try:
-                    expires_dt = datetime.fromisoformat(raw_expires)
-                    if expires_dt.tzinfo is None:
-                        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
-                    if expires_dt < now:
-                        expired_ids.append(mem_id)
-                except (ValueError, TypeError):
-                    pass
+        # Paginate through all memories in chunks
+        for offset in range(0, total, _PAGE):
+            try:
+                result = await asyncio.to_thread(
+                    collection.get, include=["metadatas"], limit=_PAGE, offset=offset,
+                )
+            except Exception:
+                break
+            for i, mem_id in enumerate(result["ids"]):
+                meta = result["metadatas"][i] if result["metadatas"] else {}
+                raw_expires = meta.get("expires_at")
+                if raw_expires:
+                    try:
+                        expires_dt = datetime.fromisoformat(raw_expires)
+                        if expires_dt.tzinfo is None:
+                            expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                        if expires_dt < now:
+                            expired_ids.append(mem_id)
+                    except (ValueError, TypeError):
+                        pass
 
         if expired_ids:
-            await asyncio.to_thread(collection.delete, ids=expired_ids)
+            # Delete in batches too
+            for i in range(0, len(expired_ids), _PAGE):
+                batch = expired_ids[i:i + _PAGE]
+                await asyncio.to_thread(collection.delete, ids=batch)
             if self._audit:
                 self._audit.log_modification(
                     tenant_id=self._namespace, actor="system",
@@ -433,6 +446,7 @@ class EpisodicStore:
 
     async def get_recent(self, n: int = 20) -> list[EpisodicMemory]:
         """Retrieve the most recent N memories sorted by timestamp descending."""
+        n = min(n, 1000)  # Hard cap to prevent unbounded fetches
         try:
             collection = self._ensure_collection()
             count = await asyncio.to_thread(collection.count)

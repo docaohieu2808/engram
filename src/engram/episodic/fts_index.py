@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+import threading
 from pathlib import Path
 from typing import NamedTuple
 
@@ -35,15 +36,17 @@ class FtsIndex:
         resolved = Path(os.path.expanduser(db_path))
         resolved.parent.mkdir(parents=True, exist_ok=True)
         self._db_path = str(resolved)
-        self._conn: sqlite3.Connection | None = None
+        self._local = threading.local()
         self._ensure_table()
 
     def _connect(self) -> sqlite3.Connection:
-        """Return a connection, creating it if needed."""
-        if self._conn is None:
-            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-            self._conn.execute("PRAGMA journal_mode=WAL")
-        return self._conn
+        """Return a per-thread connection for thread safety."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(self._db_path)
+            conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn = conn
+        return conn
 
     def _ensure_table(self) -> None:
         """Create FTS5 virtual table if it doesn't exist."""
@@ -120,7 +123,8 @@ class FtsIndex:
         return [FtsResult(id=row[0], snippet=row[1], memory_type=row[2]) for row in rows]
 
     def close(self) -> None:
-        """Close the database connection."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        """Close the current thread's database connection."""
+        conn = getattr(self._local, "conn", None)
+        if conn:
+            conn.close()
+            self._local.conn = None

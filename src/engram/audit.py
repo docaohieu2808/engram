@@ -40,6 +40,7 @@ class AuditLogger:
 
     def __init__(self, enabled: bool = False, path: str = "~/.engram/audit.jsonl") -> None:
         self._enabled = enabled
+        self._file = None
         if enabled:
             self._path = Path(path).expanduser()
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,8 +73,10 @@ class AuditLogger:
         }
 
         try:
-            with open(self._path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            if self._file is None or self._file.closed:
+                self._file = open(self._path, "a", encoding="utf-8")
+            self._file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            self._file.flush()
         except OSError:
             logger.warning("audit: failed to write entry to %s", self._path)
 
@@ -110,8 +113,10 @@ class AuditLogger:
         }
 
         try:
-            with open(self._path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            if self._file is None or self._file.closed:
+                self._file = open(self._path, "a", encoding="utf-8")
+            self._file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            self._file.flush()
         except OSError:
             logger.warning("audit: failed to write modification entry to %s", self._path)
 

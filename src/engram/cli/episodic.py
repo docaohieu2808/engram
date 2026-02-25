@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import typer
@@ -29,7 +29,7 @@ def _parse_duration(duration_str: str) -> datetime:
     value, unit = int(match.group(1)), match.group(2)
     delta_map = {"d": timedelta(days=value), "h": timedelta(hours=value),
                  "m": timedelta(minutes=value), "s": timedelta(seconds=value)}
-    return datetime.now() + delta_map[unit]
+    return datetime.now(timezone.utc) + delta_map[unit]
 
 
 def _get_episodic(get_config, namespace: str | None = None):

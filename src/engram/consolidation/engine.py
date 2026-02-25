@@ -105,7 +105,8 @@ class ConsolidationEngine:
 
         Uses union-find to group memories with overlap above threshold.
         """
-        n = len(memories)
+        n = min(len(memories), 200)  # Cap to avoid O(n²) explosion
+        memories = memories[:n]
         # Build feature sets (entities + tags)
         features = [set(m.entities) | set(m.tags) for m in memories]
 

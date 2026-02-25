@@ -53,23 +53,21 @@ class RateLimiter:
         limit = self.requests_per_minute + self.burst
 
         try:
-            # Phase 1: atomically remove expired entries and count current window
-            pipe = self._redis.pipeline()
+            # Atomic check-and-record via single pipeline
+            pipe = self._redis.pipeline(transaction=True)
             pipe.zremrangebyscore(key, 0, window_start)
             pipe.zcard(key)
+            pipe.zadd(key, {str(now): now})
+            pipe.expire(key, self._window * 2)
             results = await pipe.execute()
 
-            current_count = results[1]
+            current_count = results[1]  # count BEFORE the zadd
             reset_at = int(now) + self._window
 
             if current_count >= limit:
+                # Over limit — remove the entry we just added
+                await self._redis.zrem(key, str(now))
                 return False, 0, reset_at
-
-            # Phase 2: request is allowed — record it atomically
-            pipe2 = self._redis.pipeline()
-            pipe2.zadd(key, {str(now): now})
-            pipe2.expire(key, self._window * 2)
-            await pipe2.execute()
 
             remaining = max(0, limit - current_count - 1)
             return True, remaining, reset_at

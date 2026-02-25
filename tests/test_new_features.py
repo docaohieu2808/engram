@@ -246,26 +246,26 @@ async def test_summarize_save_stores_memory(store):
 
 
 def test_parse_duration_days():
-    before = datetime.now()
+    before = datetime.now(timezone.utc)
     result = _parse_duration("7d")
     assert result > before + timedelta(days=6, hours=23)
     assert result < before + timedelta(days=7, seconds=5)
 
 
 def test_parse_duration_hours():
-    before = datetime.now()
+    before = datetime.now(timezone.utc)
     result = _parse_duration("24h")
     assert result > before + timedelta(hours=23, minutes=59)
 
 
 def test_parse_duration_minutes():
-    before = datetime.now()
+    before = datetime.now(timezone.utc)
     result = _parse_duration("30m")
     assert result > before + timedelta(minutes=29, seconds=59)
 
 
 def test_parse_duration_seconds():
-    before = datetime.now()
+    before = datetime.now(timezone.utc)
     result = _parse_duration("60s")
     assert result > before + timedelta(seconds=59)
 
