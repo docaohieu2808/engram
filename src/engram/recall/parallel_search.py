@@ -51,10 +51,11 @@ class ParallelSearcher:
         entity_names = [e.name for e in resolved.entities] if resolved else []
         search_query = resolved.resolved if resolved else query
 
-        # Run semantic + entity graph searches in parallel
+        # Run semantic + entity graph + FTS5 searches in parallel
         tasks: list[Any] = [
             self._search_semantic(search_query, top_k),
             self._search_entity_graph(entity_names),
+            self._search_fts(search_query, top_k),
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -116,6 +117,24 @@ class ParallelSearcher:
                     source="entity_graph",
                 ))
         return results
+
+    async def _search_fts(self, query: str, limit: int) -> list[SearchResult]:
+        """FTS5 exact keyword search via EpisodicStore.search_fulltext."""
+        if not hasattr(self._episodic, "search_fulltext"):
+            return []
+        memories = await self._episodic.search_fulltext(query, limit=limit)
+        return [
+            SearchResult(
+                id=m.id,
+                content=m.content,
+                score=0.6,  # Fixed score; FTS5 confirms exact keyword match
+                source="fts",
+                memory_type=m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type),
+                importance=m.priority,
+                timestamp=m.timestamp,
+            )
+            for m in memories
+        ]
 
     async def _search_keyword(self, query: str, limit: int) -> list[SearchResult]:
         """Keyword-based search via semantic graph query."""

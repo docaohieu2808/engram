@@ -19,6 +19,7 @@ import litellm
 
 from engram.audit import AuditLogger
 from engram.config import EmbeddingConfig, EpisodicConfig, ScoringConfig
+from engram.episodic.fts_index import FtsIndex
 from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, MemoryType
 from engram.sanitize import sanitize_content
@@ -115,6 +116,8 @@ class EpisodicStore:
         self._decay_enabled = getattr(config, "decay_enabled", True)
         self._default_decay_rate = getattr(config, "decay_rate", 0.1)
         self._scoring = scoring or ScoringConfig()
+        # FTS5 full-text search index (always-on, no config needed)
+        self._fts = FtsIndex()
 
     def _ensure_collection(self) -> Any:
         """Create ChromaDB collection on first access (lazy initialization)."""
@@ -187,6 +190,13 @@ class EpisodicStore:
             )
         except Exception as e:
             raise RuntimeError(f"Failed to store memory: {e}") from e
+
+        # Sync to FTS5 index (fire-and-forget; non-blocking on failure)
+        try:
+            mt_str = memory_type.value if isinstance(memory_type, MemoryType) else memory_type
+            await asyncio.to_thread(self._fts.insert, memory_id, content, mt_str)
+        except Exception as e:
+            logger.debug("FTS5 insert failed for %s: %s", memory_id, e)
 
         fire_hook(self._on_remember_hook, {
             "id": memory_id,
@@ -275,6 +285,16 @@ class EpisodicStore:
             )
         except Exception as e:
             raise RuntimeError(f"Failed to batch store memories: {e}") from e
+
+        # Sync to FTS5 index
+        try:
+            fts_entries = [
+                (ids[i], documents[i], metadatas[i].get("memory_type", "fact"))
+                for i in range(len(ids))
+            ]
+            await asyncio.to_thread(self._fts.insert_batch, fts_entries)
+        except Exception as e:
+            logger.debug("FTS5 batch insert failed: %s", e)
 
         return ids
 
@@ -465,6 +485,12 @@ class EpisodicStore:
 
             await asyncio.to_thread(self._ensure_collection().delete, ids=[id])
 
+            # Remove from FTS5 index
+            try:
+                await asyncio.to_thread(self._fts.delete, id)
+            except Exception as e:
+                logger.debug("FTS5 delete failed for %s: %s", id, e)
+
             if self._audit:
                 self._audit.log_modification(
                     tenant_id=self._namespace, actor="system",
@@ -475,6 +501,34 @@ class EpisodicStore:
             return True
         except Exception:
             return False
+
+    async def search_fulltext(self, query: str, limit: int = 10) -> list[EpisodicMemory]:
+        """Search memories using FTS5 exact keyword matching.
+
+        Returns EpisodicMemory objects fetched from ChromaDB by ID.
+        Skips IDs not found in ChromaDB (may have been deleted without FTS sync).
+        """
+        fts_results = await asyncio.to_thread(self._fts.search, query, limit)
+        if not fts_results:
+            return []
+
+        ids = [r.id for r in fts_results]
+        try:
+            result = await asyncio.to_thread(
+                self._ensure_collection().get,
+                ids=ids,
+                include=["documents", "metadatas"],
+            )
+        except Exception as e:
+            logger.debug("FTS5 ChromaDB fetch failed: %s", e)
+            return []
+
+        memories: list[EpisodicMemory] = []
+        for i, mem_id in enumerate(result.get("ids", [])):
+            doc = result["documents"][i] if result.get("documents") else ""
+            meta = result["metadatas"][i] if result.get("metadatas") else {}
+            memories.append(_build_memory(mem_id, doc, meta))
+        return memories
 
     async def stats(self) -> dict[str, Any]:
         """Return collection statistics including embedding dimension."""
@@ -589,6 +643,13 @@ class EpisodicStore:
             ids=[mem_id], documents=[content],
             embeddings=embeddings, metadatas=[new_meta],
         )
+
+        # Sync updated content to FTS5 index
+        try:
+            mt_str = new_meta.get("memory_type", "fact")
+            await asyncio.to_thread(self._fts.insert, mem_id, content, mt_str)
+        except Exception as e:
+            logger.debug("FTS5 update failed for %s: %s", mem_id, e)
 
         if self._audit:
             self._audit.log_modification(
