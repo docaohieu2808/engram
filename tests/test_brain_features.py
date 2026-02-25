@@ -1,4 +1,4 @@
-"""Tests for Automaton brain-only features: audit trail, resource tier, constitution, scheduler."""
+"""Tests for brain features: audit trail, resource tier, constitution, scheduler."""
 
 from __future__ import annotations
 

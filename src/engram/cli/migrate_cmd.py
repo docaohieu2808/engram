@@ -1,4 +1,4 @@
-"""CLI command for migrating old agent-memory exports into engram."""
+"""CLI command for migrating legacy memory exports into engram."""
 
 from __future__ import annotations
 
@@ -36,10 +36,10 @@ def register(app: typer.Typer, get_config) -> None:
 
     @app.command()
     def migrate(
-        file: Path = typer.Argument(..., help="JSON file to import (agent-memory export)"),
+        file: Path = typer.Argument(..., help="JSON file to import (legacy memory export)"),
         dry_run: bool = typer.Option(False, "--dry-run", help="Preview without importing"),
     ):
-        """Import data from old agent-memory/neural-memory JSON exports.
+        """Import data from legacy memory JSON exports.
 
         Parses structured entity data (Server:, Technology:, Person:, Project:,
         Relationship:) and imports nodes/edges into semantic graph.

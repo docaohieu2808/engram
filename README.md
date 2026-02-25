@@ -179,7 +179,7 @@ engram summarize [--count 20] [--save]  # Summarize recent N memories via LLM
 
 ```bash
 engram ingest <file.json> [--dry-run]   # Ingest chat JSON: extract entities + remember context
-engram migrate <export.json>            # Import from old agent-memory/neural-memory exports
+engram migrate <export.json>            # Import from legacy memory exports
 ```
 
 ### Schema

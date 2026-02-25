@@ -464,7 +464,7 @@ Watchdog/inotify-based realtime watcher for OpenClaw session streams.
 - `engram restore <file>` — Import backup
 
 #### `migrate_cmd.py` (80 LOC)
-- `engram migrate <export.json>` — Import from old agent-memory exports
+- `engram migrate <export.json>` — Import from legacy memory exports
 
 #### `providers_cmd.py` (215 LOC)
 - `engram discover [--add-host <host>]` — Scan for memory services + prompt to add to config

@@ -1,6 +1,5 @@
 """Memory consolidation engine — clusters related memories and LLM-summarizes them.
 
-Inspired by NeuralMemory's consolidation tiers, simplified for Engram's architecture.
 Clusters by entity/tag Jaccard overlap, then LLM-summarizes each cluster into a
 CONTEXT memory linking back to originals via consolidation_group.
 """
