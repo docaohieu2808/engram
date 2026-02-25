@@ -89,8 +89,23 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags to filter by"),
         no_federation: bool = typer.Option(False, "--no-federation", help="Skip federated provider search"),
         timeout: float = typer.Option(10.0, "--timeout", help="Federated search timeout in seconds"),
+        resolve_entities: bool = typer.Option(False, "--resolve-entities", help="Resolve pronouns in query before searching"),
+        resolve_temporal: bool = typer.Option(False, "--resolve-temporal", help="Resolve temporal references in query before searching"),
     ):
         """Search episodic memories and federated providers."""
+        # Entity/temporal resolution pre-processing
+        if resolve_entities or resolve_temporal:
+            from engram.recall.entity_resolver import resolve as do_resolve
+            resolved = run_async(do_resolve(
+                query,
+                context=None,
+                resolve_temporal_refs=resolve_temporal,
+                resolve_pronoun_refs=resolve_entities,
+            ))
+            if resolved.resolved != query:
+                console.print(f"[dim]Resolved query:[/dim] {resolved.resolved}")
+                query = resolved.resolved
+
         store = _get_episodic(get_config, _resolve_namespace())
         filters = {}
         if type:

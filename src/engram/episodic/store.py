@@ -632,12 +632,17 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
     topic_key = metadata.get("topic_key")
     revision_count = int(metadata.get("revision_count", 0))
 
+    # Parse feedback fields
+    confidence = float(metadata.get("confidence", 1.0))
+    negative_count = int(metadata.get("negative_count", 0))
+
     # Exclude internal fields from extra metadata
     _internal = {
         "memory_type", "priority", "timestamp", "entities", "tags", "expires_at",
         "access_count", "last_accessed", "decay_rate",
         "consolidation_group", "consolidated_into",
         "topic_key", "revision_count",
+        "confidence", "negative_count",
     }
     extra = {k: v for k, v in metadata.items() if k not in _internal}
 
@@ -658,4 +663,6 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
         consolidated_into=consolidated_into,
         topic_key=topic_key,
         revision_count=revision_count,
+        confidence=confidence,
+        negative_count=negative_count,
     )

@@ -34,6 +34,13 @@ class Priority(int, Enum):
     CRITICAL = 10
 
 
+class FeedbackType(str, Enum):
+    """Type of user feedback on a memory."""
+
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+
+
 # --- Episodic Memory (Vector DB) ---
 
 
@@ -59,6 +66,9 @@ class EpisodicMemory(BaseModel):
     # Topic key upsert fields
     topic_key: str | None = None
     revision_count: int = 0
+    # Feedback loop fields
+    confidence: float = 1.0  # 0.0 - 1.0, adjusted by user feedback
+    negative_count: int = 0  # count of negative feedbacks received
 
     @field_validator("priority")
     @classmethod
@@ -144,3 +154,45 @@ class IngestResult(BaseModel):
     episodic_count: int = 0
     semantic_nodes: int = 0
     semantic_edges: int = 0
+
+
+# --- Recall Pipeline Models ---
+
+
+class Entity(BaseModel):
+    """A resolved entity from text (person, place, technology, etc.)."""
+
+    name: str
+    type: str = "unknown"
+    aliases: list[str] = Field(default_factory=list)
+
+
+class ResolvedText(BaseModel):
+    """Result of entity/temporal resolution on input text."""
+
+    original: str
+    resolved: str
+    entities: list[Entity] = Field(default_factory=list)
+    temporal_refs: dict[str, str] = Field(default_factory=dict)
+
+
+class SearchResult(BaseModel):
+    """A single search result from any memory source."""
+
+    id: str
+    content: str
+    score: float
+    source: str  # "semantic", "entity_graph", "keyword"
+    memory_type: str = "fact"
+    importance: int = 5
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryCandidate(BaseModel):
+    """A candidate for auto-saving to memory."""
+
+    content: str
+    importance: int = 3
+    category: str = "auto"  # manual, identity, preference, explicit, pattern
+    memory_type: MemoryType = MemoryType.FACT

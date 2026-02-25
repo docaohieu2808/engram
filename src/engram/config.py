@@ -134,6 +134,46 @@ class ConsolidationConfig(BaseModel):
     enabled: bool = False
     min_cluster_size: int = 3
     similarity_threshold: float = 0.3
+    auto_trigger_threshold: int = 20  # messages before auto-consolidation
+    llm_model: str = "gemini/gemini-2.0-flash"
+
+
+class RetrievalAuditConfig(BaseModel):
+    """Retrieval audit logging configuration."""
+    enabled: bool = False
+    path: str = "~/.engram/retrieval_audit.jsonl"
+
+
+class ResolutionConfig(BaseModel):
+    """Entity and temporal resolution settings for recall pipeline."""
+    enabled: bool = True
+    resolve_pronouns: bool = True
+    resolve_temporal: bool = True
+    context_window: int = 10  # messages to look back for pronoun resolution
+    llm_model: str = "gemini/gemini-2.0-flash"
+
+
+class RecallPipelineConfig(BaseModel):
+    """Recall pipeline orchestration settings."""
+    enabled: bool = True
+    parallel_search: bool = True
+    fusion_top_k: int = 10
+    fallback_threshold: float = 0.3  # keyword fallback if best score < this
+
+
+class FeedbackConfig(BaseModel):
+    """User feedback loop settings for memory confidence adjustment."""
+    enabled: bool = True
+    positive_boost: float = 0.15      # confidence increase on positive feedback
+    negative_penalty: float = 0.2     # confidence decrease on negative feedback
+    auto_delete_threshold: int = 3    # negative count before auto-delete check
+    min_confidence_for_delete: float = 0.15  # confidence floor for auto-delete
+
+
+class IngestionConfig(BaseModel):
+    """Content ingestion settings."""
+    poisoning_guard: bool = True
+    auto_memory: bool = True
 
 
 class ProviderEntry(BaseModel):
@@ -197,6 +237,11 @@ class Config(BaseModel):
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
+    resolution: ResolutionConfig = Field(default_factory=ResolutionConfig)
+    recall_pipeline: RecallPipelineConfig = Field(default_factory=RecallPipelineConfig)
+    feedback: FeedbackConfig = Field(default_factory=FeedbackConfig)
+    ingestion: IngestionConfig = Field(default_factory=IngestionConfig)
+    retrieval_audit: RetrievalAuditConfig = Field(default_factory=RetrievalAuditConfig)
     providers: list[ProviderEntry] = Field(default_factory=list)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
@@ -287,6 +332,26 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "CONSOLIDATION_MIN_CLUSTER_SIZE": ("consolidation", "min_cluster_size"),
     "CONSOLIDATION_SIMILARITY_THRESHOLD": ("consolidation", "similarity_threshold"),
     "SESSION_SESSIONS_DIR": ("session", "sessions_dir"),
+    "RESOLUTION_ENABLED": ("resolution", "enabled"),
+    "RESOLUTION_RESOLVE_PRONOUNS": ("resolution", "resolve_pronouns"),
+    "RESOLUTION_RESOLVE_TEMPORAL": ("resolution", "resolve_temporal"),
+    "RESOLUTION_CONTEXT_WINDOW": ("resolution", "context_window"),
+    "RESOLUTION_LLM_MODEL": ("resolution", "llm_model"),
+    "RECALL_PIPELINE_ENABLED": ("recall_pipeline", "enabled"),
+    "RECALL_PIPELINE_PARALLEL_SEARCH": ("recall_pipeline", "parallel_search"),
+    "RECALL_PIPELINE_FUSION_TOP_K": ("recall_pipeline", "fusion_top_k"),
+    "RECALL_PIPELINE_FALLBACK_THRESHOLD": ("recall_pipeline", "fallback_threshold"),
+    "FEEDBACK_ENABLED": ("feedback", "enabled"),
+    "FEEDBACK_POSITIVE_BOOST": ("feedback", "positive_boost"),
+    "FEEDBACK_NEGATIVE_PENALTY": ("feedback", "negative_penalty"),
+    "FEEDBACK_AUTO_DELETE_THRESHOLD": ("feedback", "auto_delete_threshold"),
+    "FEEDBACK_MIN_CONFIDENCE_FOR_DELETE": ("feedback", "min_confidence_for_delete"),
+    "INGESTION_POISONING_GUARD": ("ingestion", "poisoning_guard"),
+    "INGESTION_AUTO_MEMORY": ("ingestion", "auto_memory"),
+    "CONSOLIDATION_AUTO_TRIGGER_THRESHOLD": ("consolidation", "auto_trigger_threshold"),
+    "CONSOLIDATION_LLM_MODEL": ("consolidation", "llm_model"),
+    "RETRIEVAL_AUDIT_ENABLED": ("retrieval_audit", "enabled"),
+    "RETRIEVAL_AUDIT_PATH": ("retrieval_audit", "path"),
 }
 
 def _get_section_models() -> dict[str, type[BaseModel]]:
@@ -308,6 +373,11 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "rate_limit": RateLimitConfig,
         "scoring": ScoringConfig,
         "consolidation": ConsolidationConfig,
+        "resolution": ResolutionConfig,
+        "recall_pipeline": RecallPipelineConfig,
+        "feedback": FeedbackConfig,
+        "ingestion": IngestionConfig,
+        "retrieval_audit": RetrievalAuditConfig,
         "session": SessionConfig,
     }
 
