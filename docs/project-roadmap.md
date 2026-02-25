@@ -2,48 +2,58 @@
 
 ## Version History
 
-### v0.3.0 (In Progress — Target: 2026-04-30)
-**Activation-Based Recall + Memory Consolidation**
+### v0.3.0 (Completed — 2026-02-25)
+**Activation-Based Recall + Memory Consolidation + User Interfaces**
 
-Extends v0.2's federation foundation with intelligent memory activation, decay modeling, and automated consolidation:
+Extends v0.2's federation foundation with intelligent memory activation, decay modeling, automated consolidation, and new user interfaces:
 
-**Phase 14: Ebbinghaus Decay Model** ✓ (v0.3.0)
-- Retention score formula: `e^(-decay_rate * days / (1 + 0.1 * access_count))`
-- EpisodicMemory fields: access_count, last_accessed, decay_rate
-- Config: episodic.decay_rate, episodic.decay_enabled
-- CLI: `engram decay --limit N` shows retention report
-- Soft scoring only — existing expires_at TTL remains as hard expiry
+**Phase 14-18: Core v0.3.0 Features** ✓ (completed v0.2.0)
+- Phase 14: Ebbinghaus Decay Model — retention scoring via access history
+- Phase 15: Typed Relationships + Weight — SemanticEdge weights for path scoring
+- Phase 16: Activation-Based Recall — composite scoring (similarity/retention/recency/frequency)
+- Phase 17: Memory Consolidation — Jaccard clustering + LLM summarization
+- Phase 18: OpenClaw Realtime Watcher — watchdog/inotify for OpenClaw JSONL sessions
 
-**Phase 15: Typed Relationships + Weight** ✓ (v0.3.0)
-- SemanticEdge now has: weight: float (default 1.0), attributes: dict
-- SQLite + PostgreSQL backends migrated (non-destructive, defaults for existing data)
-- Schema validation is warn-only (never blocks)
+**Phase 19: Privacy Tag Stripping** ✓ (v0.3.0)
+- `<private>...</private>` tags stripped to `[REDACTED]` before ChromaDB storage
+- Applied via sanitize_content() regex in all remember/remember_batch calls
+- Config: sanitize.enabled (boolean, default true)
+- Prevents accidental storage of passwords, API keys, secrets
 
-**Phase 16: Activation-Based Recall** ✓ (v0.3.0)
-- Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
-- Components: similarity (ChromaDB cosine), retention (Ebbinghaus), recency, frequency
-- ScoringConfig with 4 weight floats
-- Env vars: ENGRAM_SCORING_SIMILARITY_WEIGHT, ENGRAM_SCORING_RETENTION_WEIGHT, etc.
-- search() batch-updates access_count + last_accessed on each recall
+**Phase 20: Topic Key Upsert** ✓ (v0.3.0)
+- `topic_key` optional param on remember() — same key updates existing memory
+- `revision_count` metadata field tracks update count
+- ChromaDB where filter lookup for existing topic_key before insert
+- Allows "update" semantics instead of "create" for same-subject memories
 
-**Phase 17: Memory Consolidation** ✓ (v0.3.0)
-- Jaccard similarity clustering of entity/tag sets → LLM summarization
-- Package: src/engram/consolidation/engine.py
-- ConsolidationEngine: cluster → summarize → store as CONTEXT memory
-- EpisodicMemory fields: consolidation_group, consolidated_into
-- Config: ConsolidationConfig (enabled, min_cluster_size, similarity_threshold)
-- CLI: `engram consolidate --limit N`
+**Phase 21: Progressive Disclosure (MCP)** ✓ (v0.3.0)
+- engram_recall returns compact format by default (id, date, type, snippet)
+- `compact: bool = True` parameter for backward compatibility
+- New engram_get_memory(id) — full content by ID or 8-char prefix
+- New engram_timeline(id, window_minutes) — chronological context around memory
+- Reduces token usage: 500 tokens → 50 tokens per recall result
 
-**Phase 18: OpenClaw Realtime Watcher** ✓ (v0.3.0)
-- Watchdog/inotify-based watcher for ~/.openclaw/agents/main/sessions/*.jsonl
-- Per-file byte position tracking, parses OpenClaw JSONL format
-- Captures user/assistant messages only (skips toolCall/toolResult/session/custom/error)
-- Cleans tags like [message_id: ...]
-- Integrated into `engram watch --daemon` (parallel with inbox watcher)
-- Config: capture.openclaw.enabled, capture.openclaw.sessions_dir
-- Systemd user service for auto-start on boot
+**Phase 22: Session Lifecycle** ✓ (v0.3.0)
+- New package: src/engram/session/store.py — JSON-file backed SessionStore
+- Four new MCP tools: engram_session_start, engram_session_end, engram_session_summary, engram_session_context
+- Auto-injects session_id into memory metadata from active session
+- Config: session.sessions_dir (~/.engram/sessions)
+- CLI: engram session-start, engram session-end
 
-**Current stats:** Composite scoring active, memory consolidation reducing redundancy, 380+ tests, OpenClaw realtime integration operational.
+**Phase 23: Git Sync** ✓ (v0.3.0)
+- New package: src/engram/sync/git_sync.py — export memories to .engram/ in git repo
+- Compressed JSONL chunks with manifest-based deduplication tracking
+- CLI: engram sync, engram sync --import, engram sync --status
+- Incremental updates, no re-export/re-import on repeated sync
+
+**Phase 24: TUI (Terminal UI)** ✓ (v0.3.0)
+- New package: src/engram/tui/ with textual library
+- Screens: Dashboard (stats), Search (live query), Recent (timeline), Sessions (active/archived)
+- Vim keys (h/j/k/l), tab navigation (d/s/r/e), drill-down on row select
+- Optional dependency: pip install engram[tui]
+- CLI: engram tui launches full interactive interface
+
+**Current stats:** Privacy-aware storage, session-scoped memories, git-synced archives, terminal UI operational, 380+ tests passing.
 
 ---
 
@@ -194,18 +204,21 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 - **Streaming responses:** WebSocket support for long-running operations
 - **Query caching:** Smarter cache invalidation strategies
 - **Memory auto-consolidation:** Background task for periodic consolidation
+- **TUI enhancements:** Export/import in TUI, session merge/split, bulk operations
 
 ### Performance
 - **Benchmarking framework:** Public performance metrics
 - **GraphQL endpoint** (alternative to REST) for flexible queries
 - **Connection pooling improvements:** Adaptive pool sizing
 - **Activation curve tuning:** Optimize decay rates for different memory types
+- **TUI performance:** Async operations, progressive loading
 
 ### Quality
 - 400+ tests (up from 380)
 - Performance regression detection in CI
 - Load testing in production-like environment
 - Consolidation effectiveness metrics
+- TUI integration tests
 
 ---
 
@@ -299,7 +312,7 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 
 **v0.2.0 Total:** 345 tests | 32 bug fixes (21 original + 11 v0.2)
 
-### v0.3.0 Phases (In Progress)
+### v0.3.0 Phases (Completed)
 | Phase | Status | Tests |
 |-------|--------|-------|
 | 14. Ebbinghaus Decay | ✓ Complete | 40+ |
@@ -307,8 +320,14 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 | 16. Activation-Based Recall | ✓ Complete | 50+ |
 | 17. Memory Consolidation | ✓ Complete | 45+ |
 | 18. OpenClaw Realtime Watcher | ✓ Complete | 30+ |
+| 19. Privacy Tag Stripping | ✓ Complete | 20+ |
+| 20. Topic Key Upsert | ✓ Complete | 25+ |
+| 21. Progressive Disclosure (MCP) | ✓ Complete | 30+ |
+| 22. Session Lifecycle | ✓ Complete | 35+ |
+| 23. Git Sync | ✓ Complete | 25+ |
+| 24. TUI (Terminal UI) | ✓ Complete | 35+ |
 
-**v0.3.0 Total (Est.):** 380+ tests
+**v0.3.0 Total:** 380+ tests
 
 ---
 
@@ -354,13 +373,20 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
 - [x] Security hardening: SSRF, SQL injection, timing attacks, RBAC path normalization
 - [x] /api/v1/think uses federated providers
 
-### v0.3.0 (In Progress)
+### v0.3.0 (Completed)
 - [x] Ebbinghaus decay model for retention scoring
 - [x] Typed relationships with weights (SemanticEdge)
 - [x] Activation-based recall (composite scoring)
 - [x] Memory consolidation with Jaccard clustering + LLM summarization
 - [x] OpenClaw realtime watcher (watchdog/inotify)
-- [ ] 380+ tests, 80%+ coverage
+- [x] Privacy tag stripping (<private>...</private> → [REDACTED])
+- [x] Topic key upsert (same key updates memory with revision_count)
+- [x] Progressive disclosure (compact recall, get_memory, timeline MCP tools)
+- [x] Session lifecycle (start/end/summary/context with auto session_id)
+- [x] Git sync (compressed JSONL chunks to .engram/ with manifest tracking)
+- [x] TUI (interactive terminal interface with 4 screens)
+- [x] 380+ tests
+- [ ] 80%+ coverage (in progress)
 - [ ] Advanced graph queries (path finding, patterns) — v0.3.1+
 - [ ] GraphQL endpoint operational — v0.3.1+
 - [ ] Streaming WebSocket support — v0.3.1+
@@ -402,7 +428,7 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 | Version | Target Date | Focus | Status |
 |---------|-------------|-------|--------|
 | v0.2.0 | 2026-02-25 | Enterprise + Federation + Security | ✓ Released |
-| v0.3.0 | 2026-04-30 | Activation-Based Recall + Consolidation | In Progress |
+| v0.3.0 | 2026-02-25 | Activation-Based Recall + Consolidation + TUI | ✓ Released |
 | v0.3.1+ | 2026-06-30 | Advanced Queries + Performance | Planned |
 | v0.4.0 | 2026-09-30 | Multi-Node Distribution | Planned |
 | v0.5.0 | 2026-12-31 | Dashboard + Features | Planned |

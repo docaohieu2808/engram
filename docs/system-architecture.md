@@ -251,6 +251,139 @@ discovery:
 
 ---
 
+### Layer 3c: Privacy & Sanitization (v0.3.0)
+
+**Path:** `src/engram/sanitize.py`
+
+**Purpose:** Strip sensitive content before storage to prevent accidental exposure of secrets.
+
+**Components:**
+- **sanitize_content()** — Regex-based removal of `<private>...</private>` tags → `[REDACTED]`
+- **Config:** `sanitize.enabled` (boolean, default true)
+- **Applied in:** episodic_tools.py, CLI episodic.py, before ChromaDB insert
+- **Use case:** Blocks passwords, API keys, personal info from being stored
+
+---
+
+### Layer 3d: Topic Key Upsert (v0.3.0)
+
+**Path:** `src/engram/episodic/store.py` (extended)
+
+**Purpose:** Enable memory updates by topic key, allowing same-subject memories to be updated rather than duplicated.
+
+**Components:**
+- **topic_key** optional parameter on `remember()`
+- **revision_count** metadata field tracking update count
+- **Lookup:** ChromaDB where filter for existing topic_key before insert
+- **Fallback:** New insert if topic_key not found
+- **Use case:** Update "deployment status" memory without creating duplicates
+
+---
+
+### Layer 3e: Session Lifecycle (v0.3.0)
+
+**Path:** `src/engram/session/store.py`
+
+**Purpose:** Track conversation sessions and auto-tag memories with session context for coherent recall.
+
+**Components:**
+- **SessionStore** — JSON-file backed session management
+  - `start_session()` → returns session_id (UUID)
+  - `end_session()` → saves summary + metadata
+  - `get_active()` → returns current active session
+  - `get_summary(session_id)` → returns session summary
+- **Session model:** {id, start_time, end_time, summary, tags, metadata}
+- **Integration:** Auto-injects session_id into memory.metadata during active session
+- **Storage:** ~/.engram/sessions/ (JSON files)
+- **MCP Tools:** engram_session_start, engram_session_end, engram_session_summary, engram_session_context
+- **CLI:** engram session-start, engram session-end
+
+**Data Flow:**
+```
+1. engram_session_start → SessionStore.start_session() → session_id
+2. remember(...) → auto-injects session_id in metadata
+3. engram_session_end → SessionStore.end_session() + LLM summary
+4. engram_session_context(session_id) → recall memories tagged with that session_id
+```
+
+---
+
+### Layer 3f: Git Sync (v0.3.0)
+
+**Path:** `src/engram/sync/git_sync.py`
+
+**Purpose:** Export memories as compressed JSONL chunks to `.engram/` directory in git repo for version control + backup.
+
+**Components:**
+- **GitSync** — Incremental memory export/import
+  - `export()` → Exports memories to .engram/ as compressed 10KB chunks
+  - `import()` → Re-imports memories from chunks
+  - `get_status()` → Shows export progress + manifest state
+- **Manifest tracking:** `.engram/manifest.json` tracks exported IDs + timestamps
+- **Deduplication:** Manifest prevents re-exporting same memories
+- **Compression:** JSONL format with gzip compression
+- **CLI:** engram sync, engram sync --import, engram sync --status
+- **Integration:** Background task or manual trigger
+
+**Use case:** Version control archive of memories, backup to shared repo, audit trail.
+
+---
+
+### Layer 3g: Terminal UI (v0.3.0)
+
+**Path:** `src/engram/tui/`
+
+**Purpose:** Provide interactive terminal interface for exploring memories, searching, and managing sessions.
+
+**Components:**
+- **TUI App** (textual library-based)
+  - **Screens:**
+    - Dashboard: Memory statistics, session count, recent activity
+    - Search: Live query with results (debounced, <500ms)
+    - Recent: Timeline view of recent memories
+    - Sessions: Active/archived sessions with drill-down
+  - **Navigation:** Vim keys (h/j/k/l), tab keys (d/s/r/e), row select for detail view
+  - **Detail view:** Full memory content + metadata + related memories
+- **CLI:** engram tui launches interactive interface
+- **Performance:** Load time <1s, search <500ms
+- **Dependencies:** textual (optional via pip install engram[tui])
+
+**Screens:**
+- dashboard.py: Home screen with stats
+- search.py: Query with live results
+- recent.py: Timeline view of 50 most recent memories
+- sessions.py: Session management + context
+
+---
+
+### Layer 3h: Progressive Disclosure (MCP) (v0.3.0)
+
+**Path:** `src/engram/mcp/episodic_tools.py` (extended)
+
+**Purpose:** Reduce token usage in MCP by returning compact recall results, with detailed content on-demand.
+
+**Components:**
+- **engram_recall** enhanced:
+  - Returns compact format by default: `{id, date, type, snippet}`
+  - `compact: bool = True` parameter for backward compat
+  - ~200 chars per result (vs. full content)
+- **engram_get_memory(id)** — New tool
+  - Retrieve full content by ID or 8-char prefix
+  - Returns {id, content, metadata, created_at}
+- **engram_timeline(id, window_minutes)** — New tool
+  - Show chronological context around a memory
+  - Returns memories from ±window_minutes
+  - Useful for understanding conversation flow
+
+**Token Efficiency:**
+```
+Before: recall → 10 results × 500 tokens each = 5000 tokens
+After: recall (compact) → 10 results × 50 tokens each = 500 tokens
+Detail: get_memory(id) → only when needed
+```
+
+---
+
 ### Layer 4: Reasoning Engine
 
 **Path:** `src/engram/reasoning/`

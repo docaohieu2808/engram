@@ -1,9 +1,9 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.2.0 is a dual-memory AI agent system combining episodic (vector) and semantic (graph) memory with LLM reasoning, extended by a federation layer for connecting external memory sources. ~2500 LoC, 345 tests, Python 3.11+.
+Engram v0.3.0 is a dual-memory AI agent system combining episodic (vector) and semantic (graph) memory with LLM reasoning, advanced memory activation/consolidation, session lifecycle management, and a terminal UI. ~3200 LoC, 380+ tests, Python 3.11+.
 
-**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `providers/` (federation layer).
+**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `session/store.py` (sessions), `tui/` (terminal UI), `sync/git_sync.py` (git export).
 
 ---
 
@@ -87,12 +87,13 @@ Health checks for liveness and readiness probes.
 ChromaDB vector database wrapper.
 - **Collections:** One per namespace (tenant_id)
 - **Chunking:** Auto-splits long content (>1000 chars) into 800-char chunks with overlap
-- **Metadata:** memory_type, priority, tags, expires, created_at, updated_at, **access_count, last_accessed, decay_rate** (v0.3.0)
+- **Metadata:** memory_type, priority, tags, expires, created_at, updated_at, access_count, last_accessed, decay_rate, **topic_key, revision_count, session_id** (v0.3.0)
 - **Methods:** remember(), recall(), cleanup(), get(), count()
 - **Hooks:** Fires on_remember webhook after insert (fire-and-forget)
 - **Fallback embedding:** Gemini (default, 3072 dims) or all-MiniLM-L6-v2 (384 dims)
+- **New (v0.3.0):** Topic key upsert — same topic_key updates existing memory with revision_count
+- **New (v0.3.0):** Session_id auto-injection from active SessionStore
 - **New (v0.3.0):** Batch updates to access_count + last_accessed on recall()
-- **New (v0.3.0):** Ebbinghaus decay scoring: `retention = e^(-decay_rate * days / (1 + 0.1 * access_count))`
 
 #### `search.py` (180 LOC)
 Search utilities: embedding generation, similarity scoring, activation-based recall.
@@ -215,6 +216,59 @@ Consolidates redundant episodic memories via Jaccard clustering + LLM summarizat
 
 ---
 
+### `src/engram/sanitize.py` — Content Sanitization (v0.3.0)
+
+#### `sanitize.py` (80 LOC) — **NEW (v0.3.0)**
+Strips sensitive content from episodic memories before storage.
+- **SanitizeConfig:** enabled (bool, default true)
+- **sanitize_content():** Regex-based removal of `<private>...</private>` tags → `[REDACTED]`
+- **Applied in:** episodic_tools.py, CLI episodic.py, before ChromaDB storage
+- **Use case:** Prevent accidental storage of passwords, API keys, personal info
+
+---
+
+### `src/engram/session/` — Session Lifecycle Management (v0.3.0)
+
+#### `store.py` (150 LOC) — **NEW (v0.3.0)**
+JSON-file backed session store for tracking active sessions.
+- **SessionStore:** Manages session creation, state, summaries
+- **Session model:** id (uuid), start_time, end_time, summary, tags, metadata
+- **Methods:** start_session(), end_session(), get_active(), get_summary(), update_metadata()
+- **Storage:** ~/.engram/sessions/ (JSON files, one per session)
+- **Integration:** Auto-injects session_id into memory metadata during active session
+- **MCP tools:** engram_session_start, engram_session_end, engram_session_summary, engram_session_context
+- **CLI:** engram session-start, engram session-end
+
+---
+
+### `src/engram/sync/` — Git Repository Sync (v0.3.0)
+
+#### `git_sync.py` (120 LOC) — **NEW (v0.3.0)**
+Exports episodic memories to git repo as compressed JSONL chunks.
+- **GitSync:** Manages incremental export/import of memories
+- **Chunk format:** Compressed JSONL (10KB chunks default), stored in .engram/ directory
+- **Manifest tracking:** .engram/manifest.json tracks exported IDs + timestamps
+- **Methods:** export(), import(), get_status()
+- **Features:** Deduplication (manifest prevents re-export), incremental updates
+- **CLI:** engram sync, engram sync --import, engram sync --status
+- **Use case:** Version control for memory archives, backup to git
+
+---
+
+### `src/engram/tui/` — Terminal User Interface (v0.3.0)
+
+#### TUI Package (150 LOC total) — **NEW (v0.3.0)**
+Interactive terminal interface via textual library.
+- **Screens:** Dashboard (memory stats), Search (query with live results), Recent (timeline), Sessions (active/archived)
+- **Navigation:** Vim keys (h/j/k/l), tab keys (d/s/r/e), row select for drill-down
+- **Features:** Live search with debouncing, memory detail view, session context
+- **Performance:** Loads in <1s, search results <500ms
+- **Dependencies:** textual (optional via engram[tui] install)
+- **CLI:** engram tui launches full interface
+- **Files:** dashboard.py (home screen), search.py, recent.py, sessions.py, app.py (main)
+
+---
+
 ### `src/engram/capture/` — External agent integration
 
 #### `server.py` (590 LOC) — HTTP API
@@ -317,6 +371,13 @@ MCP protocol server (stdio-based for Claude integration).
 #### `episodic_tools.py`, `semantic_tools.py`, `reasoning_tools.py`
 Tool implementations for MCP.
 
+#### `session_tools.py` (80 LOC) — **NEW (v0.3.0)**
+MCP tools for session lifecycle management.
+- **engram_session_start:** Begin new session, returns session_id
+- **engram_session_end:** End active session, optionally save summary
+- **engram_session_summary:** Get summary of completed session
+- **engram_session_context:** Retrieve memories from active session by time window
+
 ---
 
 ### `src/engram/schema/` — Schema management
@@ -366,17 +427,19 @@ Load and validate schemas; enforce type constraints on graph operations.
 | Metric | Value |
 |--------|-------|
 | Python version | 3.11+ |
-| Total LOC | ~2500 |
-| Test count | 345 |
-| Modules | 20+ |
+| Total LOC | ~3200 |
+| Test count | 380+ |
+| Modules | 25+ |
 | Endpoints | 13 (HTTP) |
-| CLI commands | 25+ |
-| MCP tools | 8 |
-| Config fields | 50+ |
+| CLI commands | 30+ |
+| MCP tools | 12 (8 original + 4 session) |
+| Config fields | 55+ |
 | Supported roles | 3 (ADMIN, AGENT, READER) |
 | Max tenants cached | 100 (graphs), 1000 (episodic) |
 | Provider adapter types | 4 (rest, file, postgres, mcp) |
 | Known auto-discoverable services | 5 (Cognee, Mem0, LightRAG, OpenClaw, Graphiti) |
+| TUI screens | 4 (Dashboard, Search, Recent, Sessions) |
+| Session storage | JSON files (~.engram/sessions) |
 
 ---
 

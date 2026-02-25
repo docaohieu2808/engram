@@ -11,7 +11,7 @@ Engram is a dual-memory AI agent system that thinks like humans. It combines:
 
 Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI).
 
-**Version:** 0.2.0 | **Status:** Enterprise-ready + Federation | **Tests:** 345 | **License:** MIT
+**Version:** 0.3.0 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI | **Tests:** 380+ | **License:** MIT
 
 ---
 
@@ -228,6 +228,55 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **FR17.7** Systemd user service for auto-start on boot
 - **Acceptance:** New OpenClaw sessions detected in realtime; messages ingested cleanly
 
+#### FR18: Privacy Tag Stripping (v0.3.0)
+- **FR18.1** `<private>...</private>` tags stripped to `[REDACTED]` before storage
+- **FR18.2** Applied via `sanitize_content()` regex in all remember/remember_batch calls
+- **FR18.3** Covers episodic_tools.py and CLI episodic.py commands
+- **FR18.4** Config: `sanitize.enabled` boolean (default true)
+- **Acceptance:** Private content never stored, audit log shows redaction
+
+#### FR19: Topic Key Upsert (v0.3.0)
+- **FR19.1** `topic_key` optional param on `remember()` — same key updates existing memory
+- **FR19.2** `revision_count` tracks update count per memory
+- **FR19.3** ChromaDB `where` filter lookup for existing topic_key before insert
+- **FR19.4** Falls back to new insert if topic_key not found
+- **FR19.5** Files: models.py, store.py, episodic_tools.py, cli/episodic.py
+- **Acceptance:** `remember(..., topic_key="same")` twice updates single memory with revision_count=2
+
+#### FR20: Progressive Disclosure (MCP) (v0.3.0)
+- **FR20.1** `engram_recall` returns compact format by default (id prefix, date, type, snippet)
+- **FR20.2** `compact: bool = True` param for backward compatibility with full content
+- **FR20.3** New `engram_get_memory(id)` — retrieve full content by ID or 8-char prefix
+- **FR20.4** New `engram_timeline(id, window_minutes)` — chronological context around memory
+- **FR20.5** Reduces token usage for recall in MCP context
+- **Acceptance:** Compact recall returns <200 chars per item; get_memory returns full content; timeline shows ±window_minutes
+
+#### FR21: Session Lifecycle (v0.3.0)
+- **FR21.1** New package: `src/engram/session/store.py` — JSON-file backed SessionStore
+- **FR21.2** Four new MCP tools: `engram_session_start`, `engram_session_end`, `engram_session_summary`, `engram_session_context`
+- **FR21.3** Auto-injects `session_id` into memory metadata from active session
+- **FR21.4** Config: `session.sessions_dir` (default ~/.engram/sessions)
+- **FR21.5** CLI: `engram session-start`, `engram session-end`
+- **FR21.6** Session metadata: id, start_time, end_time, summary, tags
+- **Acceptance:** Memories created during session tagged with session_id; sessions queryable by date/summary
+
+#### FR22: Git Sync (v0.3.0)
+- **FR22.1** New package: `src/engram/sync/git_sync.py` — export memories to `.engram/` in git repo
+- **FR22.2** Compressed JSONL chunks; manifest-based tracking (no re-export/re-import)
+- **FR22.3** CLI: `engram sync` (export), `engram sync --import` (re-import), `engram sync --status` (check)
+- **FR22.4** Chunk size: 10KB default; incremental updates on each sync
+- **FR22.5** Manifest: `.engram/manifest.json` tracks exported memory IDs, last sync timestamp
+- **Acceptance:** Memories exported as compressed chunks; git tracks history; manifest prevents duplicates
+
+#### FR23: TUI (Terminal UI) (v0.3.0)
+- **FR23.1** New package: `src/engram/tui/` with textual library
+- **FR23.2** Screens: Dashboard (stats), Search (query), Recent (timeline), Sessions (active/archived)
+- **FR23.3** Vim keys (h/j/k/l), tab navigation (d/s/r/e), drill-down on row select
+- **FR23.4** Optional dependency: `pip install engram[tui]`
+- **FR23.5** CLI: `engram tui` launches full terminal interface
+- **FR23.6** Memory detail view: full content, metadata, related memories
+- **Acceptance:** TUI loads within 1s; search returns results in <500ms; drill-down shows full memory
+
 ---
 
 ### Non-Functional Requirements
@@ -389,6 +438,15 @@ engram serve
 ---
 
 ## Change Log
+
+**v0.3.0** (2026-02-25) — Activation-Based Recall + Consolidation + TUI
+- Privacy tag stripping: `<private>...</private>` → `[REDACTED]` before storage
+- Topic key upsert: same topic_key updates existing memory with revision_count tracking
+- Progressive disclosure: compact recall + engram_get_memory + engram_timeline MCP tools
+- Session lifecycle: engram_session_start/end/summary/context with auto session_id tagging
+- Git sync: incremental compressed JSONL chunks to .engram/ with manifest tracking
+- TUI: interactive terminal interface (textual library) with Search/Recent/Sessions screens
+- 380+ tests (up from 345)
 
 **v0.2.0** (2026-02-25) — Enterprise + Federation + Security
 - Federation layer: REST/File/Postgres/MCP provider adapters
