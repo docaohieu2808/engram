@@ -48,7 +48,7 @@ async def federated_search(
     query: str,
     providers: list[MemoryProvider],
     limit: int = 5,
-    timeout_seconds: float = 3.0,
+    timeout_seconds: float = 10.0,
     force_federation: bool = False,
 ) -> list[ProviderResult]:
     """Search across all active providers with timeout and merge.

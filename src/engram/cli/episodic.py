@@ -86,6 +86,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         type: Optional[str] = typer.Option(None, "--type", "-t"),
         tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags to filter by"),
         no_federation: bool = typer.Option(False, "--no-federation", help="Skip federated provider search"),
+        timeout: float = typer.Option(10.0, "--timeout", help="Federated search timeout in seconds"),
     ):
         """Search episodic memories and federated providers."""
         store = _get_episodic(get_config, _resolve_namespace())
@@ -124,7 +125,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             registry.load_from_config(cfg)
             providers = registry.get_active()
             if providers:
-                provider_results = run_async(federated_search(query, providers, limit=limit))
+                provider_results = run_async(federated_search(query, providers, limit=limit, timeout_seconds=timeout))
                 for r in provider_results:
                     console.print(f"[magenta]\\[{r.source}][/magenta] {r.content[:300]}")
 
