@@ -2,6 +2,47 @@
 
 ## Version History
 
+### v0.4.0 (Completed — 2026-02-25)
+**Intelligence Layer + Graph Visualization**
+
+Four new intelligence modules providing temporal resolution, pronoun handling, result formatting, and interactive graph exploration. Wires 7 orphaned modules into main flow. Fixes 3 critical bugs.
+
+**Intelligence Features** ✓
+- Temporal Resolution: 28 Vietnamese+English patterns resolve "hôm nay/hôm qua" → ISO dates before storing
+- Pronoun Resolution: "anh ấy/he/she" → named entity from graph context, LLM-based fallback
+- Feedback Loop + Auto-adjust: confidence ±0.15/0.2, importance ±1, auto-delete on 3× negative
+- Fusion Formatter: group recall results by type [preference]/[fact]/[lesson] for LLM context
+
+**Graph Visualization** ✓
+- Interactive entity relationship explorer at GET /graph
+- vis-network dark theme, search by name, click-to-inspect entity details
+- Drag-to-move nodes, zoom/pan, physics simulation for layout
+- CLI: `engram graph` launches browser
+- MCP tool: `engram_get_graph_data(keyword)` returns filtered graph JSON
+
+**Wired Modules** ✓
+- guard.py (prompt injection prevention)
+- decision.py (trivial message skip)
+- telemetry.py (latency tracking)
+- fts_index.py (full-text search)
+- parallel_search.py (multi-source fusion)
+- auto_memory.py (save-worthy detection)
+- auto_trigger.py (consolidation trigger)
+
+**Bug Fixes** ✓
+- FTS5 thread safety: Lock acquisition in parallel search
+- OOM pagination: Limit results before aggregation
+- Rate limiter race condition: Redis atomic increment with TTL
+
+**New API:**
+- POST /api/v1/feedback — Record feedback on memories
+- GET /api/v1/graph/data — Graph data JSON for frontend
+- GET /graph — Interactive graph HTML
+
+**Current stats:** 726 tests passing (545 + 181 new), 7 modules fully integrated, 3 critical bugs fixed.
+
+---
+
 ### v0.3.2 (Completed — 2026-02-25)
 **Brain Features — Audit Trail, Resource Awareness, Constitution, Scheduler**
 

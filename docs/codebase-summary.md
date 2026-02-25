@@ -1,9 +1,9 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.3.2 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, and automated maintenance. Combines episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, and background scheduler. ~4200 LoC, 545+ tests, Python 3.11+.
+Engram v0.4.0 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, automated maintenance, and interactive graph visualization. Combines episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, background scheduler, temporal/pronoun resolution, feedback loop, and fusion formatting. ~4500 LoC, 726+ tests, Python 3.11+.
 
-**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `constitution.py` (LLM governance), `resource_tier.py` (degradation), `scheduler.py` (background tasks), `audit.py` (mutation log).
+**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `constitution.py` (LLM governance), `resource_tier.py` (degradation), `scheduler.py` (background tasks), `audit.py` (mutation log), `recall/temporal_resolver.py` (date resolution), `recall/pronoun_resolver.py` (entity mapping), `recall/fusion_formatter.py` (result grouping), `feedback/auto_adjust.py` (confidence tracking).
 
 ---
 
@@ -192,9 +192,34 @@ Multi-source search with fusion and deduplication.
 - **SearchResult:** content, score (0-1), source, metadata, resolved_entities
 - Top-K selection after merging
 
+#### `temporal_resolver.py` (150 LOC) — **NEW (v0.4.0)**
+Vietnamese+English temporal pattern resolution.
+- 28 patterns: "hôm nay/hôm qua", "tuần trước/tuần tới", "yesterday/tomorrow", "last week", etc.
+- Regex-based (no LLM cost); returns ISO date or None
+- Wired into store.remember() before episodic insert
+- Metadata: resolved_dates (list of {pattern, resolved_date})
+- Config: resolution.temporal_enabled (default true)
+
+#### `pronoun_resolver.py` (120 LOC) — **NEW (v0.4.0)**
+LLM-based pronoun resolution with fallback.
+- Resolves: "anh ấy", "he/she/they", "it" → named entity from SemanticGraph
+- LLM call (gemini-flash) with entity context; fallback to direct keyword matching
+- Methods: resolve_pronouns(text, graph_entities) → {pronoun: resolved_entity, confidence}
+- Wired into engram_recall() and engram_think()
+- Config: resolution.pronoun_enabled (default true)
+
+#### `fusion_formatter.py` (140 LOC) — **NEW (v0.4.0)**
+Group recall results by memory type for structured LLM context.
+- Groups: [preference], [fact], [lesson], [decision], [todo], [error], [workflow], [context]
+- Each group sorted by score descending; compact format (id, date, snippet)
+- Methods: format_results(search_results) → {grouped_results: {type: [results]}}
+- Wired into engram_recall() after parallel_search + fusion
+- LLM reasoning uses formatted structure with type hints
+- Config: fusion.formatter_enabled (default true)
+
 ---
 
-### `src/engram/feedback/` — Adaptive Learning (v0.3.1)
+### `src/engram/feedback/` — Adaptive Learning (v0.3.1+)
 
 #### `loop.py` (120 LOC) — **NEW (v0.3.1)**
 Feedback loop for tracking and improving recall accuracy.
@@ -202,6 +227,16 @@ Feedback loop for tracking and improving recall accuracy.
 - Adjust confidence: +0.15 (positive), -0.2 (negative)
 - Auto-delete: if negative_count >= 3 AND confidence < threshold
 - Methods: record_feedback(), get_confidence(), should_auto_delete()
+
+#### `auto_adjust.py` (150 LOC) — **NEW (v0.4.0)**
+Enhanced feedback system with confidence and importance tracking.
+- Confidence adjustment: +0.15 (positive), -0.2 (negative), range [0.0, 1.0]
+- Importance adjustment: +1 (positive), -1 (negative) on memory.priority
+- Auto-delete: if negative_count >= 3 AND confidence < 0.5
+- Methods: record_feedback(memory_id, type) → updated_confidence
+- Integration: POST /api/v1/feedback endpoint, MCP tool `engram_feedback`
+- Persistence: Updates stored directly on EpisodicMemory records
+- Config: feedback.confidence_positive_delta (0.15), confidence_negative_delta (0.2), auto_delete_threshold (3)
 
 ---
 
@@ -387,9 +422,39 @@ Interactive terminal interface via textual library.
 
 ---
 
+### `static/graph.html` & Graph Visualization API (v0.4.0)
+
+#### `graph.html` (400 LOC) — **NEW (v0.4.0)**
+Interactive entity relationship explorer using vis-network library.
+- **Frontend:** vis-network (force-directed graph), dark theme, responsive layout
+- **Features:** Drag-to-move nodes, click-to-inspect entity details, search by name, zoom/pan
+- **Node styling:** Colors by entity type, size by connection count
+- **Edge labels:** Show relationship types (uses, depends_on, etc.)
+- **Performance:** Renders graphs with 1000+ nodes in <500ms
+- **Search:** Client-side filtering by entity name with real-time update
+- **Data source:** GET /api/v1/graph/data endpoint (JSON nodes/edges)
+- **Accessibility:** Keyboard navigation, context-aware tooltips
+
+#### `server.py` routes (NEW in v0.4.0)
+- `GET /graph` — Serves graph.html with node/edge data embedded
+- `GET /api/v1/graph/data` — Returns JSON {nodes: [...], edges: [...]} for frontend
+- Query params: `?search=keyword` filters entities by name pattern
+- Response format: `{data: {nodes: [...], edges: [...]}, meta: {...}}`
+
+#### `mcp/semantic_tools.py` (UPDATED v0.4.0)
+- New tool: `engram_get_graph_data(search_keyword)` — retrieve filtered graph JSON
+- Useful for Claude integration to visualize entity relationships
+- Returns: nodes (id, label, type, size) + edges (from, to, relation, weight)
+
+#### CLI Integration
+- `engram graph [--search keyword]` — Launches browser at localhost:8765/graph
+- Opens graph.html with optional search filter pre-applied
+
+---
+
 ### `src/engram/capture/` — External agent integration
 
-#### `server.py` (590 LOC) — HTTP API
+#### `server.py` (650 LOC) — HTTP API
 FastAPI endpoints for all operations. Multi-tenant, versioned, fully authenticated.
 - **Routes:**
   - `POST /api/v1/remember` — Store episodic memory
@@ -397,16 +462,20 @@ FastAPI endpoints for all operations. Multi-tenant, versioned, fully authenticat
   - `POST /api/v1/think` — LLM reasoning
   - `POST /api/v1/ingest` — Extract entities + store memories
   - `GET /api/v1/query` — Graph query
+  - `POST /api/v1/feedback` — Record positive/negative feedback (NEW v0.4.0)
   - `POST /api/v1/cleanup` — Delete expired
   - `POST /api/v1/summarize` — LLM synthesis
   - `POST /api/v1/auth/token` — Issue JWT
   - `GET /api/v1/health` — Liveness
+  - `GET /api/v1/graph/data` — Graph data JSON (NEW v0.4.0)
+  - `GET /graph` — Interactive graph HTML (NEW v0.4.0)
   - `POST /api/v1/backup` — Snapshot memory
   - `POST /api/v1/restore` — Load backup
 - **Middleware:** CorrelationIdMiddleware (X-Correlation-ID), RateLimitMiddleware (per-tenant sliding-window)
 - **Versioning:** /api/v1/ prefix; legacy /remember routes redirect
 - **Response format:** Structured ErrorResponse on failures
 - **Pagination:** offset + limit on /recall and /query
+- **NEW (v0.4.0):** Feedback endpoint accepts {memory_id, feedback_type} and returns {confidence, importance}
 
 #### `extractor.py` (150 LOC)
 Entity extraction from unstructured text (LLM-powered).

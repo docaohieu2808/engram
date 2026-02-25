@@ -2,14 +2,18 @@
 
 **Memory traces for AI agents — Think like humans.**
 
-![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-545+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.3.2-blue)
+![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-726+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.4.0-blue)
 
 Dual-memory AI system combining episodic (vector) + semantic (graph) memory with LLM reasoning. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment. Exposes CLI, MCP, and versioned HTTP API (/api/v1/).
 
 ## Features
 
 - **Dual Memory** — Episodic (ChromaDB) + Semantic (PostgreSQL/SQLite) with LLM synthesis
-- **Recall Pipeline** — Query decision, entity resolution, parallel search fusion, learning feedback
+- **Enhanced Recall Pipeline** — Query decision, temporal+pronoun resolution, parallel search fusion, learning feedback, auto-memory, poisoning guard
+- **Temporal & Pronoun Resolution** — Vietnamese+English date patterns, LLM-based pronoun resolution before storing
+- **Feedback Loop** — Confidence tracking, adaptive learning, auto-delete bad memories (3× negative)
+- **Fusion Formatter** — Group recall results by type [preference]/[fact]/[lesson] for LLM context
+- **Graph Visualization** — Interactive entity relationship explorer with dark theme, search, click-to-inspect
 - **Multi-Tenancy** — Isolated per-tenant stores, row-level isolation in PostgreSQL
 - **Authentication** — JWT + API keys with RBAC (ADMIN, AGENT, READER), optional
 - **Caching** — Redis-backed result caching with per-endpoint TTLs
@@ -112,7 +116,7 @@ For Claude Code users, engram ships Stop + SessionEnd hooks that capture every c
 
 ## CLI Reference
 
-### Recall Pipeline (v0.3.1)
+### Recall Pipeline & Intelligence (v0.4.0)
 
 ```bash
 engram resolve <query> [--context "..."]              # Entity/temporal resolution
@@ -120,6 +124,10 @@ engram feedback <id> [--positive|--negative]          # Record feedback on memor
 engram audit [--last N]                               # View retrieval audit log
 engram benchmark --questions file.json                # Run accuracy benchmarks
 engram recall <query> [--resolve-entities] [--resolve-temporal]  # Enhanced recall
+engram graph [--search <keyword>]                      # Interactive graph explorer
+engram resource-status                                # Show LLM degradation tier
+engram constitution-status                            # Show data constitution laws + hash
+engram scheduler-status                               # Show scheduled tasks and state
 ```
 
 ### Episodic Memory
@@ -286,6 +294,12 @@ feedback:
 resolution:
   temporal_enabled: true
   pronoun_enabled: true
+
+fusion:
+  formatter_enabled: true
+
+graph:
+  visualization_enabled: true
 ```
 
 ### Key Environment Variables
@@ -301,12 +315,14 @@ ENGRAM_RATE_LIMIT_ENABLED             # Enable rate limiting
 ENGRAM_RATE_LIMIT_REQUESTS_PER_MINUTE # Default 60
 ENGRAM_AUDIT_ENABLED                  # Enable audit logs
 ENGRAM_TELEMETRY_ENABLED              # Enable OpenTelemetry
-ENGRAM_RECALL_ENABLED                 # Enable recall pipeline (v0.3.1)
-ENGRAM_INGESTION_AUTO_MEMORY_ENABLED  # Detect save-worthy messages (v0.3.1)
-ENGRAM_INGESTION_GUARD_ENABLED        # Block prompt injection (v0.3.1)
-ENGRAM_FEEDBACK_ENABLED               # Enable feedback loop (v0.3.1)
-ENGRAM_RESOLUTION_TEMPORAL_ENABLED    # Temporal entity resolution (v0.3.1)
-ENGRAM_RESOLUTION_PRONOUN_ENABLED     # Pronoun resolution via LLM (v0.3.1)
+ENGRAM_RECALL_ENABLED                 # Enable recall pipeline (v0.3.1+)
+ENGRAM_INGESTION_AUTO_MEMORY_ENABLED  # Detect save-worthy messages (v0.3.1+)
+ENGRAM_INGESTION_GUARD_ENABLED        # Block prompt injection (v0.3.1+)
+ENGRAM_FEEDBACK_ENABLED               # Enable feedback loop (v0.3.1+)
+ENGRAM_RESOLUTION_TEMPORAL_ENABLED    # Temporal entity resolution (v0.4.0+)
+ENGRAM_RESOLUTION_PRONOUN_ENABLED     # Pronoun resolution via LLM (v0.4.0+)
+ENGRAM_FUSION_FORMATTER_ENABLED       # Format recall by type [preference]/[fact]/[lesson] (v0.4.0+)
+ENGRAM_GRAPH_VISUALIZATION_ENABLED    # Enable graph UI at /graph (v0.4.0+)
 ```
 
 **Note:** Environment variables override YAML; `${VARIABLE}` syntax in YAML is expanded at load time.
@@ -379,6 +395,7 @@ Available MCP tools:
 | `engram_session_end` | End active session with optional summary (v0.3.0+) |
 | `engram_session_summary` | Get summary of completed session (v0.3.0+) |
 | `engram_session_context` | Retrieve memories from active session (v0.3.0+) |
+| `engram_get_graph_data` | Retrieve full graph data for visualization (v0.4.0+) |
 
 ## HTTP API
 
@@ -393,8 +410,11 @@ Start server: `engram serve [--host 0.0.0.0] [--port 8765]`
 | `POST` | `/think` | LLM reasoning across episodic + semantic |
 | `GET` | `/query` | Graph search (`?keyword=X&node_type=Y&related_to=Z`) |
 | `POST` | `/ingest` | Extract entities + store memories from messages |
+| `POST` | `/feedback` | Record feedback on memory (positive/negative, v0.4.0+) |
 | `POST` | `/cleanup` | Delete expired memories (admin only) |
 | `POST` | `/summarize` | LLM synthesis of recent memories (admin only) |
+| `GET` | `/graph` | Interactive graph visualization (v0.4.0+) |
+| `GET` | `/api/v1/graph/data` | Graph data JSON for visualization (v0.4.0+) |
 | `POST` | `/auth/token` | Issue JWT (admin_secret required) |
 | `GET` | `/health` | Liveness check (always available) |
 | `POST` | `/backup` | Export all memory to JSON |
@@ -458,12 +478,13 @@ See [deployment-guide.md](docs/deployment-guide.md) for Docker Compose with Post
 
 ## Test Coverage
 
-- **545+ tests** across all modules (39 new in v0.3.2)
+- **726+ tests** across all modules (181 new in v0.4.0)
 - **75%+ code coverage** target
 - **CI/CD:** GitHub Actions runs full test suite on every PR and commit
 - **Load tests:** Marked as excluded from CI; run separately in staging
 - **Recall pipeline tests:** Decision, resolution, search, feedback, auto-memory, guard, benchmarking
 - **Brain feature tests:** Audit trail, resource tier, constitution, scheduler
+- **Intelligence tests:** Temporal resolution, pronoun resolution, fusion formatter, graph visualization
 
 ```bash
 # Run all tests
@@ -479,6 +500,14 @@ pytest tests/ -k "recall or resolution or feedback or decision" -v
 ---
 
 ## Advanced Features
+
+### Intelligence Layer (v0.4.0)
+✓ Temporal Resolution — Vietnamese+English date patterns resolve "hôm nay/yesterday" → ISO dates before storing
+✓ Pronoun Resolution — "anh ấy/he/she" → named entity from graph context, LLM-based fallback
+✓ Fusion Formatter — group recall results by type [preference]/[fact]/[lesson] for LLM context
+✓ Graph Visualization — interactive entity relationship explorer, vis-network, dark theme, search, click-to-inspect
+✓ Feedback Loop + Auto-delete — confidence ±0.15/0.2, importance ±1, auto-delete on 3× negative
+✓ 726 tests, 181 new (v0.4.0)
 
 ### Brain Features (v0.3.2)
 ✓ Memory audit trail — before/after log for every mutation (create, update, delete, cleanup, batch)

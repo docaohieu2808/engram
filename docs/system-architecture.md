@@ -404,7 +404,45 @@ discovery:
 
 ---
 
-### Layers 3h–3k: Brain Features (v0.3.2)
+### Layers 3h–3k: Intelligence Layer (v0.4.0)
+
+Four new modules providing enhanced entity resolution, adaptive learning, result formatting, and graph visualization. Wires 7 orphaned modules into main flow.
+
+| Layer | Module | Purpose |
+|-------|--------|---------|
+| 3h | `recall/temporal_resolver.py` | 28 Vietnamese+English patterns resolve "hôm nay/yesterday" → ISO dates before storing |
+| 3i | `recall/pronoun_resolver.py` | LLM-based "anh ấy/he/she" → named entity from graph context, fallback to direct match |
+| 3j | `recall/fusion_formatter.py` | Group recall results by type [preference]/[fact]/[lesson] for LLM context |
+| 3k | `static/graph.html` + API | Interactive entity relationship explorer at /graph, vis-network dark theme, search, click-to-inspect |
+
+**Wired Modules (now active):**
+- `ingestion/guard.py` — Prompt injection prevention (now required for security)
+- `recall/decision.py` — Trivial message skip <10ms
+- `providers/telemetry.py` — Latency tracking
+- `episodic/fts_index.py` — Full-text search indexing
+- `recall/parallel_search.py` — Multi-source fusion
+- `capture/auto_memory.py` — Auto-detection of save-worthy messages
+- `consolidation/auto_trigger.py` — Consolidation trigger after N messages
+
+**Bug Fixes (v0.4.0):**
+- FTS5 thread safety: Lock acquisition in parallel search
+- OOM pagination: Limit results before aggregation
+- Rate limiter race condition: Redis atomic increment with TTL
+
+**New MCP Tool:** `engram_get_graph_data(search_keyword)` — retrieve filtered graph JSON for visualization
+
+**New API Endpoints:**
+- `POST /api/v1/feedback` — Record positive/negative feedback on memories
+- `GET /api/v1/graph/data` — Graph data JSON for visualization
+- `GET /graph` — Interactive graph HTML interface
+
+**Config:** `resolution.temporal_enabled`, `resolution.pronoun_enabled`, `fusion.formatter_enabled`, `graph.visualization_enabled`
+
+**CLI:** `engram graph` launches browser at localhost:8765/graph
+
+---
+
+### Layers 3l–3o: Brain Features (v0.3.2)
 
 Four new modules providing operational reliability and LLM governance. See **[brain-features-architecture.md](./brain-features-architecture.md)** for full detail.
 
@@ -419,7 +457,7 @@ CLI commands added: `engram resource-status`, `engram constitution-status`, `eng
 
 ---
 
-### Layer 3l: Terminal UI (v0.3.0)
+### Layer 3p: Terminal UI (v0.3.0)
 
 **Path:** `src/engram/tui/`
 
@@ -432,7 +470,7 @@ CLI commands added: `engram resource-status`, `engram constitution-status`, `eng
 
 ---
 
-### Layer 3i: Progressive Disclosure (MCP) (v0.3.0)
+### Layer 3q: Progressive Disclosure (MCP) (v0.3.0)
 
 **Path:** `src/engram/mcp/episodic_tools.py` (extended)
 

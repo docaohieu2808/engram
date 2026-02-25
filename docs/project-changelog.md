@@ -4,6 +4,63 @@ All notable changes to this project are documented here. Follows [Keep a Changel
 
 ---
 
+## [v0.4.0] — 2026-02-25
+### Intelligence Layer + Graph Visualization
+
+**Added**
+- **Temporal Resolution** (`src/engram/recall/temporal_resolver.py`)
+  - 28 Vietnamese+English patterns: "hôm nay/hôm qua", "tuần trước/tuần tới", "yesterday/tomorrow", "last week", etc.
+  - ISO date resolution before episodic store insert
+  - Wired into store.remember() pipeline; adds resolved_dates to memory metadata
+  - Fallback to direct date parsing if pattern not matched
+
+- **Pronoun Resolution** (`src/engram/recall/pronoun_resolver.py`)
+  - LLM-based entity mapping for "anh ấy", "he/she/they", "it" → named entity from SemanticGraph
+  - Fallback to keyword matching if graph empty or LLM unavailable
+  - Wired into engram_recall() and engram_think() pipelines
+  - Config: resolution.pronoun_enabled (default true)
+
+- **Feedback Loop + Auto-adjust** (`src/engram/feedback/auto_adjust.py`)
+  - Confidence adjustment: +0.15 (positive), -0.2 (negative)
+  - Importance adjustment: +1 (positive), -1 (negative)
+  - Auto-delete: If negative_count >= 3 AND confidence < 0.5 → remove from episodic store
+  - New POST /api/v1/feedback endpoint with memory_id + feedback_type
+  - New MCP tool `engram_feedback(id, feedback_type)` records + returns updated confidence
+  - Config: feedback.confidence_positive_delta, feedback.confidence_negative_delta, feedback.auto_delete_threshold
+
+- **Fusion Formatter** (`src/engram/recall/fusion_formatter.py`)
+  - Groups recall results by memory type: [preference], [fact], [lesson], [decision], [todo], [error], [workflow], [context]
+  - Each group sorted by score descending; compact format by default (id, date, snippet)
+  - Wired into engram_recall() after parallel search + fusion
+  - LLM reasoning engine uses formatted results with type hints for better context
+  - Config: fusion.formatter_enabled (default true)
+
+- **Graph Visualization UI** (`static/graph.html`, new `/graph` route, `GET /api/v1/graph/data`)
+  - vis-network library, dark theme, interactive entity relationship explorer
+  - Features: drag-to-move nodes, click-to-inspect entity details, search by name, zoom/pan
+  - Node colors by entity type; edge labels show relationship types; physics simulation
+  - Renders in <500ms; handles 1000+ node graphs
+  - CLI: `engram graph` launches browser at localhost:8765/graph
+  - MCP tool: `engram_get_graph_data(search_keyword)` returns filtered graph JSON
+
+- **7 Orphaned Modules Integrated**
+  - `ingestion/guard.py` — Prompt injection prevention (now required for security)
+  - `recall/decision.py` — Trivial message skip <10ms (config: recall.decision_skip_trivial)
+  - `providers/telemetry.py` — Latency tracking and instrumentation
+  - `episodic/fts_index.py` — Full-text search indexing for keyword fallback
+  - `recall/parallel_search.py` — Multi-source search fusion (was orphaned, now core)
+  - `capture/auto_memory.py` — Auto-detection of save-worthy messages (config: ingestion.auto_memory_enabled)
+  - `consolidation/auto_trigger.py` — Consolidation trigger after N messages (config: recall.auto_consolidate_threshold)
+
+**Fixed**
+- FTS5 thread safety: Added lock acquisition in parallel search to prevent concurrent index corruption
+- OOM pagination: Limit result aggregation before dedup to prevent memory explosion on large result sets
+- Rate limiter race condition: Redis atomic increment with TTL to prevent lost updates in high-concurrency
+
+**Tests:** 726 total (181 new: temporal, pronoun, feedback, fusion, graph visualization, wired modules, bug fixes)
+
+---
+
 ## [v0.3.2] — 2026-02-25
 ### Brain Features
 

@@ -11,7 +11,7 @@ Engram is a dual-memory AI agent system that thinks like humans. It combines:
 
 Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI).
 
-**Version:** 0.3.2 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline + Brain Features | **Tests:** 545+ | **License:** MIT
+**Version:** 0.4.0 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline + Brain Features + Intelligence Layer | **Tests:** 726+ | **License:** MIT
 
 ---
 
@@ -344,6 +344,41 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **FR28.6** CLI: `engram scheduler-status` shows all tasks with last/next run times
 - **Acceptance:** Tasks run on schedule; no overlap; skipped tasks logged; state survives restart
 
+#### FR29: Temporal & Pronoun Resolution (v0.4.0)
+- **FR29.1** Temporal Resolver (`src/engram/recall/temporal_resolver.py`): 28 Vietnamese+English patterns
+- **FR29.2** Patterns: "hôm nay/hôm qua", "tuần trước/tuần tới", "yesterday/tomorrow", "last week", ISO date → ISO date resolution
+- **FR29.3** Wired into store.remember() before episodic insert; adds resolved_dates to memory metadata
+- **FR29.4** Pronoun Resolver (`src/engram/recall/pronoun_resolver.py`): LLM-based entity mapping with fallback
+- **FR29.5** Resolves: "anh ấy", "he/she/they", "it" → named entity from SemanticGraph context
+- **FR29.6** Wired into engram_recall() pipeline; skip if graph empty or no pronouns detected
+- **Acceptance:** Relative dates resolve correctly; pronouns match entities in graph; fallback to direct matching
+
+#### FR30: Feedback Loop + Auto-Adjust (v0.4.0)
+- **FR30.1** `feedback/auto_adjust.py` tracks positive/negative feedback on memories
+- **FR30.2** Confidence adjustment: +0.15 (positive), -0.2 (negative), starts at 1.0 per memory
+- **FR30.3** Importance adjustment: +1 (positive), -1 (negative) on memory metadata
+- **FR30.4** Auto-delete: If negative_count >= 3 AND confidence < 0.5 → delete from episodic store
+- **FR30.5** New POST /api/v1/feedback endpoint with {memory_id, feedback_type: "positive"|"negative"}
+- **FR30.6** New MCP tool `engram_feedback(id, feedback_type)` records feedback + returns updated confidence
+- **Acceptance:** Feedback persists; confidence/importance update; auto-delete triggers correctly
+
+#### FR31: Fusion Formatter (v0.4.0)
+- **FR31.1** `src/engram/recall/fusion_formatter.py` groups recall results by memory type
+- **FR31.2** Groups: [preference], [fact], [lesson], [decision], [todo], [error], [workflow], [context]
+- **FR31.3** Each group sorted by score descending; compact format by default (id, date, snippet)
+- **FR31.4** Wired into engram_recall() after parallel search; optional toggle via config fusion.formatter_enabled
+- **FR31.5** LLM reasoning engine uses formatted results with type hints for better context
+- **Acceptance:** Results grouped by type; formatting improves LLM reasoning quality; optional config toggle
+
+#### FR32: Graph Visualization UI (v0.4.0)
+- **FR32.1** `static/graph.html`: vis-network library, dark theme, interactive entity relationship explorer
+- **FR32.2** Features: drag-to-move nodes, click-to-inspect entity details, search by name, zoom/pan
+- **FR32.3** Endpoints: GET /graph (HTML page), GET /api/v1/graph/data (JSON nodes/edges for frontend)
+- **FR32.4** Node colors by entity type; edge labels show relationship types; physics simulation for layout
+- **FR32.5** CLI: `engram graph` launches browser at localhost:8765/graph
+- **FR32.6** MCP tool: `engram_get_graph_data(search_keyword)` returns filtered graph JSON
+- **Acceptance:** Graph renders in <500ms; interactive exploration works; search filters correctly
+
 ---
 
 ### Non-Functional Requirements
@@ -519,6 +554,19 @@ engram serve
 ---
 
 ## Change Log
+
+**v0.4.0** (2026-02-25) — Intelligence Layer + Graph Visualization
+- Temporal Resolution: 28 Vietnamese+English patterns resolve "hôm nay/yesterday" → ISO dates before storing
+- Pronoun Resolution: "anh ấy/he/she" → named entity from graph context, LLM-based fallback
+- Feedback Loop + Auto-adjust: confidence ±0.15/0.2, importance ±1, auto-delete on 3× negative
+- Fusion Formatter: group recall results by type [preference]/[fact]/[lesson] for LLM context
+- Graph Visualization: interactive entity relationship explorer at /graph, vis-network dark theme, search, click-to-inspect
+- 7 orphaned modules wired: guard, decision, telemetry, temporal search, parallel search, auto memory, auto consolidation
+- 3 critical bug fixes: FTS5 thread safety, OOM pagination, rate limiter race condition
+- New CLI: `engram graph`
+- New MCP tool: `engram_get_graph_data`, `engram_feedback` enhanced
+- New API: POST /api/v1/feedback, GET /api/v1/graph/data, GET /graph
+- 726+ tests (181 new)
 
 **v0.3.2** (2026-02-25) — Brain Features
 - Memory Audit Trail: traceable before/after log for every episodic mutation
