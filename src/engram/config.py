@@ -18,6 +18,8 @@ class EpisodicConfig(BaseModel):
     provider: str = "chromadb"
     path: str = "~/.engram/episodic"
     namespace: str = "default"
+    decay_rate: float = 0.1
+    decay_enabled: bool = True
 
 
 class EmbeddingConfig(BaseModel):
@@ -118,6 +120,21 @@ class RateLimitConfig(BaseModel):
     burst: int = 10
 
 
+class ScoringConfig(BaseModel):
+    """Activation-based recall scoring weights. Must sum to ~1.0."""
+    similarity_weight: float = 0.5
+    retention_weight: float = 0.2
+    recency_weight: float = 0.15
+    frequency_weight: float = 0.15
+
+
+class ConsolidationConfig(BaseModel):
+    """Memory consolidation settings."""
+    enabled: bool = False
+    min_cluster_size: int = 3
+    similarity_threshold: float = 0.3
+
+
 class ProviderEntry(BaseModel):
     """Configuration for a single external memory provider."""
     name: str
@@ -172,6 +189,8 @@ class Config(BaseModel):
     audit: AuditConfig = Field(default_factory=AuditConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+    scoring: ScoringConfig = Field(default_factory=ScoringConfig)
+    consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
     providers: list[ProviderEntry] = Field(default_factory=list)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
 
@@ -251,6 +270,15 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "RATE_LIMIT_BURST": ("rate_limit", "burst"),
     "CAPTURE_OPENCLAW_ENABLED": ("capture.openclaw", "enabled"),
     "CAPTURE_OPENCLAW_SESSIONS_DIR": ("capture.openclaw", "sessions_dir"),
+    "EPISODIC_DECAY_RATE": ("episodic", "decay_rate"),
+    "EPISODIC_DECAY_ENABLED": ("episodic", "decay_enabled"),
+    "SCORING_SIMILARITY_WEIGHT": ("scoring", "similarity_weight"),
+    "SCORING_RETENTION_WEIGHT": ("scoring", "retention_weight"),
+    "SCORING_RECENCY_WEIGHT": ("scoring", "recency_weight"),
+    "SCORING_FREQUENCY_WEIGHT": ("scoring", "frequency_weight"),
+    "CONSOLIDATION_ENABLED": ("consolidation", "enabled"),
+    "CONSOLIDATION_MIN_CLUSTER_SIZE": ("consolidation", "min_cluster_size"),
+    "CONSOLIDATION_SIMILARITY_THRESHOLD": ("consolidation", "similarity_threshold"),
 }
 
 def _get_section_models() -> dict[str, type[BaseModel]]:
@@ -270,6 +298,8 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "audit": AuditConfig,
         "cache": CacheConfig,
         "rate_limit": RateLimitConfig,
+        "scoring": ScoringConfig,
+        "consolidation": ConsolidationConfig,
     }
 
 

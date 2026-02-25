@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 import litellm
 
 from engram.audit import AuditLogger
-from engram.config import EmbeddingConfig, EpisodicConfig
+from engram.config import EmbeddingConfig, EpisodicConfig, ScoringConfig
 from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, MemoryType
 from engram.sanitize import sanitize_content
@@ -95,6 +96,7 @@ class EpisodicStore:
         namespace: str | None = None,
         on_remember_hook: str | None = None,
         audit: AuditLogger | None = None,
+        scoring: ScoringConfig | None = None,
     ):
         import chromadb
         from pathlib import Path
@@ -113,6 +115,9 @@ class EpisodicStore:
         self._embedding_dim: int | None = None  # Detected on first operation
         self._on_remember_hook = on_remember_hook
         self._audit = audit
+        self._decay_enabled = getattr(config, "decay_enabled", True)
+        self._default_decay_rate = getattr(config, "decay_rate", 0.1)
+        self._scoring = scoring or ScoringConfig()
 
     def _ensure_collection(self) -> Any:
         """Create ChromaDB collection on first access (lazy initialization)."""
@@ -146,6 +151,8 @@ class EpisodicStore:
             "timestamp": timestamp,
             "entities": json.dumps(entities),
             "tags": json.dumps(tags),
+            "access_count": 0,
+            "decay_rate": self._default_decay_rate,
         }
         if expires_at is not None:
             doc_metadata["expires_at"] = expires_at.isoformat()
@@ -218,6 +225,8 @@ class EpisodicStore:
                 "timestamp": timestamp,
                 "entities": json.dumps(entities),
                 "tags": json.dumps(tags),
+                "access_count": 0,
+                "decay_rate": self._default_decay_rate,
             }
             if expires_at is not None:
                 if isinstance(expires_at, datetime):
@@ -288,16 +297,20 @@ class EpisodicStore:
             return memories
 
         now = datetime.now(timezone.utc)
+        scored: list[tuple[float, EpisodicMemory]] = []
+        access_ids: list[str] = []
+        access_metas: list[dict[str, Any]] = []
+
         for i, mem_id in enumerate(results["ids"][0]):
             doc = results["documents"][0][i] if results["documents"] else ""
             meta = results["metadatas"][0][i] if results["metadatas"] else {}
+            distance = results["distances"][0][i] if results.get("distances") else 0.0
 
             # Filter out expired memories
             raw_expires = meta.get("expires_at")
             if raw_expires:
                 try:
                     expires_dt = datetime.fromisoformat(raw_expires)
-                    # Assume naive timestamps are UTC for consistent comparison
                     if expires_dt.tzinfo is None:
                         expires_dt = expires_dt.replace(tzinfo=timezone.utc)
                     if expires_dt < now:
@@ -312,7 +325,32 @@ class EpisodicStore:
                 if not all(t in memory.tags for t in tags):
                     continue
 
-            memories.append(memory)
+            # Compute activation score
+            similarity = max(0.0, 1.0 - distance)  # ChromaDB cosine distance → similarity
+            score = _compute_activation_score(
+                similarity, memory.timestamp, memory.access_count,
+                memory.decay_rate, now, self._scoring, self._decay_enabled,
+            )
+            scored.append((score, memory))
+
+            # Track access for batch update
+            new_count = memory.access_count + 1
+            access_ids.append(mem_id)
+            access_metas.append({
+                "access_count": new_count,
+                "last_accessed": now.isoformat(),
+            })
+
+        # Re-sort by activation score
+        scored.sort(key=lambda x: x[0], reverse=True)
+        memories = [m for _, m in scored]
+
+        # Fire-and-forget access tracking update
+        if access_ids:
+            try:
+                collection.update(ids=access_ids, metadatas=access_metas)
+            except Exception as e:
+                logger.debug("Access tracking update failed: %s", e)
 
         return memories
 
@@ -410,6 +448,16 @@ class EpisodicStore:
         return result
 
 
+    async def update_metadata(self, mem_id: str, metadata: dict[str, Any]) -> bool:
+        """Update metadata fields on an existing memory. Returns True on success."""
+        try:
+            collection = self._ensure_collection()
+            collection.update(ids=[mem_id], metadatas=[metadata])
+            return True
+        except Exception as e:
+            logger.warning("Failed to update metadata for %s: %s", mem_id, e)
+            return False
+
     def _detect_embedding_dim(self) -> None:
         """Detect embedding dimension from existing collection data."""
         if self._embedding_dim is not None:
@@ -425,6 +473,41 @@ class EpisodicStore:
             peek = collection.peek(limit=1)
             if peek and peek.get("embeddings") and peek["embeddings"][0]:
                 self._embedding_dim = len(peek["embeddings"][0])
+
+
+def _compute_activation_score(
+    similarity: float,
+    timestamp: datetime,
+    access_count: int,
+    decay_rate: float,
+    now: datetime,
+    scoring: ScoringConfig,
+    decay_enabled: bool,
+) -> float:
+    """Compute composite activation score for a memory.
+
+    Components: vector similarity, Ebbinghaus retention, recency, frequency.
+    """
+    if not decay_enabled:
+        return similarity
+
+    # Ensure both datetimes are tz-aware for safe subtraction
+    ts = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
+    days_old = max(0.0, (now - ts).total_seconds() / 86400)
+
+    # Ebbinghaus retention with access reinforcement
+    retention = math.exp(-decay_rate * days_old / (1 + 0.1 * access_count))
+    # Recency boost (newer = higher)
+    recency = 1.0 / (1.0 + days_old * 0.1)
+    # Frequency boost (myelination metaphor)
+    frequency = 1.0 + min(0.3, 0.05 * math.log1p(access_count))
+
+    return (
+        similarity * scoring.similarity_weight
+        + retention * scoring.retention_weight
+        + recency * scoring.recency_weight
+        + frequency * scoring.frequency_weight
+    )
 
 
 def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> EpisodicMemory:
@@ -471,8 +554,27 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
         except (ValueError, TypeError):
             pass
 
+    # Parse decay/access fields
+    access_count = int(metadata.get("access_count", 0))
+    decay_rate = float(metadata.get("decay_rate", 0.1))
+    raw_last_accessed = metadata.get("last_accessed")
+    last_accessed = None
+    if raw_last_accessed:
+        try:
+            last_accessed = datetime.fromisoformat(raw_last_accessed)
+        except (ValueError, TypeError):
+            pass
+
+    # Parse consolidation fields
+    consolidation_group = metadata.get("consolidation_group")
+    consolidated_into = metadata.get("consolidated_into")
+
     # Exclude internal fields from extra metadata
-    _internal = {"memory_type", "priority", "timestamp", "entities", "tags", "expires_at"}
+    _internal = {
+        "memory_type", "priority", "timestamp", "entities", "tags", "expires_at",
+        "access_count", "last_accessed", "decay_rate",
+        "consolidation_group", "consolidated_into",
+    }
     extra = {k: v for k, v in metadata.items() if k not in _internal}
 
     return EpisodicMemory(
@@ -485,4 +587,9 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
         tags=tags,
         timestamp=timestamp,
         expires_at=expires_at,
+        access_count=access_count,
+        last_accessed=last_accessed,
+        decay_rate=decay_rate,
+        consolidation_group=consolidation_group,
+        consolidated_into=consolidated_into,
     )

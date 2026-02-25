@@ -38,19 +38,34 @@ class SqliteBackend:
         )
         conn.execute(
             "CREATE TABLE IF NOT EXISTS edges "
-            "(key TEXT PRIMARY KEY, from_key TEXT, to_key TEXT, relation TEXT)"
+            "(key TEXT PRIMARY KEY, from_key TEXT, to_key TEXT, relation TEXT, "
+            "weight REAL DEFAULT 1.0, attributes TEXT DEFAULT '{}')"
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges(relation)")
         conn.commit()
+        # Migrate existing tables: add weight + attributes columns if missing
+        try:
+            conn.execute("ALTER TABLE edges ADD COLUMN weight REAL DEFAULT 1.0")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+        try:
+            conn.execute("ALTER TABLE edges ADD COLUMN attributes TEXT DEFAULT '{}'")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
 
     def _sync_load_nodes(self) -> list[tuple[str, str, str, str]]:
         conn = self._connect()
         return list(conn.execute("SELECT key, type, name, attributes FROM nodes"))
 
-    def _sync_load_edges(self) -> list[tuple[str, str, str, str]]:
+    def _sync_load_edges(self) -> list[tuple[str, str, str, str, float, str]]:
         conn = self._connect()
-        return list(conn.execute("SELECT key, from_key, to_key, relation FROM edges"))
+        return list(conn.execute(
+            "SELECT key, from_key, to_key, relation, "
+            "COALESCE(weight, 1.0), COALESCE(attributes, '{}') FROM edges"
+        ))
 
     def _sync_save_node(self, key: str, type: str, name: str, attrs_json: str) -> None:
         conn = self._connect()
@@ -60,11 +75,13 @@ class SqliteBackend:
         )
         conn.commit()
 
-    def _sync_save_edge(self, key: str, from_key: str, to_key: str, relation: str) -> None:
+    def _sync_save_edge(self, key: str, from_key: str, to_key: str, relation: str,
+                        weight: float = 1.0, attrs_json: str = "{}") -> None:
         conn = self._connect()
         conn.execute(
-            "INSERT OR REPLACE INTO edges (key, from_key, to_key, relation) VALUES (?, ?, ?, ?)",
-            (key, from_key, to_key, relation),
+            "INSERT OR REPLACE INTO edges (key, from_key, to_key, relation, weight, attributes) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (key, from_key, to_key, relation, weight, attrs_json),
         )
         conn.commit()
 
@@ -78,13 +95,14 @@ class SqliteBackend:
                 rows,
             )
 
-    def _sync_save_edges_batch(self, rows: list[tuple[str, str, str, str]]) -> None:
+    def _sync_save_edges_batch(self, rows: list[tuple]) -> None:
         if not rows:
             return
         conn = self._connect()
         with conn:
             conn.executemany(
-                "INSERT OR REPLACE INTO edges (key, from_key, to_key, relation) VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO edges (key, from_key, to_key, relation, weight, attributes) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 rows,
             )
 
@@ -118,8 +136,8 @@ class SqliteBackend:
         """Return all nodes as (key, type, name, attrs_json) tuples."""
         return await asyncio.get_running_loop().run_in_executor(None, self._sync_load_nodes)
 
-    async def load_edges(self) -> list[tuple[str, str, str, str]]:
-        """Return all edges as (key, from_key, to_key, relation) tuples."""
+    async def load_edges(self) -> list[tuple[str, str, str, str, float, str]]:
+        """Return all edges as (key, from_key, to_key, relation, weight, attrs_json) tuples."""
         return await asyncio.get_running_loop().run_in_executor(None, self._sync_load_edges)
 
     async def save_node(self, key: str, type: str, name: str, attrs_json: str) -> None:
@@ -128,10 +146,11 @@ class SqliteBackend:
             None, partial(self._sync_save_node, key, type, name, attrs_json)
         )
 
-    async def save_edge(self, key: str, from_key: str, to_key: str, relation: str) -> None:
+    async def save_edge(self, key: str, from_key: str, to_key: str, relation: str,
+                        weight: float = 1.0, attrs_json: str = "{}") -> None:
         """Upsert a single edge."""
         await asyncio.get_running_loop().run_in_executor(
-            None, partial(self._sync_save_edge, key, from_key, to_key, relation)
+            None, partial(self._sync_save_edge, key, from_key, to_key, relation, weight, attrs_json)
         )
 
     async def save_nodes_batch(self, rows: list[tuple[str, str, str, str]]) -> None:
@@ -140,7 +159,7 @@ class SqliteBackend:
             None, partial(self._sync_save_nodes_batch, rows)
         )
 
-    async def save_edges_batch(self, rows: list[tuple[str, str, str, str]]) -> None:
+    async def save_edges_batch(self, rows: list[tuple]) -> None:
         """Upsert multiple edges in one transaction."""
         await asyncio.get_running_loop().run_in_executor(
             None, partial(self._sync_save_edges_batch, rows)

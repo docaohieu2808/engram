@@ -161,6 +161,54 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         run_async(_run_watchers())
 
     @app.command()
+    def decay(
+        limit: int = typer.Option(20, "--limit", "-l"),
+    ):
+        """Show Ebbinghaus decay report for recent memories."""
+        import math
+        from datetime import datetime, timezone
+        from rich.table import Table
+
+        episodic = _get_episodic()
+        memories = run_async(episodic.get_recent(n=limit))
+        now = datetime.now(timezone.utc)
+
+        table = Table(title="Memory Decay Report")
+        table.add_column("Age", style="dim", width=8)
+        table.add_column("Access", justify="right", width=6)
+        table.add_column("Retention", justify="right", width=10)
+        table.add_column("Content", max_width=60)
+
+        for mem in memories:
+            ts = mem.timestamp if mem.timestamp.tzinfo else mem.timestamp.replace(tzinfo=timezone.utc)
+            days = (now - ts).total_seconds() / 86400
+            retention = math.exp(-mem.decay_rate * days / (1 + 0.1 * mem.access_count))
+            age_str = f"{days:.1f}d" if days >= 1 else f"{days * 24:.1f}h"
+            ret_pct = f"{retention * 100:.0f}%"
+            style = "green" if retention > 0.7 else ("yellow" if retention > 0.3 else "red")
+            table.add_row(age_str, str(mem.access_count), f"[{style}]{ret_pct}[/{style}]",
+                          mem.content[:60])
+
+        console.print(table)
+
+    @app.command()
+    def consolidate(
+        limit: int = typer.Option(50, "--limit", "-l"),
+    ):
+        """Consolidate related memories into summaries using LLM."""
+        from engram.consolidation.engine import ConsolidationEngine
+
+        cfg = get_config()
+        engine = ConsolidationEngine(
+            _get_episodic(), model=cfg.llm.model, config=cfg.consolidation,
+        )
+        new_ids = run_async(engine.consolidate(limit=limit))
+        if not new_ids:
+            console.print("[dim]No clusters found to consolidate.[/dim]")
+        else:
+            console.print(f"[green]Consolidated into {len(new_ids)} summary memories.[/green]")
+
+    @app.command()
     def serve(
         port: Optional[int] = typer.Option(None, "--port", "-p"),
         host: Optional[str] = typer.Option(None, "--host"),

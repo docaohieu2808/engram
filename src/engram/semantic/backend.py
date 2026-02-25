@@ -17,15 +17,16 @@ class GraphBackend(Protocol):
         """Return all nodes as (key, type, name, attrs_json) tuples."""
         ...
 
-    async def load_edges(self) -> list[tuple[str, str, str, str]]:
-        """Return all edges as (key, from_key, to_key, relation) tuples."""
+    async def load_edges(self) -> list[tuple[str, str, str, str, float, str]]:
+        """Return all edges as (key, from_key, to_key, relation, weight, attrs_json) tuples."""
         ...
 
     async def save_node(self, key: str, type: str, name: str, attrs_json: str) -> None:
         """Upsert a single node."""
         ...
 
-    async def save_edge(self, key: str, from_key: str, to_key: str, relation: str) -> None:
+    async def save_edge(self, key: str, from_key: str, to_key: str, relation: str,
+                        weight: float = 1.0, attrs_json: str = "{}") -> None:
         """Upsert a single edge."""
         ...
 
@@ -33,7 +34,7 @@ class GraphBackend(Protocol):
         """Upsert multiple nodes in one transaction."""
         ...
 
-    async def save_edges_batch(self, rows: list[tuple[str, str, str, str]]) -> None:
+    async def save_edges_batch(self, rows: list[tuple[str, str, str, str, float, str]]) -> None:
         """Upsert multiple edges in one transaction."""
         ...
 

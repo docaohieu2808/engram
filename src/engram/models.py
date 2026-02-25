@@ -49,6 +49,13 @@ class EpisodicMemory(BaseModel):
     tags: list[str] = Field(default_factory=list)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime | None = None
+    # Ebbinghaus decay fields
+    access_count: int = 0
+    last_accessed: datetime | None = None
+    decay_rate: float = 0.1
+    # Consolidation fields
+    consolidation_group: str | None = None
+    consolidated_into: str | None = None
 
     @field_validator("priority")
     @classmethod
@@ -112,6 +119,8 @@ class SemanticEdge(BaseModel):
     from_node: str  # node key (type:name)
     to_node: str
     relation: str
+    weight: float = 1.0
+    attributes: dict[str, Any] = Field(default_factory=dict)
 
     @computed_field
     @property

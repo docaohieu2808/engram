@@ -25,12 +25,19 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 _CREATE_EDGES = """
 CREATE TABLE IF NOT EXISTS edges (
-    key      TEXT PRIMARY KEY,
-    from_key TEXT NOT NULL,
-    to_key   TEXT NOT NULL,
-    relation TEXT NOT NULL
+    key        TEXT PRIMARY KEY,
+    from_key   TEXT NOT NULL,
+    to_key     TEXT NOT NULL,
+    relation   TEXT NOT NULL,
+    weight     FLOAT NOT NULL DEFAULT 1.0,
+    attributes JSONB NOT NULL DEFAULT '{}'
 )
 """
+
+_MIGRATE_EDGES = [
+    "ALTER TABLE edges ADD COLUMN IF NOT EXISTS weight FLOAT DEFAULT 1.0",
+    "ALTER TABLE edges ADD COLUMN IF NOT EXISTS attributes JSONB DEFAULT '{}'",
+]
 
 _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name)",
@@ -65,6 +72,12 @@ class PostgresBackend:
             await conn.execute(_CREATE_EDGES)
             for idx_sql in _CREATE_INDEXES:
                 await conn.execute(idx_sql)
+            # Migrate existing tables
+            for mig_sql in _MIGRATE_EDGES:
+                try:
+                    await conn.execute(mig_sql)
+                except Exception:
+                    pass
 
     def _pool_or_raise(self) -> asyncpg.Pool:  # type: ignore[name-defined]
         if self._pool is None:
@@ -78,12 +91,17 @@ class PostgresBackend:
             rows = await conn.fetch("SELECT key, type, name, attributes::text FROM nodes")
         return [(r["key"], r["type"], r["name"], r["attributes"]) for r in rows]
 
-    async def load_edges(self) -> list[tuple[str, str, str, str]]:
-        """Return all edges as (key, from_key, to_key, relation) tuples."""
+    async def load_edges(self) -> list[tuple[str, str, str, str, float, str]]:
+        """Return all edges as (key, from_key, to_key, relation, weight, attrs_json) tuples."""
         pool = self._pool_or_raise()
         async with pool.acquire() as conn:
-            rows = await conn.fetch("SELECT key, from_key, to_key, relation FROM edges")
-        return [(r["key"], r["from_key"], r["to_key"], r["relation"]) for r in rows]
+            rows = await conn.fetch(
+                "SELECT key, from_key, to_key, relation, "
+                "COALESCE(weight, 1.0) as weight, COALESCE(attributes::text, '{}') as attributes "
+                "FROM edges"
+            )
+        return [(r["key"], r["from_key"], r["to_key"], r["relation"],
+                 float(r["weight"]), r["attributes"]) for r in rows]
 
     async def save_node(self, key: str, type: str, name: str, attrs_json: str) -> None:
         """Upsert a single node."""
@@ -99,19 +117,21 @@ class PostgresBackend:
                 key, type, name, attrs_json,
             )
 
-    async def save_edge(self, key: str, from_key: str, to_key: str, relation: str) -> None:
+    async def save_edge(self, key: str, from_key: str, to_key: str, relation: str,
+                        weight: float = 1.0, attrs_json: str = "{}") -> None:
         """Upsert a single edge."""
         pool = self._pool_or_raise()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO edges (key, from_key, to_key, relation)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO edges (key, from_key, to_key, relation, weight, attributes)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
                 ON CONFLICT (key) DO UPDATE
                     SET from_key=EXCLUDED.from_key, to_key=EXCLUDED.to_key,
-                        relation=EXCLUDED.relation
+                        relation=EXCLUDED.relation, weight=EXCLUDED.weight,
+                        attributes=EXCLUDED.attributes
                 """,
-                key, from_key, to_key, relation,
+                key, from_key, to_key, relation, weight, attrs_json,
             )
 
     async def save_nodes_batch(self, rows: list[tuple[str, str, str, str]]) -> None:
@@ -132,7 +152,7 @@ class PostgresBackend:
                     rows,
                 )
 
-    async def save_edges_batch(self, rows: list[tuple[str, str, str, str]]) -> None:
+    async def save_edges_batch(self, rows: list[tuple]) -> None:
         """Upsert multiple edges in a single transaction."""
         if not rows:
             return
@@ -141,11 +161,12 @@ class PostgresBackend:
             async with conn.transaction():
                 await conn.executemany(
                     """
-                    INSERT INTO edges (key, from_key, to_key, relation)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO edges (key, from_key, to_key, relation, weight, attributes)
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb)
                     ON CONFLICT (key) DO UPDATE
                         SET from_key=EXCLUDED.from_key, to_key=EXCLUDED.to_key,
-                            relation=EXCLUDED.relation
+                            relation=EXCLUDED.relation, weight=EXCLUDED.weight,
+                            attributes=EXCLUDED.attributes
                     """,
                     rows,
                 )

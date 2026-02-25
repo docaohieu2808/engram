@@ -39,8 +39,12 @@ class SemanticGraph:
         for key, type_, name, attrs in await self._backend.load_nodes():
             node = SemanticNode(type=type_, name=name, attributes=json.loads(attrs or "{}"))
             self._graph.add_node(key, data=node)
-        for key, from_key, to_key, relation in await self._backend.load_edges():
-            edge = SemanticEdge(from_node=from_key, to_node=to_key, relation=relation)
+        for row in await self._backend.load_edges():
+            key, from_key, to_key, relation = row[0], row[1], row[2], row[3]
+            weight = float(row[4]) if len(row) > 4 else 1.0
+            attrs = json.loads(row[5]) if len(row) > 5 and row[5] else {}
+            edge = SemanticEdge(from_node=from_key, to_node=to_key, relation=relation,
+                                weight=weight, attributes=attrs)
             self._graph.add_edge(from_key, to_key, key=key, data=edge)
         self._loaded = True
 
@@ -64,7 +68,10 @@ class SemanticGraph:
         """Add to both stores. Return True if new."""
         await self._ensure_loaded()
         is_new = not self._graph.has_edge(edge.from_node, edge.to_node)
-        await self._backend.save_edge(edge.key, edge.from_node, edge.to_node, edge.relation)
+        await self._backend.save_edge(
+            edge.key, edge.from_node, edge.to_node, edge.relation,
+            edge.weight, json.dumps(edge.attributes),
+        )
         self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
         if self._audit:
             self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.add_edge",
@@ -87,7 +94,7 @@ class SemanticGraph:
         if not edges:
             return
         await self._ensure_loaded()
-        rows = [(e.key, e.from_node, e.to_node, e.relation) for e in edges]
+        rows = [(e.key, e.from_node, e.to_node, e.relation, e.weight, json.dumps(e.attributes)) for e in edges]
         await self._backend.save_edges_batch(rows)
         for edge in edges:
             self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
