@@ -100,7 +100,7 @@ const Graph = {
           highlight: { background: colors.background, border: '#fff' },
           hover: { background: colors.background, border: '#fff' },
         },
-        font: { color: textColor, size: 12 },
+        font: { color: textColor, size: 13, strokeWidth: 3, strokeColor: bgColor },
         borderWidth: 2,
       };
     }));
