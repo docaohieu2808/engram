@@ -181,8 +181,8 @@ const Graph = {
     if (!this._network || !this._edges || !this._edges.length) return;
 
     const fanCounter = new Map();
-    const baseColor = toRgbaHexOrRgb(accentColor, 0.24);
-    const glowColor = toRgbaHexOrRgb(accentColor, 0.14);
+    const baseColor = toRgbaHexOrRgb(accentColor, 0.62);
+    const glowColor = toRgbaHexOrRgb(accentColor, 0.32);
 
     for (const e of this._edges) {
       const p1 = this._network.getPosition(e.from);
@@ -218,7 +218,7 @@ const Graph = {
       ctx.quadraticCurveTo(cx, cy, p2.x, p2.y);
       ctx.lineCap = 'round';
       ctx.strokeStyle = baseColor;
-      ctx.lineWidth = 0.7 + Math.min(1.2, (e.weight || 1) * 0.22);
+      ctx.lineWidth = 0.95 + Math.min(1.4, (e.weight || 1) * 0.28);
       ctx.shadowColor = glowColor;
       ctx.shadowBlur = 3.5;
       ctx.stroke();
@@ -231,9 +231,9 @@ const Graph = {
       ctx.moveTo(p1.x + nx * 0.8, p1.y + ny * 0.8);
       ctx.quadraticCurveTo(cx + nx * wobble, cy + ny * wobble, p2.x - nx * 0.6, p2.y - ny * 0.6);
       ctx.lineCap = 'round';
-      ctx.strokeStyle = toRgbaHexOrRgb(accentColor, 0.16);
-      ctx.lineWidth = 0.55;
-      ctx.shadowColor = toRgbaHexOrRgb(accentColor, 0.1);
+      ctx.strokeStyle = toRgbaHexOrRgb(accentColor, 0.34);
+      ctx.lineWidth = 0.7;
+      ctx.shadowColor = toRgbaHexOrRgb(accentColor, 0.2);
       ctx.shadowBlur = 2.4;
       ctx.stroke();
       ctx.restore();
