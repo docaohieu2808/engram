@@ -106,7 +106,7 @@ const Graph = {
     this._edgesDS = new vis.DataSet(this._edges.map(e => ({
       ...e, font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
       color: { color: edgeColor, hover: accentColor, highlight: accentColor },
-      smooth: { type: 'curvedCW', roundness: 0.1 },
+      smooth: { type: 'dynamic', forceDirection: 'none', roundness: 0.5 },
     })));
 
     this._network = new vis.Network(container, { nodes: this._nodesDS, edges: this._edgesDS }, {

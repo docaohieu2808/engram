@@ -96,7 +96,7 @@ function renderGraph(nodes, edges) {
     ...e,
     font: { color: '#aaa', size: 10, align: 'middle' },
     color: { color: '#334', hover: '#2196F3', highlight: '#2196F3' },
-    smooth: { type: 'curvedCW', roundness: 0.1 },
+    smooth: { type: 'dynamic', forceDirection: 'none', roundness: 0.5 },
   })));
 
   const container = document.getElementById('graph-container');
