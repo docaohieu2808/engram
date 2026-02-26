@@ -218,22 +218,29 @@ const Graph = {
       const key = `${e.from}|${e.label}|${e.to}`;
       const rng = createRng(stableSeed(key));
       const alt = fan % 2 === 0 ? 1 : -1;
-      const baseOffset = alt * (7 + fan * 1.25 + rng() * 8);
-      const tangent = (rng() - 0.5) * 18;
+      const baseOffset = alt * (10 + fan * 1.8 + rng() * 12);
+      const tangent = (rng() - 0.5) * 30;
 
-      // Cubic bezier với 2 control points để bớt "hình cung" cứng
-      const t1 = 0.26 + rng() * 0.08;
-      const t2 = 0.68 + rng() * 0.1;
-      const c1x = p1.x + dx * t1 + nx * (baseOffset * (0.85 + rng() * 0.35));
-      const c1y = p1.y + dy * t1 + ny * (baseOffset * (0.85 + rng() * 0.35));
-      const c2x = p1.x + dx * t2 + nx * (baseOffset * (0.35 + rng() * 0.45)) + (dx / dist) * tangent;
-      const c2y = p1.y + dy * t2 + ny * (baseOffset * (0.35 + rng() * 0.45)) + (dy / dist) * tangent;
+      // Tạo "anchor cloud" ở đầu/cuối để không bị quạt cứng từ 1 tâm
+      const startJitter = 1.2 + Math.min(6.5, fan * 0.35);
+      const endJitter = 0.8 + rng() * 2.2;
+      const sx = p1.x + nx * ((rng() - 0.5) * startJitter * 2) + (dx / dist) * ((rng() - 0.5) * 2.8);
+      const sy = p1.y + ny * ((rng() - 0.5) * startJitter * 2) + (dy / dist) * ((rng() - 0.5) * 2.8);
+      const ex = p2.x + nx * ((rng() - 0.5) * endJitter * 2);
+      const ey = p2.y + ny * ((rng() - 0.5) * endJitter * 2);
 
-      // 1 sợi duy nhất để tránh cảm giác double-line khi hover
+      // Cubic bezier với 2 control points lệch mạnh hơn để ra sợi chỉ lỏng
+      const t1 = 0.18 + rng() * 0.16;
+      const t2 = 0.58 + rng() * 0.22;
+      const c1x = sx + (ex - sx) * t1 + nx * (baseOffset * (0.95 + rng() * 0.65));
+      const c1y = sy + (ey - sy) * t1 + ny * (baseOffset * (0.95 + rng() * 0.65));
+      const c2x = sx + (ex - sx) * t2 + nx * (baseOffset * (0.15 + rng() * 0.85)) + ((ex - sx) / dist) * tangent;
+      const c2y = sy + (ey - sy) * t2 + ny * (baseOffset * (0.15 + rng() * 0.85)) + ((ey - sy) / dist) * tangent;
+
       ctx.save();
       ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
+      ctx.moveTo(sx, sy);
+      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, ex, ey);
       ctx.lineCap = 'round';
       ctx.strokeStyle = baseColor;
       ctx.lineWidth = 1.05 + Math.min(1.3, (e.weight || 1) * 0.26);
