@@ -67,6 +67,11 @@ def format_for_llm(results: list, max_chars: int = 2000) -> str:
         if mem_type not in TYPE_PRIORITY:
             mem_type = "memory"
         content = _get_content(r)
+        # Flag outdated memories for LLM awareness
+        meta = getattr(r, "metadata", None) or {}
+        if meta.get("outdated") == "true":
+            reason = meta.get("outdated_reason", "")
+            content = f"[OUTDATED: {reason}] {content}" if reason else f"[OUTDATED] {content}"
         # Truncate individual entries
         if len(content) > _MAX_ENTRY_CHARS:
             content = content[:_MAX_ENTRY_CHARS - 3] + "..."

@@ -63,8 +63,9 @@ REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retriev
 - Look for patterns: repeated behavior, contradictions between words and actions, emotional subtext
 - Answer the REAL question, not the surface question. What is the user truly asking?
 - Be specific - cite dates, names, and details from memories
-- TEMPORAL AWARENESS: Use the current date to resolve relative time references ("hôm nay", "hôm qua", "tuần trước"). Distinguish old events from recent ones by comparing timestamps. When semantic knowledge has status=cancelled or is outdated, prioritize RECENT episodic memories over stale graph data.
-- If memories contradict or semantic knowledge conflicts with recent memories, ALWAYS trust the most recent episodic memory. Old plans/events may have been cancelled or superseded.
+- TEMPORAL AWARENESS: Use the current date/time above to understand WHEN events happened. Resolve relative dates ("hôm nay", "hôm qua", "mai") relative to the memory's timestamp, NOT relative to now. Example: if a memory from 2026-02-25 says "mai gặp" → that means 2026-02-26.
+- RECENCY PRIORITY: When multiple memories discuss the same topic, ONLY cite the most recent information. Do NOT mix old event details (locations, times, plans) with new events. If an old plan was cancelled or superseded by a new one, ignore the old details entirely.
+- Memories marked [OUTDATED] contain historical info that has been superseded — reference only if explicitly asked about history.
 - If no relevant memories found, say so honestly
 - Keep answer concise and direct — one strong insight beats five weak summaries
 """
@@ -284,7 +285,13 @@ class ReasoningEngine:
             episodic_lines = []
             for mem in episodic:
                 ts = mem.timestamp.strftime("%Y-%m-%d %H:%M")
-                episodic_lines.append(f"[{ts}] ({mem.memory_type.value}) {mem.content}")
+                # Flag outdated memories so LLM knows to deprioritize
+                meta = mem.metadata if hasattr(mem, "metadata") and mem.metadata else {}
+                outdated_tag = ""
+                if meta.get("outdated") == "true":
+                    reason = meta.get("outdated_reason", "")
+                    outdated_tag = f" [⚠️ OUTDATED: {reason}]" if reason else " [⚠️ OUTDATED]"
+                episodic_lines.append(f"[{ts}] ({mem.memory_type.value}){outdated_tag} {mem.content}")
             episodic_ctx = "\n".join(episodic_lines) if episodic_lines else "No episodic memories found."
 
         # Format semantic context — include attributes for LLM synthesis

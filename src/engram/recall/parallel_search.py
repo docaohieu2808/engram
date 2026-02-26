@@ -90,6 +90,7 @@ class ParallelSearcher:
                 memory_type=m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type),
                 importance=m.priority,
                 timestamp=m.timestamp,
+                metadata=m.metadata,
             )
             for m in memories
         ]

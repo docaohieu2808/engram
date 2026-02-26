@@ -405,6 +405,9 @@ class EpisodicStore:
 
             memory = _build_memory(mem_id, doc, meta)
 
+            # Deprioritize outdated memories (halve their score)
+            _is_outdated = meta.get("outdated") == "true"
+
             # Filter by tags (all requested tags must be present)
             if tags:
                 if not all(t in memory.tags for t in tags):
@@ -416,6 +419,8 @@ class EpisodicStore:
                 similarity, memory.timestamp, memory.access_count,
                 memory.decay_rate, now, self._scoring, self._decay_enabled,
             )
+            if _is_outdated:
+                score *= 0.3  # heavily deprioritize outdated memories
             scored.append((score, memory))
 
             # Track access for batch update
