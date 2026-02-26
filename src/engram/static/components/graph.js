@@ -139,27 +139,45 @@ const Graph = {
       };
     }));
 
+    const byFrom = new Map();
     this._edgesDS = new vis.DataSet(this._edges.map(e => {
       const seed = stableSeed(`${e.from}-${e.label}-${e.to}`);
-      const baseRoundness = 0.18 + (seed % 28) / 100; // 0.18..0.45 (mềm, không đều)
-      const fromFan = this._edges.filter(x => x.from === e.from).length;
-      const fanBoost = Math.min(0.14, fromFan * 0.01);
-      const width = 0.7 + Math.min(1.6, (e.weight || 1) * 0.35);
+      const fromCount = byFrom.get(e.from) || 0;
+      byFrom.set(e.from, fromCount + 1);
+
+      // Tạo offset theo thứ tự fan-out để không bị kéo cùng 1 kiểu
+      const slot = fromCount;
+      const alt = slot % 2 === 0 ? 1 : -1;
+      const spread = Math.min(0.55, 0.12 + slot * 0.035);
+      const randomWobble = ((seed % 100) / 1000); // 0..0.099
+      const roundness = Math.min(0.92, spread + randomWobble);
+
+      // Trộn nhiều kiểu đường cong để có cảm giác "sợi chỉ lỏng"
+      const smoothType = (slot % 3 === 0)
+        ? (alt > 0 ? 'curvedCW' : 'curvedCCW')
+        : (slot % 3 === 1 ? 'cubicBezier' : (alt > 0 ? 'curvedCCW' : 'curvedCW'));
+
+      const width = 0.55 + Math.min(1.2, (e.weight || 1) * 0.25);
 
       return {
         ...e,
         width,
         font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
         color: {
-          color: toRgba(edgeColor, 0.36),
-          hover: toRgba(accentColor, 0.8),
-          highlight: toRgba(accentColor, 0.9),
+          color: toRgba(edgeColor, 0.22),
+          hover: toRgba(accentColor, 0.72),
+          highlight: toRgba(accentColor, 0.85),
           opacity: 1,
           inherit: false,
         },
-        smooth: { enabled: true, type: 'dynamic', roundness: Math.min(0.6, baseRoundness + fanBoost) },
-        shadow: { enabled: true, color: toRgba(accentColor, 0.22), size: 4, x: 0, y: 0 },
-        chosen: { edge: (values) => { values.width += 0.8; } },
+        smooth: {
+          enabled: true,
+          type: smoothType,
+          roundness,
+          forceDirection: 'none',
+        },
+        shadow: { enabled: true, color: toRgba(accentColor, 0.18), size: 6, x: 0, y: 0 },
+        chosen: { edge: (values) => { values.width += 0.6; } },
       };
     }));
 
@@ -168,9 +186,9 @@ const Graph = {
       interaction: { hover: true, tooltipDelay: 200 },
       nodes: { shape: 'dot', size: 18 },
       edges: {
-        arrows: { to: { enabled: true, scaleFactor: 0.45 } },
+        arrows: false,
         width: 1,
-        smooth: { enabled: true, type: 'dynamic' },
+        smooth: { enabled: true, type: 'continuous' },
       },
       background: { color: bgColor },
     });
