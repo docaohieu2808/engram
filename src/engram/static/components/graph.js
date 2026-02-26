@@ -88,7 +88,7 @@ const Graph = {
     const accentColor = cs.getPropertyValue('--accent').trim();
     const mutedColor = cs.getPropertyValue('--text-muted').trim();
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const textColor = isDark ? '#e0e0e0' : '#1a1a1a';
+    const textColor = isDark ? '#e0e0e0' : '#111111';
 
     this._nodesDS = new vis.DataSet(this._nodes.map(n => {
       const colors = getNodeColor(n.group);
