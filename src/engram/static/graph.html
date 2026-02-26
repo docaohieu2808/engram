@@ -161,26 +161,44 @@ function drawSoftEdges(ctx) {
     const v2x = p2.x - prev2.x;
     const v2y = p2.y - prev2.y;
 
-    // điểm neo mục tiêu của 2 control points (1/3 và 2/3 cạnh)
-    const base = alt * Math.min(26, 5 + slot * 0.95 + dist * 0.014);
-    const c1tx = p1.x + dx * 0.34 + nx * base;
-    const c1ty = p1.y + dy * 0.34 + ny * base;
-    const c2tx = p1.x + dx * 0.68 + nx * (base * 0.5);
-    const c2ty = p1.y + dy * 0.68 + ny * (base * 0.5);
-
     const key = `${e.from}->${e.to}:${e.label}`;
     let st = edgeState.get(key);
     if (!st) {
+      const initBase = alt * (4 + slot * 0.75);
       st = {
-        c1x: c1tx, c1y: c1ty, c2x: c2tx, c2y: c2ty,
+        rest: dist,
+        c1x: p1.x + dx * 0.34 + nx * initBase,
+        c1y: p1.y + dy * 0.34 + ny * initBase,
+        c2x: p1.x + dx * 0.68 + nx * (initBase * 0.5),
+        c2y: p1.y + dy * 0.68 + ny * (initBase * 0.5),
         c1vx: 0, c1vy: 0, c2vx: 0, c2vy: 0,
       };
       edgeState.set(key, st);
     }
 
-    // lực kích thích khi node bị kéo: chiếu vận tốc lên pháp tuyến
-    const exciteN = ((v1x + v2x) * nx + (v1y + v2y) * ny) * kick;
-    const exciteT = ((v2x - v1x) * ux + (v2y - v1y) * uy) * (kick * 0.65);
+    // cập nhật rest length chậm để giữ cảm giác "đàn hồi"
+    const relSpeed = Math.hypot(v1x, v1y) + Math.hypot(v2x, v2y);
+    if (relSpeed < 0.35) st.rest = st.rest * 0.985 + dist * 0.015;
+
+    const stretch = dist / Math.max(1, st.rest);
+    const tension = Math.max(0, stretch - 1);          // >0 khi đang kéo căng
+    const compression = Math.max(0, 1 - stretch);      // >0 khi nén
+
+    // khi kéo căng thì dây phải thẳng dần
+    const bendScale = Math.max(0.02, 1 - tension * 2.1 + compression * 0.25);
+
+    // độ cong nền: bỏ phụ thuộc mạnh vào dist để tránh càng kéo càng cong
+    const baseNominal = alt * (4 + slot * 0.75);
+    const base = baseNominal * bendScale;
+
+    const c1tx = p1.x + dx * 0.34 + nx * base;
+    const c1ty = p1.y + dy * 0.34 + ny * base;
+    const c2tx = p1.x + dx * 0.68 + nx * (base * 0.5);
+    const c2ty = p1.y + dy * 0.68 + ny * (base * 0.5);
+
+    // lực kích thích khi node bị kéo: có giảm theo tension để tránh cong giả lúc căng
+    const exciteN = ((v1x + v2x) * nx + (v1y + v2y) * ny) * kick * (0.35 + bendScale * 0.65);
+    const exciteT = ((v2x - v1x) * ux + (v2y - v1y) * uy) * (kick * 0.65) * (0.3 + bendScale * 0.7);
 
     const tc1x = c1tx + nx * exciteN + ux * exciteT;
     const tc1y = c1ty + ny * exciteN + uy * exciteT;
@@ -203,8 +221,8 @@ function drawSoftEdges(ctx) {
     st.c2x += st.c2vx * dt * 60;
     st.c2y += st.c2vy * dt * 60;
 
-    // micro jitter rất nhỏ để tránh cảm giác "đường chết"
-    const jitter = Math.sin(animTime * (1 + ((seed >> 2) % 30) / 100) + (seed % 100) * 0.03) * 0.6;
+    // micro jitter: khi căng thì giảm gần 0 để dây thẳng lại
+    const jitter = Math.sin(animTime * (1 + ((seed >> 2) % 30) / 100) + (seed % 100) * 0.03) * (0.55 * bendScale);
 
     ctx.save();
     ctx.beginPath();
