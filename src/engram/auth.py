@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+__all__ = [
+    "init_auth", "create_api_key", "verify_api_key", "list_api_keys",
+    "revoke_api_key", "create_jwt", "verify_jwt", "get_auth_context",
+]
+
 import hashlib
 import json
 import os

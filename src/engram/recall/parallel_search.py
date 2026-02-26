@@ -167,10 +167,9 @@ class ParallelSearcher:
 def _memory_score(memory: Any) -> float:
     """Compute a normalized score from an EpisodicMemory for fusion ranking.
 
-    Combines vector similarity (via confidence proxy) and priority using
-    ScoringConfig default weights (similarity=0.5, priority/retention=0.5).
-    ChromaDB distance is consumed by EpisodicStore internally; confidence
-    reflects the store's activation-scored quality of the memory.
+    Uses hardcoded weights (60% similarity, 40% priority) independent of
+    ScoringConfig. Similarity is proxied via confidence (0-1) which reflects
+    user feedback and store-scored quality; priority is normalized to 0-1.
     """
     priority_score = memory.priority / 10.0
     # confidence (0-1) reflects user feedback and store-scored similarity quality
