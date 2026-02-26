@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta
-from typing import Any
-
+from datetime import datetime
 from engram.models import Entity, ResolvedText
+from engram.recall.temporal_resolver import resolve_temporal as _temporal_resolve
+from engram.sanitize import sanitize_llm_input
 
 logger = logging.getLogger("engram")
 
@@ -41,57 +41,6 @@ _PRONOUN_PATTERNS = [
     re.compile(rf"\b{re.escape(p)}\b", re.IGNORECASE | re.UNICODE)
     for p in PRONOUN_MAP
 ]
-
-
-def _month_ago(d: datetime) -> str:
-    """Compute date one month ago, handling month boundaries."""
-    month = d.month - 1 or 12
-    year = d.year if d.month > 1 else d.year - 1
-    day = min(d.day, 28)  # safe for all months
-    return datetime(year, month, day).strftime("%Y-%m-%d")
-
-
-# --- Temporal patterns (Vietnamese + English) ---
-
-TEMPORAL_PATTERNS: list[tuple[re.Pattern, Any]] = [
-    (re.compile(r"\bhôm nay\b", re.IGNORECASE), lambda d: d.strftime("%Y-%m-%d")),
-    (re.compile(r"\bhôm qua\b", re.IGNORECASE), lambda d: (d - timedelta(days=1)).strftime("%Y-%m-%d")),
-    (re.compile(r"\bhôm kia\b", re.IGNORECASE), lambda d: (d - timedelta(days=2)).strftime("%Y-%m-%d")),
-    (re.compile(r"\bngày mai\b", re.IGNORECASE), lambda d: (d + timedelta(days=1)).strftime("%Y-%m-%d")),
-    (re.compile(r"\bngày kia\b", re.IGNORECASE), lambda d: (d + timedelta(days=2)).strftime("%Y-%m-%d")),
-    (re.compile(r"\btuần trước\b", re.IGNORECASE), lambda d: (d - timedelta(weeks=1)).strftime("%Y-%m-%d")),
-    (re.compile(r"\btuần sau\b", re.IGNORECASE), lambda d: (d + timedelta(weeks=1)).strftime("%Y-%m-%d")),
-    (re.compile(r"\btháng trước\b", re.IGNORECASE), lambda d: _month_ago(d)),
-    (re.compile(r"\bnăm ngoái\b", re.IGNORECASE), lambda d: str(d.year - 1)),
-    # English
-    (re.compile(r"\btoday\b", re.IGNORECASE), lambda d: d.strftime("%Y-%m-%d")),
-    (re.compile(r"\byesterday\b", re.IGNORECASE), lambda d: (d - timedelta(days=1)).strftime("%Y-%m-%d")),
-    (re.compile(r"\btomorrow\b", re.IGNORECASE), lambda d: (d + timedelta(days=1)).strftime("%Y-%m-%d")),
-    (re.compile(r"\blast week\b", re.IGNORECASE), lambda d: (d - timedelta(weeks=1)).strftime("%Y-%m-%d")),
-    (re.compile(r"\blast month\b", re.IGNORECASE), lambda d: _month_ago(d)),
-    (re.compile(r"\blast year\b", re.IGNORECASE), lambda d: str(d.year - 1)),
-]
-
-
-def resolve_temporal(text: str, reference_date: datetime | None = None) -> tuple[str, dict[str, str]]:
-    """Replace temporal references with actual dates.
-
-    Returns (resolved_text, mapping_of_original_to_date).
-    Pure regex, no LLM needed.
-    """
-    ref = reference_date or datetime.now()
-    resolved = text
-    refs: dict[str, str] = {}
-
-    for pattern, resolver in TEMPORAL_PATTERNS:
-        match = pattern.search(resolved)
-        if match:
-            original = match.group(0)
-            replacement = resolver(ref)
-            refs[original] = replacement
-            resolved = pattern.sub(replacement, resolved)
-
-    return resolved, refs
 
 
 def has_pronouns(text: str) -> bool:
@@ -126,11 +75,12 @@ async def resolve_pronouns(
     if not context:
         return ResolvedText(original=text, resolved=text)
 
+    # I-C2: sanitize user-controlled content before LLM prompt interpolation
     prompt = (
         "Given this conversation context:\n"
-        f"{_format_context(context)}\n\n"
+        f"{sanitize_llm_input(_format_context(context), max_len=3000)}\n\n"
         "Resolve all pronouns in this message to their actual names/entities:\n"
-        f'"{text}"\n\n'
+        f"{sanitize_llm_input(text)}\n\n"
         'Return ONLY valid JSON: {"resolved": "...", "entities": [{"name": "...", "type": "person"}]}\n'
         "Only resolve pronouns clearly identifiable from context. If unsure, keep original."
     )
@@ -176,9 +126,12 @@ async def resolve(
     temporal_refs: dict[str, str] = {}
     entities: list[Entity] = []
 
-    # Step 1: Temporal resolution (cheap, regex-based)
+    # Step 1: Temporal resolution (cheap, regex-based) — delegate to temporal_resolver
     if resolve_temporal_refs:
-        resolved_text, temporal_refs = resolve_temporal(resolved_text, reference_date)
+        resolved_text, primary_date = _temporal_resolve(resolved_text, reference_date)
+        # temporal_resolver returns (text, primary_iso_date); map to dict for ResolvedText
+        if primary_date:
+            temporal_refs = {"resolved_date": primary_date}
 
     # Step 2: Pronoun resolution (LLM-assisted)
     if resolve_pronoun_refs and context:

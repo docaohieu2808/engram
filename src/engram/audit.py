@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -121,14 +122,20 @@ class AuditLogger:
             logger.warning("audit: failed to write modification entry to %s", self._path)
 
     def read_recent(self, n: int = 50) -> list[dict[str, Any]]:
-        """Read the last N entries from the audit log. Returns newest first."""
+        """Read the last N entries from the audit log. Returns newest first.
+
+        S-H5: Uses deque(maxlen=n) to avoid reading the entire file into memory.
+        Caps n at 1000 to prevent OOM DoS.
+        """
+        n = min(n, 1000)  # S-H5: hard cap — never load the full file
         if not self._enabled or self._path is None or not self._path.exists():
             return []
         try:
-            lines = self._path.read_text(encoding="utf-8").strip().splitlines()
-            recent = lines[-n:] if len(lines) > n else lines
-            recent.reverse()
-            return [json.loads(line) for line in recent if line.strip()]
+            with open(self._path, encoding="utf-8") as f:
+                tail = deque(f, maxlen=n)
+            result = [json.loads(line) for line in tail if line.strip()]
+            result.reverse()
+            return result
         except (OSError, json.JSONDecodeError):
             return []
 

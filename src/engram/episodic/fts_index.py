@@ -122,6 +122,12 @@ class FtsIndex:
             return []
         return [FtsResult(id=row[0], snippet=row[1], memory_type=row[2]) for row in rows]
 
+    def get_all_ids(self) -> list[str]:
+        """Return all memory IDs present in the FTS index (D-C3: reconciliation support)."""
+        conn = self._connect()
+        rows = conn.execute("SELECT id FROM memories_fts").fetchall()
+        return [r[0] for r in rows]
+
     def close(self) -> None:
         """Close the current thread's database connection."""
         conn = getattr(self._local, "conn", None)

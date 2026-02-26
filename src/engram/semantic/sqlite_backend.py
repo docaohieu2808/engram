@@ -26,6 +26,7 @@ class SqliteBackend:
         if self._conn is None:
             self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
             self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")  # D-H4: enforce FK constraints
         return self._conn
 
     # --- Sync helpers (called from executor thread pool) ---
@@ -107,11 +108,14 @@ class SqliteBackend:
             )
 
     def _sync_delete_node(self, key: str) -> None:
+        """Delete node and its edges atomically (D-C2: single transaction)."""
         conn = self._connect()
-        conn.execute("DELETE FROM nodes WHERE key=?", (key,))
-        conn.commit()
+        with conn:
+            conn.execute("DELETE FROM edges WHERE from_key=? OR to_key=?", (key, key))
+            conn.execute("DELETE FROM nodes WHERE key=?", (key,))
 
     def _sync_delete_edges_for_node(self, key: str) -> None:
+        """Delete all edges for a node. Kept for interface compatibility."""
         conn = self._connect()
         conn.execute("DELETE FROM edges WHERE from_key=? OR to_key=?", (key, key))
         conn.commit()

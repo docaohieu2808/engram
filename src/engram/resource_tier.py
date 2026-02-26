@@ -12,10 +12,16 @@ Tier is evaluated dynamically based on recent LLM call success/failure.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from enum import Enum
 
 logger = logging.getLogger("engram")
+
+# Exponential backoff constants for tier recovery (M16 oscillation fix)
+_BACKOFF_BASE = 2.0   # seconds
+_BACKOFF_MAX = 3600.0  # 1 hour ceiling
+_JITTER_RANGE = 0.25   # ±25% jitter
 
 
 class ResourceTier(Enum):
@@ -45,14 +51,25 @@ class ResourceMonitor:
         self._recent_failures: list[tuple[float, str]] = []
         self._last_success: float = time.monotonic()
         self._forced_tier: ResourceTier | None = None
+        # Backoff state for tier recovery (M16 oscillation prevention)
+        self._consecutive_failures: int = 0
+        self._recovery_cooldown_until: float = 0.0
 
     def record_success(self) -> None:
         """Record a successful LLM call."""
         self._last_success = time.monotonic()
+        self._consecutive_failures = 0
+        self._recovery_cooldown_until = 0.0
 
     def record_failure(self, error_type: str = "unknown") -> None:
         """Record a failed LLM call (rate limit, quota, timeout)."""
-        self._recent_failures.append((time.monotonic(), error_type))
+        now = time.monotonic()
+        self._recent_failures.append((now, error_type))
+        self._consecutive_failures += 1
+        # Exponential backoff with jitter to prevent oscillation (M16)
+        backoff = min(_BACKOFF_BASE ** self._consecutive_failures, _BACKOFF_MAX)
+        jitter = backoff * _JITTER_RANGE * (2.0 * random.random() - 1.0)
+        self._recovery_cooldown_until = now + backoff + jitter
 
     def force_tier(self, tier: ResourceTier | None) -> None:
         """Manually override tier (for admin/testing). Pass None to clear."""
@@ -73,8 +90,11 @@ class ResourceMonitor:
         if failure_count == 0:
             return ResourceTier.FULL
 
-        # Check if we're in cooldown after failures
-        if self._recent_failures:
+        # Respect exponential backoff cooldown before attempting recovery (M16)
+        if now < self._recovery_cooldown_until:
+            # Still in backoff period — stay degraded
+            pass
+        elif self._recent_failures:
             last_failure_time = self._recent_failures[-1][0]
             seconds_since_failure = now - last_failure_time
             if seconds_since_failure > self._cooldown_seconds and failure_count < self._failure_threshold:

@@ -14,6 +14,7 @@ import litellm
 from engram.config import ConsolidationConfig
 from engram.episodic.store import EpisodicStore
 from engram.models import EpisodicMemory, MemoryType
+from engram.sanitize import sanitize_llm_input
 
 litellm.suppress_debug_info = True
 logger = logging.getLogger("engram")
@@ -146,8 +147,10 @@ class ConsolidationEngine:
 
     async def _summarize_cluster(self, cluster: list[EpisodicMemory]) -> str:
         """LLM-summarize a cluster of related memories."""
+        # I-C3: sanitize memory content (user-originated) before LLM interpolation
         memory_texts = "\n".join(
-            f"- [{m.memory_type.value}] {m.content}" for m in cluster
+            f"- [{m.memory_type.value}] {sanitize_llm_input(m.content, max_len=500)}"
+            for m in cluster
         )
         prompt = _CONSOLIDATION_PROMPT.format(memories=memory_texts)
 

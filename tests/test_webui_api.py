@@ -244,7 +244,13 @@ def test_feedback_history(client):
 def test_audit_log(client):
     with patch("engram.audit.get_audit") as mock_audit:
         mock_audit.return_value.read_recent = MagicMock(return_value=[
-            {"timestamp": "2026-01-01T00:00:00Z", "operation": "remember", "resource_id": "x", "details": {}}
+            {
+                "timestamp": "2026-01-01T00:00:00Z",
+                "operation": "remember",
+                "resource_id": "x",
+                "details": {},
+                "tenant_id": "default",  # matches default auth context tenant_id
+            }
         ])
         resp = client.get("/api/v1/audit/log?last=10")
         assert resp.status_code == 200

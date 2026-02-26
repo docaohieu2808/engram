@@ -14,6 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
+# Advisory file locking for NFS safety (M14)
+try:
+    import fcntl
+    _HAVE_FCNTL = True
+except ImportError:
+    # Windows / non-POSIX: no fcntl available, fall back gracefully
+    _HAVE_FCNTL = False
+
 logger = logging.getLogger("engram")
 
 PID_FILE = Path.home() / ".engram" / "watcher.pid"
@@ -101,13 +109,42 @@ class InboxWatcher:
                 await self._process_file(path)
 
     async def _process_file(self, path: Path) -> None:
-        """Atomically claim and process a single file."""
+        """Atomically claim and process a single file.
+
+        Uses advisory flock (M14) before rename for NFS safety — prevents two
+        processes on different NFS clients from claiming the same file.
+        """
         is_jsonl = path.suffix == ".jsonl"
         processing = path.with_suffix(".processing")
+
+        if _HAVE_FCNTL:
+            # Acquire advisory lock on a sidecar .lock file before renaming
+            lock_path = path.with_suffix(".lock")
+            try:
+                lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY)
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    os.close(lock_fd)
+                    return  # Another process holds the lock
+            except OSError:
+                lock_fd = -1  # Could not open lock file; proceed without lock
+        else:
+            lock_fd = -1
+
         try:
             path.rename(processing)
         except FileNotFoundError:
-            return  # Another process claimed it
+            return  # Another process claimed it (rename-as-mutex fallback)
+        finally:
+            # Release advisory lock and remove sidecar file
+            if _HAVE_FCNTL and lock_fd >= 0:
+                try:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                    os.close(lock_fd)
+                    lock_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
         file_key = path.name
         try:

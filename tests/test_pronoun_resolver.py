@@ -144,7 +144,13 @@ class TestMostRecentEntityFirst:
     """First entity in context_entities list is used as resolution target."""
 
     def test_uses_first_entity(self):
-        result = resolve_pronouns("he is tall", ["Alice", "Bob", "Charlie"])
+        # With multiple entities and no gender map, male pronouns need a gender hint.
+        # Pass entity_genders so "he" resolves to the male entity (Alice listed as male here).
+        result = resolve_pronouns(
+            "he is tall",
+            ["Alice", "Bob", "Charlie"],
+            entity_genders={"Alice": "male"},
+        )
         assert result == "Alice is tall"
 
     def test_single_entity_list(self):

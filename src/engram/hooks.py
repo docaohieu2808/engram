@@ -40,42 +40,40 @@ def _is_private_ip(ip_str: str) -> bool:
         return True
 
 
-def _is_safe_webhook_url(url: str) -> bool:
-    """Return True if URL is safe to call (C2/SSRF protection).
+def _validate_and_resolve_webhook_url(url: str) -> tuple[bool, str | None]:
+    """Validate URL safety and return (is_safe, resolved_ip).
 
-    Validates:
-    1. Scheme is http or https only.
-    2. No credentials (user@) in the authority section.
-    3. DNS resolves to a non-private IP (blocks 127.x, 10.x, 172.16-31.x, 192.168.x,
-       IPv6 loopback, link-local, and IPv6-mapped private addresses).
+    S-H3: DNS TOCTOU fix — resolves DNS once here, returns the pinned IP so the
+    caller can use it directly in the HTTP request, eliminating the window between
+    validation and connection where DNS rebinding could redirect to a private IP.
 
-    Note: DNS rebinding risk is mitigated here by resolving at validation time.
-    For higher security, consider re-resolving at request time.
+    Returns:
+        (True, resolved_ip_str) if safe, or (False, None) if blocked.
     """
     try:
         parsed = urllib.parse.urlparse(url)
     except Exception:
-        return False
+        return False, None
 
     # Must be http or https
     if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
-        return False
+        return False, None
 
     # Block URLs with credentials (user:pass@ or user@) in the authority
     if parsed.username is not None or parsed.password is not None:
         logger.warning("Hook URL blocked (credentials in URL): %s", url)
-        return False
+        return False, None
 
     hostname = parsed.hostname
     if not hostname:
-        return False
+        return False, None
 
     # Resolve hostname to IP and validate against private ranges
     try:
         # getaddrinfo returns list of (family, type, proto, canonname, sockaddr)
         results = socket.getaddrinfo(hostname, None)
         if not results:
-            return False
+            return False, None
         for result in results:
             sockaddr = result[4]
             ip_str = sockaddr[0]
@@ -83,13 +81,15 @@ def _is_safe_webhook_url(url: str) -> bool:
                 logger.warning(
                     "Hook URL blocked (resolves to private IP %s): %s", ip_str, url
                 )
-                return False
+                return False, None
+        # Return first resolved IP to pin for the actual request (S-H3 TOCTOU fix)
+        resolved_ip = results[0][4][0]
     except (socket.gaierror, OSError) as exc:
         # DNS resolution failure — block the URL (fail closed)
         logger.warning("Hook URL blocked (DNS resolution failed: %s): %s", exc, url)
-        return False
+        return False, None
 
-    return True
+    return True, resolved_ip
 
 
 def fire_hook(url: str | None, data: dict) -> None:
@@ -98,6 +98,7 @@ def fire_hook(url: str | None, data: dict) -> None:
     Uses stdlib urllib.request to avoid new dependencies.
     Runs in a background thread to avoid blocking the event loop.
     Validates URL scheme and blocks internal IPs (C2: SSRF protection).
+    S-H3: DNS resolved once at validation time; pinned IP used in the request.
 
     Args:
         url: Webhook URL to POST to. If None or empty, no-op.
@@ -106,18 +107,30 @@ def fire_hook(url: str | None, data: dict) -> None:
     if not url:
         return
 
-    # C2: SSRF validation — resolves DNS and checks IP ranges
-    if not _is_safe_webhook_url(url):
+    # C2 + S-H3: SSRF validation — resolves DNS once and pins the IP
+    safe, resolved_ip = _validate_and_resolve_webhook_url(url)
+    if not safe or resolved_ip is None:
         logger.warning("Hook URL blocked (SSRF protection): %s", url)
         return
+
+    # Build a URL with the resolved IP to prevent DNS rebinding (S-H3)
+    parsed = urllib.parse.urlparse(url)
+    port = parsed.port
+    if port:
+        netloc_pinned = f"{resolved_ip}:{port}"
+    else:
+        netloc_pinned = resolved_ip
+    pinned_url = parsed._replace(netloc=netloc_pinned).geturl()
+    original_host = parsed.hostname or url
 
     def _post() -> None:
         try:
             payload = json.dumps(data).encode("utf-8")
             req = urllib.request.Request(
-                url,
+                pinned_url,
                 data=payload,
-                headers={"Content-Type": "application/json"},
+                # Pass original Host header so the server can route correctly
+                headers={"Content-Type": "application/json", "Host": original_host},
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=5) as resp:

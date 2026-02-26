@@ -5,80 +5,82 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from engram.recall.entity_resolver import (
-    resolve_temporal,
     has_pronouns,
     resolve_pronouns,
     resolve,
-    _month_ago,
 )
+from engram.recall.temporal_resolver import resolve_temporal
 from engram.models import ResolvedText
 
 
 class TestResolveTemporal:
-    """Test deterministic temporal reference resolution."""
+    """Test deterministic temporal reference resolution.
+
+    temporal_resolver.resolve_temporal returns (text, primary_date: str | None).
+    """
 
     def setup_method(self):
         self.ref_date = datetime(2026, 2, 25, 10, 0, 0)
 
     def test_hom_nay(self):
-        text, refs = resolve_temporal("hôm nay tôi đi mall", self.ref_date)
+        text, date_str = resolve_temporal("hôm nay tôi đi mall", self.ref_date)
         assert "2026-02-25" in text
-        assert "hôm nay" in refs
+        assert date_str == "2026-02-25"
 
     def test_hom_qua(self):
-        text, refs = resolve_temporal("hôm qua tôi gặp bạn", self.ref_date)
+        text, date_str = resolve_temporal("hôm qua tôi gặp bạn", self.ref_date)
         assert "2026-02-24" in text
 
     def test_hom_kia(self):
-        text, refs = resolve_temporal("hôm kia có mưa", self.ref_date)
+        text, date_str = resolve_temporal("hôm kia có mưa", self.ref_date)
         assert "2026-02-23" in text
 
     def test_ngay_mai(self):
-        text, refs = resolve_temporal("ngày mai tôi đi làm", self.ref_date)
+        text, date_str = resolve_temporal("ngày mai tôi đi làm", self.ref_date)
         assert "2026-02-26" in text
 
     def test_tuan_truoc(self):
-        text, refs = resolve_temporal("tuần trước tôi họp", self.ref_date)
+        text, date_str = resolve_temporal("tuần trước tôi họp", self.ref_date)
         assert "2026-02-18" in text
 
     def test_thang_truoc(self):
-        text, refs = resolve_temporal("tháng trước tôi đi Đà Lạt", self.ref_date)
+        text, date_str = resolve_temporal("tháng trước tôi đi Đà Lạt", self.ref_date)
         assert "2026-01" in text
 
     def test_nam_ngoai(self):
-        text, refs = resolve_temporal("năm ngoái tôi tốt nghiệp", self.ref_date)
+        text, date_str = resolve_temporal("năm ngoái tôi tốt nghiệp", self.ref_date)
         assert "2025" in text
 
     def test_english_today(self):
-        text, refs = resolve_temporal("I went shopping today", self.ref_date)
+        text, date_str = resolve_temporal("I went shopping today", self.ref_date)
         assert "2026-02-25" in text
 
     def test_english_yesterday(self):
-        text, refs = resolve_temporal("yesterday was busy", self.ref_date)
+        text, date_str = resolve_temporal("yesterday was busy", self.ref_date)
         assert "2026-02-24" in text
 
     def test_english_tomorrow(self):
-        text, refs = resolve_temporal("meeting tomorrow", self.ref_date)
+        text, date_str = resolve_temporal("meeting tomorrow", self.ref_date)
         assert "2026-02-26" in text
 
     def test_english_last_week(self):
-        text, refs = resolve_temporal("last week I deployed", self.ref_date)
+        text, date_str = resolve_temporal("last week I deployed", self.ref_date)
         assert "2026-02-18" in text
 
     def test_no_temporal_refs(self):
-        text, refs = resolve_temporal("Trâm làm nghề gì?", self.ref_date)
+        text, date_str = resolve_temporal("Trâm làm nghề gì?", self.ref_date)
         assert text == "Trâm làm nghề gì?"
-        assert refs == {}
+        assert date_str is None
 
     def test_multiple_refs_in_one_text(self):
-        text, refs = resolve_temporal("hôm nay ok, ngày mai bận", self.ref_date)
+        text, date_str = resolve_temporal("hôm nay ok, ngày mai bận", self.ref_date)
         assert "2026-02-25" in text
         assert "2026-02-26" in text
-        assert len(refs) == 2
+        assert date_str is not None
 
     def test_default_reference_date(self):
         """When no reference_date given, uses datetime.now()."""
-        text, refs = resolve_temporal("today is good")
+        text, date_str = resolve_temporal("today is good")
         today = datetime.now().strftime("%Y-%m-%d")
         assert today in text
 
@@ -172,7 +174,7 @@ class TestResolveFullPipeline:
             resolve_pronoun_refs=False,
         )
         assert "2026-02-25" in result.resolved
-        assert "hôm nay" in result.temporal_refs
+        assert result.temporal_refs.get("resolved_date") == "2026-02-25"
 
     @pytest.mark.asyncio
     async def test_no_resolution_needed(self):
@@ -200,15 +202,21 @@ class TestResolveFullPipeline:
         assert result.original == "hôm nay cô ấy đi mall"
 
 
-class TestMonthAgo:
-    """Test _month_ago helper."""
+class TestMonthOffset:
+    """Test _month_offset helper from temporal_resolver."""
 
     def test_normal_month(self):
-        assert _month_ago(datetime(2026, 3, 15)) == "2026-02-15"
+        from engram.recall.temporal_resolver import _month_offset
+        from datetime import date
+        assert _month_offset(date(2026, 3, 15), -1) == date(2026, 2, 15)
 
     def test_january_wraps_to_december(self):
-        assert _month_ago(datetime(2026, 1, 15)) == "2025-12-15"
+        from engram.recall.temporal_resolver import _month_offset
+        from datetime import date
+        assert _month_offset(date(2026, 1, 15), -1) == date(2025, 12, 15)
 
     def test_march_31_clamps_to_28(self):
-        # March 31 - 1 month → Feb 28 (safe clamping)
-        assert _month_ago(datetime(2026, 3, 31)) == "2026-02-28"
+        from engram.recall.temporal_resolver import _month_offset
+        from datetime import date
+        result = _month_offset(date(2026, 3, 31), -1)
+        assert result == date(2026, 2, 28)

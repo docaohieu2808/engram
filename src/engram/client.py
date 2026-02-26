@@ -58,6 +58,8 @@ class EngramClient:
         self._graph = None
         self._engine = None
         self._extractor = None  # MemoryExtractor, lazy-init
+        # A-C1: track fire-and-forget background tasks to cancel on close()
+        self._bg_tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------ #
     #  Store lifecycle                                                     #
@@ -133,7 +135,9 @@ class EngramClient:
             try:
                 user_msg = _extract_last_user_content(messages)
                 assistant_msg = response.choices[0].message.content or ""
-                asyncio.create_task(self._extract_and_store(user_msg, assistant_msg))
+                task = asyncio.create_task(self._extract_and_store(user_msg, assistant_msg))
+                self._bg_tasks.add(task)
+                task.add_done_callback(self._bg_tasks.discard)
             except Exception as e:
                 logger.warning("EngramClient: post-call task creation failed: %s", e)
 
@@ -170,7 +174,13 @@ class EngramClient:
         return await self._engine.think(question)
 
     async def close(self) -> None:
-        """Close graph backend and release resources."""
+        """Close graph backend and release resources (A-C1: cancel pending bg tasks)."""
+        # Cancel and await all tracked background extraction tasks
+        for task in list(self._bg_tasks):
+            task.cancel()
+        if self._bg_tasks:
+            await asyncio.gather(*self._bg_tasks, return_exceptions=True)
+        self._bg_tasks.clear()
         if self._graph is not None:
             try:
                 await self._graph.close()
@@ -209,6 +219,14 @@ class EngramClient:
 
     async def __aexit__(self, *_: Any) -> None:
         await self.close()
+
+    def __enter__(self) -> "EngramClient":
+        """A-C3: Sync context manager — allows `with EngramClient() as client:`."""
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        """A-C3: Sync exit — delegates close() through run_async."""
+        run_async(self.close())
 
     # ------------------------------------------------------------------ #
     #  Internal helpers                                                    #

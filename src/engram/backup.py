@@ -74,9 +74,13 @@ async def restore(episodic, graph, archive_path: str) -> dict:
             if sys.version_info >= (3, 12):
                 tar.extractall(tmp_path, filter="data")
             else:
+                # S-H6: build safe member list — reject symlinks, hardlinks, and path traversal
+                safe_members = []
                 for member in tar.getmembers():
-                    # Resolve member path relative to destination; reject if it
-                    # would escape the destination directory.
+                    if member.issym() or member.islnk():
+                        raise ValueError(
+                            f"Archive contains symlink/hardlink: '{member.name}' — restore aborted."
+                        )
                     member_path = (tmp_path / member.name).resolve()
                     try:
                         member_path.relative_to(tmp_path.resolve())
@@ -85,7 +89,8 @@ async def restore(episodic, graph, archive_path: str) -> dict:
                             f"Archive member '{member.name}' would extract outside "
                             "destination directory — possible path traversal attack."
                         )
-                tar.extractall(tmp_path)
+                    safe_members.append(member)
+                tar.extractall(tmp_path, members=safe_members)
 
         manifest_file = tmp_path / "manifest.json"
         manifest = json.loads(manifest_file.read_text()) if manifest_file.exists() else {}

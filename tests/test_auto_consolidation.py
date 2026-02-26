@@ -1,5 +1,6 @@
 """Tests for auto-consolidation trigger."""
 
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -31,6 +32,8 @@ class TestAutoConsolidationTrigger:
         await trigger.on_message()
         result = await trigger.on_message()
         assert result is True
+        # M13: create_task is fire-and-forget, yield to let the task run
+        await asyncio.sleep(0)
         engine.consolidate.assert_called_once()
 
     @pytest.mark.asyncio

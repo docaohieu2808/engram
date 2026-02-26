@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS nodes (
 _CREATE_EDGES = """
 CREATE TABLE IF NOT EXISTS edges (
     key        TEXT PRIMARY KEY,
-    from_key   TEXT NOT NULL,
-    to_key     TEXT NOT NULL,
+    from_key   TEXT NOT NULL REFERENCES nodes(key) ON DELETE CASCADE,
+    to_key     TEXT NOT NULL REFERENCES nodes(key) ON DELETE CASCADE,
     relation   TEXT NOT NULL,
     weight     FLOAT NOT NULL DEFAULT 1.0,
     attributes JSONB NOT NULL DEFAULT '{}'
@@ -37,6 +37,36 @@ CREATE TABLE IF NOT EXISTS edges (
 _MIGRATE_EDGES = [
     "ALTER TABLE edges ADD COLUMN IF NOT EXISTS weight FLOAT DEFAULT 1.0",
     "ALTER TABLE edges ADD COLUMN IF NOT EXISTS attributes JSONB DEFAULT '{}'",
+]
+
+# D-H4: migration to add FK constraints on existing edges table
+_MIGRATE_FK = [
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'fk_edges_from' AND table_name = 'edges'
+        ) THEN
+            ALTER TABLE edges
+                ADD CONSTRAINT fk_edges_from FOREIGN KEY (from_key)
+                REFERENCES nodes(key) ON DELETE CASCADE;
+        END IF;
+    END $$
+    """,
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+            WHERE constraint_name = 'fk_edges_to' AND table_name = 'edges'
+        ) THEN
+            ALTER TABLE edges
+                ADD CONSTRAINT fk_edges_to FOREIGN KEY (to_key)
+                REFERENCES nodes(key) ON DELETE CASCADE;
+        END IF;
+    END $$
+    """,
 ]
 
 _CREATE_INDEXES = [
@@ -76,6 +106,12 @@ class PostgresBackend:
             for mig_sql in _MIGRATE_EDGES:
                 try:
                     await conn.execute(mig_sql)
+                except Exception:
+                    pass
+            # D-H4: add FK constraints on existing deployments (idempotent)
+            for fk_sql in _MIGRATE_FK:
+                try:
+                    await conn.execute(fk_sql)
                 except Exception:
                     pass
 
@@ -172,13 +208,23 @@ class PostgresBackend:
                 )
 
     async def delete_node(self, key: str) -> None:
-        """Delete a node by key."""
+        """Delete a node and its edges atomically (D-C2: single transaction)."""
         pool = self._pool_or_raise()
         async with pool.acquire() as conn:
-            await conn.execute("DELETE FROM nodes WHERE key=$1", key)
+            async with conn.transaction():
+                # With FK CASCADE this also deletes edges, but explicit delete
+                # keeps behaviour consistent with the SQLite backend.
+                await conn.execute(
+                    "DELETE FROM edges WHERE from_key=$1 OR to_key=$1", key
+                )
+                await conn.execute("DELETE FROM nodes WHERE key=$1", key)
 
     async def delete_edges_for_node(self, key: str) -> None:
-        """Delete all edges connected to a node (from or to)."""
+        """Delete all edges connected to a node (from or to).
+
+        Note: when called before delete_node the subsequent delete_node call
+        wraps both operations in a single transaction for atomicity.
+        """
         pool = self._pool_or_raise()
         async with pool.acquire() as conn:
             await conn.execute(

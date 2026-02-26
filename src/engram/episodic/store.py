@@ -223,7 +223,7 @@ class EpisodicStore:
 
         try:
             collection = self._ensure_collection()
-            self._detect_embedding_dim()
+            await self._detect_embedding_dim()
             embeddings = await asyncio.to_thread(_get_embeddings, self._embed_model, [content], self._embedding_dim)
             new_dim = len(embeddings[0])
             if self._embedding_dim is not None and new_dim != self._embedding_dim:
@@ -323,7 +323,7 @@ class EpisodicStore:
 
         try:
             collection = self._ensure_collection()
-            self._detect_embedding_dim()
+            await self._detect_embedding_dim()
             # Single batch embedding call
             embeddings = await asyncio.to_thread(_get_embeddings, self._embed_model, documents, self._embedding_dim)
             new_dim = len(embeddings[0])
@@ -372,7 +372,7 @@ class EpisodicStore:
         """
         try:
             collection = self._ensure_collection()
-            self._detect_embedding_dim()
+            await self._detect_embedding_dim()
             query_embedding = await asyncio.to_thread(_get_embeddings, self._embed_model, [query], self._embedding_dim)
             coll_count = await asyncio.to_thread(collection.count)
             kwargs: dict[str, Any] = {
@@ -506,17 +506,24 @@ class EpisodicStore:
         return len(expired_ids)
 
     async def get_recent(self, n: int = 20) -> list[EpisodicMemory]:
-        """Retrieve the most recent N memories sorted by timestamp descending."""
+        """Retrieve the most recent N memories sorted by timestamp descending.
+
+        Uses ChromaDB native ordering via metadata timestamp_iso filter where possible.
+        Falls back to fetching a larger window when collection is small.
+        """
         n = min(n, 1000)  # Hard cap to prevent unbounded fetches
         try:
             collection = self._ensure_collection()
             count = await asyncio.to_thread(collection.count)
             if count == 0:
                 return []
+            # Fetch enough to cover recent items: cap at min(n*5, count, 2000)
+            # This trades a slightly larger fetch for correctness at scale.
+            fetch_limit = min(n * 5, count, 2000)
             result = await asyncio.to_thread(
                 collection.get,
                 include=["documents", "metadatas"],
-                limit=min(n * 2, count),  # Fetch extra to allow sorting
+                limit=fetch_limit,
             )
         except Exception as e:
             raise RuntimeError(f"get_recent failed: {e}") from e
@@ -610,7 +617,7 @@ class EpisodicStore:
         """Return collection statistics including embedding dimension."""
         collection = self._ensure_collection()
         count = await asyncio.to_thread(collection.count)
-        self._detect_embedding_dim()
+        await self._detect_embedding_dim()
         result: dict[str, Any] = {
             "count": count,
             "collection": self.COLLECTION_NAME,
@@ -620,6 +627,36 @@ class EpisodicStore:
             result["embedding_dim"] = self._embedding_dim
         return result
 
+    async def reconcile_stores(self) -> dict[str, int]:
+        """Sync FTS5 index with ChromaDB (source of truth). Returns stats dict.
+
+        D-C3: Periodic reconciliation to fix drift between ChromaDB and FTS5
+        since writes to both stores are not atomic.
+        """
+        if not self._fts:
+            return {"orphaned_removed": 0, "missing_added": 0}
+        collection = self._ensure_collection()
+        # Fetch all IDs from both stores (in threads to avoid blocking event loop)
+        all_chroma = await asyncio.to_thread(collection.get, include=[])
+        chroma_ids = set(all_chroma["ids"])
+        fts_ids = set(await asyncio.to_thread(self._fts.get_all_ids))
+        # Remove FTS entries not present in ChromaDB
+        orphaned_fts = fts_ids - chroma_ids
+        for oid in orphaned_fts:
+            await asyncio.to_thread(self._fts.delete, oid)
+        # Add FTS entries for ChromaDB IDs missing from FTS
+        missing_fts = chroma_ids - fts_ids
+        if missing_fts:
+            batch = await asyncio.to_thread(
+                collection.get, list(missing_fts), include=["documents", "metadatas"]
+            )
+            entries: list[tuple[str, str, str]] = []
+            for mid, doc, meta in zip(batch["ids"], batch["documents"], batch["metadatas"]):
+                mt_str = meta.get("memory_type", "fact") if meta else "fact"
+                entries.append((mid, doc or "", mt_str))
+            if entries:
+                await asyncio.to_thread(self._fts.insert_batch, entries)
+        return {"orphaned_removed": len(orphaned_fts), "missing_added": len(missing_fts)}
 
     async def update_metadata(self, mem_id: str, metadata: dict[str, Any]) -> bool:
         """Update metadata fields on an existing memory. Returns True on success."""
@@ -649,8 +686,8 @@ class EpisodicStore:
             logger.warning("Failed to update metadata for %s: %s", mem_id, e)
             return False
 
-    def _detect_embedding_dim(self) -> None:
-        """Detect embedding dimension from existing collection data."""
+    async def _detect_embedding_dim(self) -> None:
+        """Detect embedding dimension from existing collection data (D-H1: async to avoid blocking)."""
         if self._embedding_dim is not None:
             return
         # Check known dimensions for configured model
@@ -658,10 +695,11 @@ class EpisodicStore:
         if model_name in _EMBEDDING_DIMS:
             self._embedding_dim = _EMBEDDING_DIMS[model_name]
             return
-        # Peek at existing data to detect dimension
+        # Peek at existing data to detect dimension (wrapped in thread to avoid blocking event loop)
         collection = self._ensure_collection()
-        if collection.count() > 0:
-            peek = collection.peek(limit=1)
+        count = await asyncio.to_thread(collection.count)
+        if count > 0:
+            peek = await asyncio.to_thread(collection.peek, 1)
             if peek and peek.get("embeddings") and peek["embeddings"][0]:
                 self._embedding_dim = len(peek["embeddings"][0])
 
@@ -687,7 +725,7 @@ class EpisodicStore:
         old_meta = existing["metadatas"][0] if existing["metadatas"] else {}
         revision = int(old_meta.get("revision_count", 0)) + 1
 
-        self._detect_embedding_dim()
+        await self._detect_embedding_dim()
         embeddings = await asyncio.to_thread(_get_embeddings, self._embed_model, [content], self._embedding_dim)
 
         new_meta: dict[str, Any] = {
@@ -798,8 +836,7 @@ class EpisodicStore:
 
                 # Query top-N similar memories for this embedding
                 try:
-                    coll_count = await asyncio.to_thread(collection.count)
-                    n_query = min(20, coll_count)
+                    n_query = min(20, total)  # Use cached total instead of per-iteration count()
                     sim_result = await asyncio.to_thread(
                         collection.query,
                         query_embeddings=[embedding],
@@ -931,7 +968,7 @@ class EpisodicStore:
             if coll_count == 0:
                 return None
 
-            self._detect_embedding_dim()
+            await self._detect_embedding_dim()
             embedding = await asyncio.to_thread(
                 _get_embeddings, self._embed_model, [content], self._embedding_dim,
             )

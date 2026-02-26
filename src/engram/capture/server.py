@@ -72,6 +72,12 @@ class TokenRequest(BaseModel):
     tenant_id: str = "default"
 
 
+class FeedbackRequest(BaseModel):
+    """M1: Typed model for /feedback — avoids raw request.json()."""
+    memory_id: str = Field(..., min_length=1)
+    feedback: str = Field(..., pattern="^(positive|negative)$")
+
+
 # --- Middleware ---
 
 
@@ -309,7 +315,8 @@ def create_app(
 
         def _make_post_redirect(target: str):
             async def _redirect(request: Request):
-                return RedirectResponse(url=target, status_code=301)
+                # A-H1: use 307 to preserve POST body (301 drops body)
+                return RedirectResponse(url=target, status_code=307)
             return _redirect
 
         app.add_api_route(_path, _make_post_redirect(_target), methods=["POST"])
@@ -492,22 +499,15 @@ def create_app(
         return result
 
     @v1.post("/feedback")
-    async def feedback_endpoint(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    async def feedback_endpoint(body: FeedbackRequest, auth: AuthContext = Depends(get_auth_context)):
         """Provide feedback on a memory to adjust confidence/importance.
 
         Body: {"memory_id": "...", "feedback": "positive"|"negative"}
+        M1: Uses Pydantic model instead of raw request.json() for input validation.
         """
-        body = await request.json()
-        memory_id = body.get("memory_id")
-        feedback = body.get("feedback")
-        if not memory_id or feedback not in ("positive", "negative"):
-            return JSONResponse(
-                {"error": "memory_id and feedback (positive/negative) required"},
-                status_code=400,
-            )
         ep = _resolve_episodic(auth)
         from engram.feedback.auto_adjust import adjust_memory
-        result = await adjust_memory(ep, memory_id, feedback)
+        result = await adjust_memory(ep, body.memory_id, body.feedback)
         return {"status": "ok", **result}
 
     @v1.post("/cleanup")
@@ -678,7 +678,8 @@ def create_app(
 
     @v1.delete("/memories/{memory_id}")
     async def delete_memory(memory_id: str, auth: AuthContext = Depends(get_auth_context)):
-        """Delete a single memory."""
+        """Delete a single memory. S-H1: ADMIN role required."""
+        _require_admin(auth)
         ep = _resolve_episodic(auth)
         ok = await ep.delete(memory_id)
         if not ok:
@@ -759,7 +760,8 @@ def create_app(
 
     @v1.delete("/graph/nodes/{node_key:path}")
     async def delete_node(node_key: str, auth: AuthContext = Depends(get_auth_context)):
-        """Delete a semantic graph node and its connected edges."""
+        """Delete a semantic graph node and its connected edges. S-H1: ADMIN role required."""
+        _require_admin(auth)
         gr = await _resolve_graph(auth)
         ok = await gr.remove_node(node_key)
         if not ok:
@@ -784,7 +786,8 @@ def create_app(
 
     @v1.delete("/graph/edges")
     async def delete_edge(request: Request, auth: AuthContext = Depends(get_auth_context)):
-        """Delete a semantic graph edge by key."""
+        """Delete a semantic graph edge by key. S-H1: ADMIN role required."""
+        _require_admin(auth)
         body = await request.json()
         edge_key = body.get("key")
         if not edge_key:
@@ -799,19 +802,32 @@ def create_app(
 
     @v1.get("/feedback/history")
     async def feedback_history(last: int = 50, auth: AuthContext = Depends(get_auth_context)):
-        """Get recent feedback entries from audit log."""
+        """Get recent feedback entries from audit log.
+        S-H5: cap last to prevent OOM. S-C3: filter by tenant_id.
+        """
         from engram.audit import get_audit
+        last = min(last, 1000)  # S-H5: bound the read
         audit = get_audit()
-        entries = audit.read_recent(last * 3)  # Read more to filter
-        feedback_entries = [e for e in entries if e.get("operation") == "modification" and e.get("mod_type") == "metadata_update" and "confidence" in str(e.get("after_value", ""))]
+        entries = audit.read_recent(last * 3)  # overfetch before filtering
+        feedback_entries = [
+            e for e in entries
+            if e.get("operation") == "modification"
+            and e.get("mod_type") == "metadata_update"
+            and "confidence" in str(e.get("after_value", ""))
+            and e.get("tenant_id") == auth.tenant_id  # S-C3: tenant isolation
+        ]
         return {"status": "ok", "entries": feedback_entries[:last]}
 
     @v1.get("/audit/log")
     async def audit_log(last: int = 50, auth: AuthContext = Depends(get_auth_context)):
-        """Get recent audit log entries."""
+        """Get recent audit log entries.
+        S-H5: cap last to prevent OOM. S-C2: filter by tenant_id.
+        """
         from engram.audit import get_audit
+        last = min(last, 1000)  # S-H5: bound the read
         audit = get_audit()
-        entries = audit.read_recent(last)
+        entries = audit.read_recent(last * 2)  # overfetch to compensate for tenant filter
+        entries = [e for e in entries if e.get("tenant_id") == auth.tenant_id][:last]  # S-C2
         return {"status": "ok", "entries": entries}
 
     # --- Scheduler routes ---
@@ -861,8 +877,8 @@ def create_app(
     # --- UI routes ---
 
     @app.get("/graph")
-    async def graph_ui():
-        """Serve the graph visualization HTML page."""
+    async def graph_ui(auth: AuthContext = Depends(get_auth_context)):
+        """Serve the graph visualization HTML page. S-H2: auth required."""
         html_path = Path(__file__).parent.parent / "static" / "graph.html"
         if html_path.exists():
             return HTMLResponse(html_path.read_text())
@@ -875,16 +891,16 @@ def create_app(
         return RedirectResponse(url="/ui")
 
     @app.get("/ui")
-    async def ui_root():
-        """Serve the WebUI HTML page."""
+    async def ui_root(auth: AuthContext = Depends(get_auth_context)):
+        """Serve the WebUI HTML page. S-H2: auth required."""
         html_path = Path(__file__).parent.parent / "static" / "ui.html"
         if html_path.exists():
             return HTMLResponse(html_path.read_text())
         return HTMLResponse("<h1>WebUI not found</h1>", status_code=404)
 
     @app.get("/ui/{path:path}")
-    async def ui_catchall(path: str):
-        """SPA catch-all — serve ui.html for all /ui/* routes."""
+    async def ui_catchall(path: str, auth: AuthContext = Depends(get_auth_context)):
+        """SPA catch-all — serve ui.html for all /ui/* routes. S-H2: auth required."""
         html_path = Path(__file__).parent.parent / "static" / "ui.html"
         if html_path.exists():
             return HTMLResponse(html_path.read_text())

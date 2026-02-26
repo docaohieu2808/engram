@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -29,32 +30,42 @@ class SemanticGraph:
         self._audit = audit
         self._tenant_id = tenant_id  # M10: used in audit log calls
         self._max_nodes = max_nodes
+        self._load_lock = asyncio.Lock()  # D-C1: guard concurrent loads
 
     async def _ensure_loaded(self) -> None:
-        """Initialize backend and load graph on first access."""
+        """Initialize backend and load graph on first access (D-C1: lock-guarded)."""
         if self._loaded:
             return
-        if not self._initialized:
-            await self._backend.initialize()
-            self._initialized = True
-        nodes = await self._backend.load_nodes()
-        if len(nodes) > self._max_nodes:
-            logger.warning(
-                "Graph has %d nodes (max_nodes=%d). Loading first %d only.",
-                len(nodes), self._max_nodes, self._max_nodes,
-            )
-            nodes = nodes[:self._max_nodes]
-        for key, type_, name, attrs in nodes:
-            node = SemanticNode(type=type_, name=name, attributes=json.loads(attrs or "{}"))
-            self._graph.add_node(key, data=node)
-        for row in await self._backend.load_edges():
-            key, from_key, to_key, relation = row[0], row[1], row[2], row[3]
-            weight = float(row[4]) if len(row) > 4 else 1.0
-            attrs = json.loads(row[5]) if len(row) > 5 and row[5] else {}
-            edge = SemanticEdge(from_node=from_key, to_node=to_key, relation=relation,
-                                weight=weight, attributes=attrs)
-            self._graph.add_edge(from_key, to_key, key=key, data=edge)
-        self._loaded = True
+        async with self._load_lock:
+            # Double-check after acquiring the lock
+            if self._loaded:
+                return
+            if not self._initialized:
+                await self._backend.initialize()
+                self._initialized = True
+            nodes = await self._backend.load_nodes()
+            if len(nodes) > self._max_nodes:
+                logger.warning(
+                    "Graph has %d nodes (max_nodes=%d). Loading first %d only.",
+                    len(nodes), self._max_nodes, self._max_nodes,
+                )
+                nodes = nodes[:self._max_nodes]
+            loaded_keys: set[str] = set()
+            for key, type_, name, attrs in nodes:
+                node = SemanticNode(type=type_, name=name, attributes=json.loads(attrs or "{}"))
+                self._graph.add_node(key, data=node)
+                loaded_keys.add(key)
+            # D-H5: skip edges whose endpoints were truncated due to max_nodes cap
+            for row in await self._backend.load_edges():
+                key, from_key, to_key, relation = row[0], row[1], row[2], row[3]
+                if from_key not in loaded_keys or to_key not in loaded_keys:
+                    continue  # skip edges referencing truncated nodes
+                weight = float(row[4]) if len(row) > 4 else 1.0
+                attrs = json.loads(row[5]) if len(row) > 5 and row[5] else {}
+                edge = SemanticEdge(from_node=from_key, to_node=to_key, relation=relation,
+                                    weight=weight, attributes=attrs)
+                self._graph.add_edge(from_key, to_key, key=key, data=edge)
+            self._loaded = True
 
     async def close(self) -> None:
         """Close the backend (connection pool or file handle)."""
@@ -135,13 +146,19 @@ class SemanticGraph:
         return all_edges
 
     async def remove_node(self, key: str) -> bool:
-        """Remove from both stores, also removing connected edges."""
+        """Remove from both stores, also removing connected edges (D-C2: rollback on failure)."""
         await self._ensure_loaded()
         if key not in self._graph:
             return False
-        await self._backend.delete_edges_for_node(key)
-        await self._backend.delete_node(key)
-        self._graph.remove_node(key)
+        try:
+            await self._backend.delete_edges_for_node(key)
+            await self._backend.delete_node(key)
+        except Exception:
+            # Backend deletion partially failed; mark graph as dirty so next
+            # _ensure_loaded will reload from the backend (source of truth).
+            self._loaded = False
+            raise
+        self._graph.remove_node(key)  # NetworkX also removes connected edges
         if self._audit:
             self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.remove_node",
                             resource_id=key)

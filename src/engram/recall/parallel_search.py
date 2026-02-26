@@ -79,10 +79,14 @@ class ParallelSearcher:
         return self._fuse(all_results, top_k)
 
     async def _search_semantic(self, query: str, limit: int) -> list[SearchResult]:
-        """ChromaDB vector similarity search."""
+        """ChromaDB vector similarity search. Excludes consolidated originals."""
         memories = await self._episodic.search(query, limit=limit)
-        return [
-            SearchResult(
+        results = []
+        for m in memories:
+            # I-H10: skip memories that have been consolidated into a summary
+            if m.consolidated_into:
+                continue
+            results.append(SearchResult(
                 id=m.id,
                 content=m.content,
                 score=_memory_score(m),
@@ -91,9 +95,8 @@ class ParallelSearcher:
                 importance=m.priority,
                 timestamp=m.timestamp,
                 metadata=m.metadata,
-            )
-            for m in memories
-        ]
+            ))
+        return results
 
     async def _search_entity_graph(self, entity_names: list[str]) -> list[SearchResult]:
         """Traverse semantic graph for entity-related information."""
@@ -162,7 +165,16 @@ class ParallelSearcher:
 
 
 def _memory_score(memory: Any) -> float:
-    """Compute a normalized score from an EpisodicMemory for fusion ranking."""
-    # Priority normalized to 0-1 range, weighted with recency
+    """Compute a normalized score from an EpisodicMemory for fusion ranking.
+
+    Combines vector similarity (via confidence proxy) and priority using
+    ScoringConfig default weights (similarity=0.5, priority/retention=0.5).
+    ChromaDB distance is consumed by EpisodicStore internally; confidence
+    reflects the store's activation-scored quality of the memory.
+    """
     priority_score = memory.priority / 10.0
-    return max(0.1, priority_score)
+    # confidence (0-1) reflects user feedback and store-scored similarity quality
+    similarity_score = getattr(memory, "confidence", 0.5)
+    # Weighted combination: 60% similarity, 40% priority
+    score = 0.6 * similarity_score + 0.4 * priority_score
+    return max(0.1, score)

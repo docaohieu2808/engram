@@ -278,13 +278,13 @@ def test_legacy_status_redirects_to_v1(client):
 
 def test_legacy_remember_redirects_to_v1(client):
     resp = client.post("/remember", json={"content": "x"})
-    assert resp.status_code == 301
+    assert resp.status_code == 307
     assert "/api/v1/remember" in resp.headers["location"]
 
 
 def test_legacy_think_redirects_to_v1(client):
     resp = client.post("/think", json={"question": "x"})
-    assert resp.status_code == 301
+    assert resp.status_code == 307
     assert "/api/v1/think" in resp.headers["location"]
 
 

@@ -17,7 +17,8 @@ class TestShouldSkipRecall:
         assert should_skip_recall("   ") is True
 
     def test_single_char(self):
-        assert should_skip_recall("k") is True
+        # M15: single meaningful chars now allowed (e.g. "?" for queries)
+        assert should_skip_recall("k") is False
 
     def test_ok(self):
         assert should_skip_recall("ok") is True

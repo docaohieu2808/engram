@@ -13,6 +13,8 @@ from typing import Any
 
 import litellm
 
+from engram.sanitize import sanitize_llm_input
+
 litellm.suppress_debug_info = True
 logger = logging.getLogger("engram")
 
@@ -67,9 +69,10 @@ class MemoryExtractor:
             List of dicts with keys: content, type, priority.
             Empty list on failure (fail-open).
         """
+        # I-C4: sanitize user/assistant messages before LLM prompt interpolation
         prompt = EXTRACTION_PROMPT.format(
-            user_msg=user_msg[:2000],      # cap to avoid token bloat
-            assistant_msg=assistant_msg[:3000],
+            user_msg=sanitize_llm_input(user_msg, max_len=2000),
+            assistant_msg=sanitize_llm_input(assistant_msg, max_len=3000),
         )
 
         try:

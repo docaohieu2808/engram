@@ -40,7 +40,8 @@ class AutoConsolidationTrigger:
         self._message_count += 1
         if self._message_count >= self._config.auto_trigger_threshold:
             self._message_count = 0
-            await self._run_background()
+            # Fire-and-forget: create_task returns immediately, doesn't block caller (M13)
+            asyncio.create_task(self._run_background())
             return True
         return False
 

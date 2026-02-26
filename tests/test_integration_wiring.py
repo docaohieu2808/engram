@@ -387,6 +387,8 @@ class TestAutoConsolidationTrigger:
 
         assert result is True  # Triggered
         assert trigger.message_count == 0  # Reset after trigger
+        # Allow the fire-and-forget create_task() to execute
+        await asyncio.sleep(0)
         mock_engine.consolidate.assert_called_once()
 
     async def test_auto_trigger_reset_counter(self, mock_engine):
@@ -401,13 +403,16 @@ class TestAutoConsolidationTrigger:
         config = ConsolidationConfig(auto_trigger_threshold=1)
         trigger = AutoConsolidationTrigger(mock_engine, config)
 
-        # First call triggers consolidation
+        # First call triggers consolidation (fire-and-forget via create_task)
         await trigger.on_message()
+        # Allow the background task to start and set _running=True
+        await asyncio.sleep(0)
         assert mock_engine.consolidate.call_count == 1
 
         # Second call should see _running=True and skip (after reset)
         trigger._message_count = 1
         await trigger.on_message()
+        await asyncio.sleep(0)
         # Should still be 1 call since second would be skipped by _running flag
 
 
@@ -548,6 +553,9 @@ class TestAutoMemoryConsolidationIntegration:
         # Simulate processing two memory candidates
         await trigger.on_message()
         await trigger.on_message()
+
+        # Allow the fire-and-forget create_task() to execute
+        await asyncio.sleep(0)
 
         # Should trigger consolidation
         assert mock_engine.consolidate.called

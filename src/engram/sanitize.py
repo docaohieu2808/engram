@@ -47,6 +47,32 @@ def sanitize_content(text: str, max_length: int = 10240) -> str:
     return cleaned
 
 
+# Delimiter tokens for LLM prompt injection defense
+_LLM_DELIMITER_START = "---USER-INPUT-START---"
+_LLM_DELIMITER_END = "---USER-INPUT-END---"
+
+
+def sanitize_llm_input(text: str, max_len: int = 2000) -> str:
+    """Wrap user input in delimiters and strip control chars for LLM prompts.
+
+    Defends against prompt injection by:
+    1. Stripping control characters that could break prompt structure.
+    2. Truncating to max_len to prevent token flooding.
+    3. Wrapping in explicit delimiters so the LLM treats content as DATA not instructions.
+
+    Args:
+        text: Raw user-controlled input.
+        max_len: Maximum character length before truncation (default 2000).
+
+    Returns:
+        Sanitized string wrapped in delimiter tokens.
+    """
+    if not isinstance(text, str):
+        text = str(text)
+    cleaned = _CONTROL_CHAR_RE.sub("", text)[:max_len]
+    return f"{_LLM_DELIMITER_START}\n{cleaned}\n{_LLM_DELIMITER_END}"
+
+
 def validate_memory_type(value: str) -> MemoryType:
     """Parse memory type string into MemoryType enum safely.
 

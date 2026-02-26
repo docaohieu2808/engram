@@ -157,15 +157,25 @@ def resolve_temporal(
     resolved = content
     primary_date: str | None = None
 
+    # Idempotency: pattern "(ngày YYYY-MM-DD)" marks already-annotated phrases.
+    # Skip any pattern whose match is immediately followed by this annotation
+    # to avoid stacking "(ngày ...)(ngày ...)" on repeated calls.
+    _already_annotated = re.compile(r"\(ngày \d{4}-\d{2}-\d{2}\)")
+
     for pattern, iso_date in patterns:
-        if pattern.search(resolved):
-            # Annotate only — keep original phrase, append date in parentheses
-            # This ensures the meaning is preserved AND the date is explicit.
-            resolved = pattern.sub(
-                lambda m, d=iso_date: f"{m.group(0)} (ngày {d})",
-                resolved,
-            )
-            if primary_date is None:
-                primary_date = iso_date  # record first matched date
+        match = pattern.search(resolved)
+        if not match:
+            continue
+        # Check if this match is already annotated (followed by "(ngày ...)")
+        end_pos = match.end()
+        suffix = resolved[end_pos:end_pos + 20]
+        if _already_annotated.match(suffix.lstrip()):
+            continue
+        resolved = pattern.sub(
+            lambda m, d=iso_date: f"{m.group(0)} (ngày {d})",
+            resolved,
+        )
+        if primary_date is None:
+            primary_date = iso_date  # record first matched date
 
     return resolved, primary_date

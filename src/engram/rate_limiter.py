@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
+
+logger = logging.getLogger("engram")
 
 try:
     from redis.asyncio import Redis
@@ -16,7 +19,8 @@ class RateLimiter:
     """Sliding window rate limiter per tenant using Redis sorted sets.
 
     Returns (allowed, remaining, reset_at) tuples.
-    When Redis is unavailable, all requests are allowed (graceful degradation).
+    S-H4: When Redis is unavailable, requests are DENIED (fail closed) to prevent
+    rate limit bypass during Redis outages.
     """
 
     def __init__(self, redis_url: str, requests_per_minute: int = 60, burst: int = 10) -> None:
@@ -42,10 +46,12 @@ class RateLimiter:
 
         Returns:
             (allowed, remaining, reset_at) where reset_at is Unix timestamp.
-            When Redis is down, returns (True, requests_per_minute, 0).
+            S-H4: When Redis is down, returns (False, 0, 0) — fail closed to prevent bypass.
         """
         if not self._redis:
-            return True, self.requests_per_minute, 0
+            # S-H4: fail closed — deny when rate limiter is unavailable
+            logger.warning("rate_limiter: Redis unavailable, denying request for tenant %s", tenant_id)
+            return False, 0, 0
 
         key = f"engram:ratelimit:{tenant_id}"
         now = time.time()
@@ -73,5 +79,6 @@ class RateLimiter:
             return True, remaining, reset_at
 
         except Exception:
-            # Redis error → allow request (graceful degradation)
-            return True, self.requests_per_minute, 0
+            # S-H4: Redis pipeline error → fail closed (deny) to prevent rate limit bypass
+            logger.warning("rate_limiter: Redis pipeline error, denying request for tenant %s", tenant_id)
+            return False, 0, 0
