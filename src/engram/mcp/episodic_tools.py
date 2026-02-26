@@ -319,10 +319,11 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
 
         entity_names = [n.name for n in result.nodes]
         count = 0
-        for msg in messages:
+        for i, msg in enumerate(messages):
             content = msg.get("content", "")
             if content:
-                per_content = extractor.filter_entities_for_content(content, entity_names)
+                ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
+                per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
                 await episodic.remember(content, entities=per_content)
                 count += 1
 

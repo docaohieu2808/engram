@@ -384,10 +384,11 @@ async def _do_ingest(file: Path, dry_run: bool, get_extractor, get_graph, get_ep
     for edge in result.edges:
         await graph.add_edge(edge)
     entity_names = [n.name for n in result.nodes]
-    for msg in messages:
+    for i, msg in enumerate(messages):
         content = msg.get("content", "")
         if content:
-            per_content = extractor.filter_entities_for_content(content, entity_names)
+            ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
+            per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
             await episodic.remember(content, entities=per_content)
 
     return IngestResult(
@@ -408,10 +409,11 @@ async def _do_ingest_messages(messages: list[dict], get_extractor, get_graph, ge
     for edge in result.edges:
         await graph.add_edge(edge)
     entity_names = [n.name for n in result.nodes]
-    for msg in messages:
+    for i, msg in enumerate(messages):
         content = msg.get("content", "")
         if content:
-            per_content = extractor.filter_entities_for_content(content, entity_names)
+            ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
+            per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
             await episodic.remember(content, entities=per_content)
     return IngestResult(
         episodic_count=len(messages),

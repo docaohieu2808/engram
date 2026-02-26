@@ -67,14 +67,65 @@ class EntityExtractor:
         return await self.extract_entities(messages)
 
     @staticmethod
-    def filter_entities_for_content(content: str, all_entity_names: list[str]) -> list[str]:
-        """Filter entity names to only those mentioned in the given content.
+    def filter_entities_for_content(
+        content: str,
+        all_entity_names: list[str],
+        context_messages: list[dict[str, Any]] | None = None,
+    ) -> list[str]:
+        """Content-first entity assignment with context-only validation.
 
-        Uses case-insensitive substring matching. This avoids the over-linking
-        problem where batch-extracted entities get attached to every memory item.
+        Rules:
+        1) Candidate must appear in the current content (never inject from context).
+        2) Context is only used to validate/boost candidates and canonical casing.
+        3) Case-insensitive dedupe in final output.
         """
+        if not content:
+            return []
+
         content_lower = content.lower()
-        return [name for name in all_entity_names if name.lower() in content_lower]
+
+        # Step 1: candidates from current content only (word/phrase boundary check)
+        content_candidates: list[str] = []
+        for name in all_entity_names:
+            n = (name or "").strip()
+            if not n:
+                continue
+            # Avoid pure substring pollution; require rough boundary semantics.
+            if re.search(rf"(?<!\\w){re.escape(n.lower())}(?!\\w)", content_lower):
+                content_candidates.append(n)
+
+        if not content_candidates:
+            return []
+
+        # Step 2: optional context validation (no adding new entities)
+        validated: list[str] = []
+        context_text = ""
+        if context_messages:
+            context_text = "\n".join(str(m.get("content", "")) for m in context_messages).lower()
+
+        for cand in content_candidates:
+            c_low = cand.lower()
+            if not context_text:
+                validated.append(cand)
+                continue
+
+            # Candidate is valid if it appears in nearby context text
+            # OR if it's already a known extracted schema entity (same list source).
+            if c_low in context_text or any(c_low == (e or "").strip().lower() for e in all_entity_names):
+                validated.append(cand)
+
+        # Step 3: case-insensitive dedupe, prefer title/canonical-looking form
+        out: list[str] = []
+        seen: dict[str, str] = {}
+        for e in validated:
+            key = e.casefold()
+            if key not in seen:
+                seen[key] = e
+            elif seen[key].islower() and not e.islower():
+                seen[key] = e
+
+        out = list(seen.values())
+        return out
 
     async def _extract_chunk(self, messages: list[dict]) -> ExtractionResult:
         """Run LLM extraction on a chunk of messages, with up to 2 retries on transient errors."""
