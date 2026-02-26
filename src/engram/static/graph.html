@@ -126,9 +126,12 @@ function drawSoftEdges(ctx) {
   if (!network || !allEdges?.length) return;
 
   const fanCount = new Map();
-  const spring = 42;   // độ bật
-  const damping = 11;  // giảm chấn
   const dt = 1 / 60;
+
+  // tham số "dẻo như chỉ"
+  const kCtrl = 30;      // lò xo control points (thấp hơn = dẻo hơn)
+  const dCtrl = 7.5;     // giảm chấn control points
+  const kick = 2.2;      // lực bơm từ kéo node
 
   for (const e of allEdges) {
     const p1 = network.getPosition(e.from);
@@ -140,8 +143,10 @@ function drawSoftEdges(ctx) {
     const dist = Math.hypot(dx, dy);
     if (dist < 2) continue;
 
-    const nx = -dy / dist;
-    const ny = dx / dist;
+    const ux = dx / dist;
+    const uy = dy / dist;
+    const nx = -uy;
+    const ny = ux;
 
     const slot = fanCount.get(e.from) || 0;
     fanCount.set(e.from, slot + 1);
@@ -156,40 +161,55 @@ function drawSoftEdges(ctx) {
     const v2x = p2.x - prev2.x;
     const v2y = p2.y - prev2.y;
 
-    // năng lượng kích thích theo vận tốc vuông góc dây
-    const excite = ((v1x + v2x) * nx + (v1y + v2y) * ny) * 0.8;
-
-    const base = alt * Math.min(24, 6 + slot * 0.9 + dist * 0.015);
-    const micro = Math.sin(animTime * (1.1 + ((seed >> 3) % 40) / 100) + ((seed % 628) / 100)) * 1.2;
-    const target = base + excite * 3.6 + micro;
+    // điểm neo mục tiêu của 2 control points (1/3 và 2/3 cạnh)
+    const base = alt * Math.min(26, 5 + slot * 0.95 + dist * 0.014);
+    const c1tx = p1.x + dx * 0.34 + nx * base;
+    const c1ty = p1.y + dy * 0.34 + ny * base;
+    const c2tx = p1.x + dx * 0.68 + nx * (base * 0.5);
+    const c2ty = p1.y + dy * 0.68 + ny * (base * 0.5);
 
     const key = `${e.from}->${e.to}:${e.label}`;
     let st = edgeState.get(key);
     if (!st) {
-      st = { off: target, vel: 0, tan: 0, tanVel: 0 };
+      st = {
+        c1x: c1tx, c1y: c1ty, c2x: c2tx, c2y: c2ty,
+        c1vx: 0, c1vy: 0, c2vx: 0, c2vy: 0,
+      };
       edgeState.set(key, st);
     }
 
-    // spring-damper cho offset chính
-    st.vel += (target - st.off) * spring * dt;
-    st.vel *= Math.exp(-damping * dt);
-    st.off += st.vel * dt;
+    // lực kích thích khi node bị kéo: chiếu vận tốc lên pháp tuyến
+    const exciteN = ((v1x + v2x) * nx + (v1y + v2y) * ny) * kick;
+    const exciteT = ((v2x - v1x) * ux + (v2y - v1y) * uy) * (kick * 0.65);
 
-    // tangent cũng có dao động riêng để tránh 1 form cố định
-    const tanTarget = ((v2x - v1x) * (dx / dist) + (v2y - v1y) * (dy / dist)) * 1.2;
-    st.tanVel += (tanTarget - st.tan) * 28 * dt;
-    st.tanVel *= Math.exp(-9 * dt);
-    st.tan += st.tanVel * dt;
+    const tc1x = c1tx + nx * exciteN + ux * exciteT;
+    const tc1y = c1ty + ny * exciteN + uy * exciteT;
+    const tc2x = c2tx + nx * (exciteN * 0.6) - ux * (exciteT * 0.55);
+    const tc2y = c2ty + ny * (exciteN * 0.6) - uy * (exciteT * 0.55);
 
-    const mx = (p1.x + p2.x) / 2;
-    const my = (p1.y + p2.y) / 2;
-    const cx = mx + nx * st.off + (dx / dist) * st.tan;
-    const cy = my + ny * st.off + (dy / dist) * st.tan;
+    // spring-damper cho c1
+    st.c1vx += (tc1x - st.c1x) * kCtrl * dt;
+    st.c1vy += (tc1y - st.c1y) * kCtrl * dt;
+    st.c1vx *= Math.exp(-dCtrl * dt);
+    st.c1vy *= Math.exp(-dCtrl * dt);
+    st.c1x += st.c1vx * dt * 60;
+    st.c1y += st.c1vy * dt * 60;
+
+    // spring-damper cho c2
+    st.c2vx += (tc2x - st.c2x) * kCtrl * dt;
+    st.c2vy += (tc2y - st.c2y) * kCtrl * dt;
+    st.c2vx *= Math.exp(-dCtrl * dt);
+    st.c2vy *= Math.exp(-dCtrl * dt);
+    st.c2x += st.c2vx * dt * 60;
+    st.c2y += st.c2vy * dt * 60;
+
+    // micro jitter rất nhỏ để tránh cảm giác "đường chết"
+    const jitter = Math.sin(animTime * (1 + ((seed >> 2) % 30) / 100) + (seed % 100) * 0.03) * 0.6;
 
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
-    ctx.quadraticCurveTo(cx, cy, p2.x, p2.y);
+    ctx.bezierCurveTo(st.c1x + nx * jitter, st.c1y + ny * jitter, st.c2x - nx * jitter, st.c2y - ny * jitter, p2.x, p2.y);
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(255,157,47,0.62)';
     ctx.lineWidth = 0.95 + Math.min(1.1, (e.weight || 1) * 0.2);
@@ -199,7 +219,6 @@ function drawSoftEdges(ctx) {
     ctx.restore();
   }
 
-  // cập nhật previous positions để frame sau tính velocity
   for (const n of allNodes) {
     const p = network.getPosition(n.id);
     if (p) nodePrevPos.set(n.id, { x: p.x, y: p.y });
