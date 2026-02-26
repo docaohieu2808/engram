@@ -44,6 +44,17 @@ def _get_default_ef():
     return DefaultEmbeddingFunction()
 
 
+def _safe_json_list(val: str | None) -> list:
+    """Parse a JSON string as list, returning [] on any failure."""
+    if not val:
+        return []
+    try:
+        result = json.loads(val)
+        return result if isinstance(result, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
 def _get_embeddings(model: str, texts: list[str], expected_dim: int | None = None) -> list[list[float]]:
     """Generate embeddings via litellm, fallback to ChromaDB default on error.
 
@@ -712,6 +723,178 @@ class EpisodicStore:
             )
         logger.info("Updated topic-keyed memory %s (revision=%d)", mem_id[:8], revision)
         return mem_id
+
+    async def cleanup_dedup(
+        self,
+        threshold: float = 0.85,
+        batch_size: int = 100,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Retroactively deduplicate existing memories by cosine similarity.
+
+        Paginates through ALL memories, finds near-duplicates above threshold,
+        merges entities/tags into the winner (higher priority), and deletes losers.
+
+        Args:
+            threshold: Cosine similarity cutoff (0.0-1.0, default 0.85).
+            batch_size: Number of memories to load per page.
+            dry_run: When True, report what WOULD be merged without any writes.
+
+        Returns:
+            {"merged": X, "deleted": Y, "remaining": Z, "dry_run": bool}
+        """
+        try:
+            collection = self._ensure_collection()
+            total = await asyncio.to_thread(collection.count)
+            if total == 0:
+                return {"merged": 0, "deleted": 0, "remaining": 0, "dry_run": dry_run}
+        except Exception as e:
+            raise RuntimeError(f"cleanup_dedup failed: {e}") from e
+
+        processed: set[str] = set()
+        to_delete: list[str] = []
+        merged_count = 0
+
+        # Paginate through all memories to fetch IDs + embeddings
+        for offset in range(0, total, batch_size):
+            try:
+                page = await asyncio.to_thread(
+                    collection.get,
+                    include=["embeddings", "metadatas", "documents"],
+                    limit=batch_size,
+                    offset=offset,
+                )
+            except Exception as e:
+                logger.warning("cleanup_dedup: failed to fetch page offset=%d: %s", offset, e)
+                break
+
+            page_ids = page.get("ids", [])
+            _raw_emb = page.get("embeddings")
+            page_embeddings = _raw_emb if _raw_emb is not None else []
+            _raw_meta = page.get("metadatas")
+            page_metadatas = _raw_meta if _raw_meta is not None else []
+
+            for i, mem_id in enumerate(page_ids):
+                if mem_id in processed:
+                    continue
+
+                embedding = page_embeddings[i] if i < len(page_embeddings) else None
+                if embedding is None or (hasattr(embedding, '__len__') and len(embedding) == 0):
+                    processed.add(mem_id)
+                    continue
+
+                # Query top-N similar memories for this embedding
+                try:
+                    coll_count = await asyncio.to_thread(collection.count)
+                    n_query = min(20, coll_count)
+                    sim_result = await asyncio.to_thread(
+                        collection.query,
+                        query_embeddings=[embedding],
+                        n_results=n_query,
+                        include=["metadatas", "distances"],
+                    )
+                except Exception as e:
+                    logger.debug("cleanup_dedup: query failed for %s: %s", mem_id[:8], e)
+                    processed.add(mem_id)
+                    continue
+
+                if not sim_result["ids"] or not sim_result["ids"][0]:
+                    processed.add(mem_id)
+                    continue
+
+                winner_meta = page_metadatas[i] if i < len(page_metadatas) else {}
+                winner_entities = set(_safe_json_list(winner_meta.get("entities", "[]")))
+                winner_tags = set(_safe_json_list(winner_meta.get("tags", "[]")))
+                winner_priority = int(winner_meta.get("priority", 5) or 5)
+                dups_for_this: list[str] = []
+
+                for j, candidate_id in enumerate(sim_result["ids"][0]):
+                    if candidate_id == mem_id or candidate_id in processed:
+                        continue
+                    distance = sim_result["distances"][0][j]
+                    similarity = 1.0 - (distance / 2.0)
+                    if similarity < threshold:
+                        continue
+
+                    # This candidate is a near-duplicate of mem_id — absorb it
+                    cand_meta = sim_result["metadatas"][0][j] if sim_result.get("metadatas") else {}
+                    cand_entities = set(_safe_json_list(cand_meta.get("entities", "[]")))
+                    cand_tags = set(_safe_json_list(cand_meta.get("tags", "[]")))
+                    cand_priority = int(cand_meta.get("priority", 5) or 5)
+
+                    winner_entities |= cand_entities
+                    winner_tags |= cand_tags
+                    winner_priority = max(winner_priority, cand_priority)
+                    dups_for_this.append(candidate_id)
+                    processed.add(candidate_id)
+
+                if dups_for_this:
+                    merged_count += 1
+                    to_delete.extend(dups_for_this)
+                    if not dry_run:
+                        try:
+                            await asyncio.to_thread(
+                                collection.update,
+                                ids=[mem_id],
+                                metadatas=[{
+                                    "entities": json.dumps(sorted(winner_entities)),
+                                    "tags": json.dumps(sorted(winner_tags)),
+                                    "priority": winner_priority,
+                                }],
+                            )
+                        except Exception as e:
+                            logger.warning("cleanup_dedup: update winner %s failed: %s", mem_id[:8], e)
+
+                    logger.debug(
+                        "cleanup_dedup: %s absorbs %d duplicate(s) (sim>=%.2f)",
+                        mem_id[:8], len(dups_for_this), threshold,
+                    )
+
+                processed.add(mem_id)
+
+            processed_total = len(processed)
+            if processed_total % 100 == 0 or offset + batch_size >= total:
+                logger.info(
+                    "cleanup_dedup: processed %d/%d memories, %d duplicates found so far",
+                    processed_total, total, len(to_delete),
+                )
+
+        # Delete all losers
+        deleted_count = 0
+        if to_delete and not dry_run:
+            _BATCH = 500
+            for i in range(0, len(to_delete), _BATCH):
+                batch = to_delete[i:i + _BATCH]
+                try:
+                    await asyncio.to_thread(collection.delete, ids=batch)
+                    deleted_count += len(batch)
+                except Exception as e:
+                    logger.warning("cleanup_dedup: delete batch failed: %s", e)
+                # Remove from FTS index
+                for dup_id in batch:
+                    try:
+                        await asyncio.to_thread(self._fts.delete, dup_id)
+                    except Exception:
+                        pass
+        elif dry_run:
+            deleted_count = len(to_delete)
+
+        remaining = await asyncio.to_thread(collection.count)
+
+        if not dry_run and self._audit and to_delete:
+            self._audit.log_modification(
+                tenant_id=self._namespace, actor="system",
+                mod_type="cleanup_dedup", resource_id="",
+                after_value={"merged_groups": merged_count, "deleted": deleted_count},
+                reversible=False,
+                description=f"Retroactive dedup: merged {merged_count} groups, deleted {deleted_count} duplicates",
+            )
+
+        logger.info(
+            "cleanup_dedup complete: merged=%d deleted=%d remaining=%d dry_run=%s",
+            merged_count, deleted_count, remaining, dry_run,
+        )
+        return {"merged": merged_count, "deleted": deleted_count, "remaining": remaining, "dry_run": dry_run}
 
     async def _dedup_merge(
         self,

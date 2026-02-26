@@ -250,6 +250,36 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         return f"Cleaned up {deleted} expired {'memory' if deleted == 1 else 'memories'}."
 
     @mcp.tool()
+    async def engram_cleanup_dedup(
+        threshold: float = 0.85,
+        dry_run: bool = False,
+        namespace: str | None = None,
+    ) -> str:
+        """Retroactively deduplicate existing memories by cosine similarity.
+
+        Scans all memories, merges near-duplicates into the higher-priority winner,
+        and deletes the losers. Use dry_run=True first to preview what would change.
+
+        Args:
+            threshold: Similarity cutoff 0.0-1.0 (default 0.85). Lower = more aggressive.
+            dry_run: If True, report what WOULD be merged without deleting anything.
+            namespace: Override config namespace for this operation.
+        """
+        store = _get_store(get_episodic, get_config, namespace)
+        result = await store.cleanup_dedup(threshold=threshold, dry_run=dry_run)
+        mode = "[DRY RUN] " if dry_run else ""
+        merged = result["merged"]
+        deleted = result["deleted"]
+        remaining = result["remaining"]
+        if merged == 0:
+            return f"{mode}No duplicates found (threshold={threshold})."
+        return (
+            f"{mode}Dedup complete: {merged} duplicate group(s) merged, "
+            f"{deleted} {'would be ' if dry_run else ''}deleted, "
+            f"{remaining} memories remaining."
+        )
+
+    @mcp.tool()
     async def engram_ingest(messages: Union[list[dict], str]) -> str:
         """Dual ingest: extract entities to graph AND remember context to vector.
 

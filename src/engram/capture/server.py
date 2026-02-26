@@ -518,6 +518,26 @@ def create_app(
         deleted = await ep.cleanup_expired()
         return {"status": "ok", "deleted": deleted}
 
+    @v1.post("/cleanup/dedup")
+    async def cleanup_dedup(
+        threshold: float = 0.85,
+        dry_run: bool = False,
+        auth: AuthContext = Depends(get_auth_context),
+    ):
+        """Retroactively deduplicate episodic memories by cosine similarity.
+
+        Scans all memories, merges near-duplicates (similarity >= threshold) into
+        the higher-priority winner, and deletes the losers.
+
+        Args:
+            threshold: Similarity cutoff 0.0-1.0 (default 0.85).
+            dry_run: Report what would be merged without actually deleting.
+        """
+        _require_admin(auth)
+        ep = _resolve_episodic(auth)
+        result = await ep.cleanup_dedup(threshold=threshold, dry_run=dry_run)
+        return {"status": "ok", **result}
+
     @v1.post("/summarize")
     async def summarize(req: SummarizeRequest, auth: AuthContext = Depends(get_auth_context)):
         """Summarize recent N memories into key insights using LLM."""
