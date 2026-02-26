@@ -211,9 +211,12 @@ class OpenClawWatcher:
 
         logger.info("OpenClaw watcher started: %s", self._sessions_dir)
 
-        # Keep running until cancelled
+        # Keep running until cancelled.
+        # Also do periodic fallback scans to handle missed FS events.
         try:
             while self._observer.is_alive():
+                for jsonl in self._sessions_dir.glob("*.jsonl"):
+                    handler._process_new_lines(str(jsonl))
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
             self.stop()
