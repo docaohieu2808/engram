@@ -168,8 +168,11 @@ class EngramClient:
         await self._ensure_stores()
         return await self._episodic.search(query, limit=limit)
 
-    async def think(self, question: str) -> str:
-        """Reason over memories to answer a question."""
+    async def think(self, question: str) -> dict:
+        """Reason over memories to answer a question.
+
+        Returns a dict with answer (str) and degraded (bool).
+        """
         await self._ensure_engine()
         return await self._engine.think(question)
 

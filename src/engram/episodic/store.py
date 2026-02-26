@@ -172,12 +172,23 @@ class EpisodicStore:
         except Exception as _te:
             logger.debug("Temporal resolution skipped: %s", _te)
 
-        # Resolve pronouns using provided entity names (regex-based, no LLM)
+        # Resolve pronouns via unified resolver (regex → LLM fallback if needed).
+        # store.py only has entity names (no conversation history), so we build
+        # a minimal synthetic context so entity_resolver can extract names.
+        # Without conversation history the LLM fallback is skipped automatically.
         if entities:
             try:
-                from engram.recall.pronoun_resolver import resolve_pronouns, has_resolvable_pronouns
-                if has_resolvable_pronouns(content):
-                    content = resolve_pronouns(content, entities)
+                from engram.recall.entity_resolver import resolve as _entity_resolve
+                # Build synthetic context messages so _extract_entity_names_from_context
+                # can pick up the entity names we already have.
+                synthetic_ctx = [{"role": "assistant", "content": " ".join(entities)}]
+                _resolved = await _entity_resolve(
+                    content,
+                    context=synthetic_ctx,
+                    resolve_temporal_refs=False,
+                    resolve_pronoun_refs=True,
+                )
+                content = _resolved.resolved
             except Exception as _pe:
                 logger.debug("Pronoun resolution skipped: %s", _pe)
 

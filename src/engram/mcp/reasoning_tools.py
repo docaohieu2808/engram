@@ -21,7 +21,11 @@ def register(mcp, get_engine, get_episodic, get_graph, get_providers=None) -> No
         intent = classify_intent(query)
         if intent == "think":
             engine = get_engine()
-            return await engine.think(query)
+            result = await engine.think(query)
+            text = result["answer"]
+            if result.get("degraded"):
+                text = "[degraded mode] " + text
+            return text
         # Recall path: episodic + graph + federated, no LLM synthesis
         store = get_episodic()
         results = await store.search(query, limit=5)
@@ -52,7 +56,11 @@ def register(mcp, get_engine, get_episodic, get_graph, get_providers=None) -> No
             question: Question to reason about (e.g. "What database issues happened recently?")
         """
         engine = get_engine()
-        return await engine.think(question)
+        result = await engine.think(question)
+        text = result["answer"]
+        if result.get("degraded"):
+            text = "[degraded mode] " + text
+        return text
 
     @mcp.tool()
     async def engram_summarize(count: int = 20, save: bool = False) -> str:

@@ -11,7 +11,7 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-from engram.config import RecallPipelineConfig
+from engram.config import RecallPipelineConfig, ScoringConfig
 from engram.models import ResolvedText, SearchResult
 
 if TYPE_CHECKING:
@@ -29,10 +29,12 @@ class ParallelSearcher:
         episodic: EpisodicStore,
         semantic: SemanticGraph,
         config: RecallPipelineConfig | None = None,
+        scoring: ScoringConfig | None = None,
     ):
         self._episodic = episodic
         self._semantic = semantic
         self._config = config or RecallPipelineConfig()
+        self._scoring = scoring
 
     async def search(
         self,
@@ -89,7 +91,7 @@ class ParallelSearcher:
             results.append(SearchResult(
                 id=m.id,
                 content=m.content,
-                score=_memory_score(m),
+                score=_memory_score(m, self._scoring),
                 source="semantic",
                 memory_type=m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type),
                 importance=m.priority,
@@ -164,16 +166,33 @@ class ParallelSearcher:
         return fused[:limit]
 
 
-def _memory_score(memory: Any) -> float:
+def _memory_score(memory: Any, scoring: ScoringConfig | None = None) -> float:
     """Compute a normalized score from an EpisodicMemory for fusion ranking.
 
-    Uses hardcoded weights (60% similarity, 40% priority) independent of
-    ScoringConfig. Similarity is proxied via confidence (0-1) which reflects
-    user feedback and store-scored quality; priority is normalized to 0-1.
+    When scoring is None, uses default weights (60% similarity, 40% priority).
+    When scoring is provided, uses ScoringConfig.similarity_weight and
+    ScoringConfig.retention_weight, normalized so they sum to 1.0.
+
+    Similarity is proxied via confidence (0-1) which reflects user feedback
+    and store-scored quality; priority is normalized to 0-1 as retention proxy.
     """
     priority_score = memory.priority / 10.0
     # confidence (0-1) reflects user feedback and store-scored similarity quality
     similarity_score = getattr(memory, "confidence", 0.5)
-    # Weighted combination: 60% similarity, 40% priority
-    score = 0.6 * similarity_score + 0.4 * priority_score
+
+    if scoring is not None:
+        # Normalize similarity_weight + retention_weight so they sum to 1.0
+        w_sim = scoring.similarity_weight
+        w_ret = scoring.retention_weight
+        total = w_sim + w_ret
+        if total > 0:
+            w_sim = w_sim / total
+            w_ret = w_ret / total
+        else:
+            w_sim, w_ret = 0.6, 0.4
+        score = w_sim * similarity_score + w_ret * priority_score
+    else:
+        # Default: 60% similarity, 40% priority
+        score = 0.6 * similarity_score + 0.4 * priority_score
+
     return max(0.1, score)

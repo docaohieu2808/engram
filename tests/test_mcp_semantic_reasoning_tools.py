@@ -153,7 +153,7 @@ class TestEngramThink:
     async def test_think_calls_engine_and_returns_result(self, episodic_store, semantic_graph):
         from engram.mcp.reasoning_tools import register
         mock_engine = AsyncMock()
-        mock_engine.think = AsyncMock(return_value="LLM answer about the question")
+        mock_engine.think = AsyncMock(return_value={"answer": "LLM answer about the question", "degraded": False})
         tools = _make_mcp_tools(
             register, lambda: mock_engine, lambda: episodic_store, lambda: semantic_graph
         )

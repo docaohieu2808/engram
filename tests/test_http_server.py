@@ -45,7 +45,7 @@ def mock_graph():
 @pytest.fixture
 def mock_engine():
     eng = AsyncMock()
-    eng.think = AsyncMock(return_value="LLM answer")
+    eng.think = AsyncMock(return_value={"answer": "LLM answer", "degraded": False})
     eng.summarize = AsyncMock(return_value="Summary text")
     return eng
 

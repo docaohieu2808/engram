@@ -43,8 +43,10 @@ def register(app: typer.Typer, get_config) -> None:
         if intent == "think":
             console.print("[dim]intent: think[/dim]")
             engine = _get_engine()
-            answer = run_async(engine.think(query))
-            console.print(answer)
+            result = run_async(engine.think(query))
+            if result.get("degraded"):
+                console.print("[yellow][degraded mode][/yellow]")
+            console.print(result["answer"])
         else:
             console.print("[dim]intent: recall[/dim]")
             from engram.cli.episodic import _get_episodic
@@ -71,5 +73,7 @@ def register(app: typer.Typer, get_config) -> None:
     def think(question: str = typer.Argument(..., help="Question to reason about")):
         """Combined reasoning across both memories."""
         engine = _get_engine()
-        answer = run_async(engine.think(question))
-        console.print(answer)
+        result = run_async(engine.think(question))
+        if result.get("degraded"):
+            console.print("[yellow][degraded mode][/yellow]")
+        console.print(result["answer"])

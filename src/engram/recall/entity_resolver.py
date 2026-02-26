@@ -1,7 +1,8 @@
 """Entity resolver — pronoun and temporal reference resolution.
 
 Temporal resolution is pure regex (no LLM needed).
-Pronoun resolution uses a cheap LLM (gemini-flash) with conversation context.
+Pronoun resolution: regex-first (pronoun_resolver), then LLM fallback only if
+unresolved pronouns remain.
 """
 
 from __future__ import annotations
@@ -12,6 +13,10 @@ import re
 from datetime import datetime
 from engram.models import Entity, ResolvedText
 from engram.recall.temporal_resolver import resolve_temporal as _temporal_resolve
+from engram.recall.pronoun_resolver import (
+    resolve_pronouns as _regex_resolve_pronouns,
+    has_resolvable_pronouns as _has_resolvable_pronouns,
+)
 from engram.sanitize import sanitize_llm_input
 
 logger = logging.getLogger("engram")
@@ -110,6 +115,29 @@ async def resolve_pronouns(
         return ResolvedText(original=text, resolved=text)
 
 
+def _extract_entity_names_from_context(context: list[dict], max_messages: int = 10) -> list[str]:
+    """Extract candidate entity names (capitalized words) from recent context messages.
+
+    Uses simple capitalization heuristic — words starting with uppercase letter
+    that are at least 2 characters long. Returns list ordered by most-recent first.
+    Suitable for feeding into regex pronoun_resolver as context_entities.
+    """
+    import re as _re
+    # Word pattern: starts with uppercase, at least 2 chars, no digits
+    _cap_word = _re.compile(r"\b([A-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠƯẠẶẤẦẨẪẬẮẰẲẴẶẾỀỂỄỆỈỊỌỘỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲỴÝỶỸ][a-zA-ZÀ-ỹ]{1,})\b")
+    seen: set[str] = set()
+    names: list[str] = []
+    recent = context[-max_messages:] if len(context) > max_messages else context
+    for msg in reversed(recent):  # most recent first
+        text = msg.get("content", "")
+        for match in _cap_word.finditer(text):
+            word = match.group(1)
+            if word not in seen:
+                seen.add(word)
+                names.append(word)
+    return names
+
+
 async def resolve(
     text: str,
     context: list[dict] | None = None,
@@ -133,11 +161,22 @@ async def resolve(
         if primary_date:
             temporal_refs = {"resolved_date": primary_date}
 
-    # Step 2: Pronoun resolution (LLM-assisted)
-    if resolve_pronoun_refs and context:
-        pronoun_result = await resolve_pronouns(resolved_text, context, model)
-        resolved_text = pronoun_result.resolved
-        entities = pronoun_result.entities
+    # Step 2: Pronoun resolution — regex-first, LLM fallback only if needed
+    if resolve_pronoun_refs:
+        # 2a: Regex pass — extract entity names from context messages
+        if context:
+            context_entities = _extract_entity_names_from_context(context)
+        else:
+            context_entities = []
+
+        if context_entities and _has_resolvable_pronouns(resolved_text):
+            resolved_text = _regex_resolve_pronouns(resolved_text, context_entities)
+
+        # 2b: LLM fallback only when pronouns still remain unresolved after regex pass
+        if context and _has_resolvable_pronouns(resolved_text):
+            pronoun_result = await resolve_pronouns(resolved_text, context, model)
+            resolved_text = pronoun_result.resolved
+            entities = pronoun_result.entities
 
     return ResolvedText(
         original=text,

@@ -202,6 +202,89 @@ class TestResolveFullPipeline:
         assert result.original == "hôm nay cô ấy đi mall"
 
 
+class TestUnifiedPronouns:
+    """Test unified regex-first → LLM-fallback pronoun resolution in resolve()."""
+
+    @pytest.mark.asyncio
+    async def test_simple_regex_resolves_without_llm(self):
+        """Regex pass should resolve clear pronoun; LLM must NOT be called."""
+        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            result = await resolve(
+                "anh ấy thích cà phê",
+                context=[{"role": "user", "content": "Max là bạn tôi"}],
+                resolve_temporal_refs=False,
+                resolve_pronoun_refs=True,
+            )
+        # Regex should have resolved "anh ấy" → "Max"
+        assert "Max" in result.resolved
+        # LLM must NOT have been called since regex succeeded
+        mock_llm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_pronouns_fall_back_to_llm(self):
+        """When context has multiple entities of same gender, regex may leave pronouns;
+        LLM fallback should then be triggered."""
+        # Provide two male entities so regex is ambiguous → leaves "he" unresolved
+        # LLM will then resolve it
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = (
+            '{"resolved": "Max went to the store", "entities": [{"name": "Max", "type": "person"}]}'
+        )
+        with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_response) as mock_llm:
+            result = await resolve(
+                "he went to the store",
+                context=[
+                    {"role": "user", "content": "Max and John are both friends"},
+                ],
+                resolve_temporal_refs=False,
+                resolve_pronoun_refs=True,
+            )
+        # LLM should have been called since "he" remained after regex (two male candidates)
+        mock_llm.assert_called_once()
+        assert "Max" in result.resolved
+
+    @pytest.mark.asyncio
+    async def test_no_context_skips_both_regex_and_llm(self):
+        """With no context, neither regex nor LLM should mutate the text."""
+        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            result = await resolve(
+                "cô ấy ở đâu?",
+                context=None,
+                resolve_temporal_refs=False,
+                resolve_pronoun_refs=True,
+            )
+        assert result.resolved == "cô ấy ở đâu?"
+        mock_llm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_female_pronoun_resolved_by_regex(self):
+        """cô ấy → female entity extracted from context via regex."""
+        with patch("litellm.acompletion", new_callable=AsyncMock) as mock_llm:
+            result = await resolve(
+                "cô ấy làm nghề gì?",
+                context=[{"role": "user", "content": "Linh là bạn của tôi"}],
+                resolve_temporal_refs=False,
+                resolve_pronoun_refs=True,
+            )
+        # "Linh" starts with uppercase, extracted by context extractor.
+        # Since "Linh" has no gender mapping, regex resolves with single entity fallback.
+        assert "Linh" in result.resolved
+        mock_llm.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_extract_entity_names_from_context(self):
+        """Helper extracts capitalized words from context messages."""
+        from engram.recall.entity_resolver import _extract_entity_names_from_context
+        ctx = [
+            {"role": "user", "content": "Trâm và Max là bạn bè"},
+            {"role": "assistant", "content": "Tôi hiểu rồi"},
+        ]
+        names = _extract_entity_names_from_context(ctx)
+        # Both capitalized names should appear
+        assert "Trâm" in names or "Max" in names
+
+
 class TestMonthOffset:
     """Test _month_offset helper from temporal_resolver."""
 

@@ -513,4 +513,4 @@ class TestResourceAwareReasoning:
 
             with patch("engram.reasoning.engine.federated_search", new_callable=AsyncMock, return_value=[]):
                 result = await engine.think("test question")
-                assert "No relevant memories" in result
+                assert "No relevant memories" in result["answer"]

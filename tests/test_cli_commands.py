@@ -56,7 +56,7 @@ def mock_graph():
 @pytest.fixture
 def mock_engine():
     engine = AsyncMock()
-    engine.think = AsyncMock(return_value="42 is the answer")
+    engine.think = AsyncMock(return_value={"answer": "42 is the answer", "degraded": False})
     engine.summarize = AsyncMock(return_value="Summary of recent memories")
     return engine
 
@@ -182,10 +182,11 @@ def test_recall_no_federation_flag_skips_providers(mock_episodic_store, mock_gra
 # --- think tests ---
 
 def test_think_basic(mock_engine):
-    with patch("engram.reasoning.engine.ReasoningEngine.think", new=AsyncMock(return_value="42 is the answer")), \
+    think_result = {"answer": "42 is the answer", "degraded": False}
+    with patch("engram.reasoning.engine.ReasoningEngine.think", new=AsyncMock(return_value=think_result)), \
          patch("engram.episodic.store.EpisodicStore.__init__", return_value=None), \
          patch("engram.semantic.create_graph", return_value=MagicMock()), \
-         patch("engram.cli.reasoning.run_async", return_value="42 is the answer"):
+         patch("engram.cli.reasoning.run_async", return_value=think_result):
         result = runner.invoke(app, ["think", "What is life?"])
     assert result.exit_code == 0
     assert "42 is the answer" in result.output

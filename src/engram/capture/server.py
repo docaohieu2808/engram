@@ -270,7 +270,7 @@ def create_app(
         if engine is not None:
             return engine
         # Build a per-request engine when using StoreFactory (use cached _cfg)
-        return ReasoningEngine(ep, gr, model=_cfg.llm.model, on_think_hook=_cfg.hooks.on_think, recall_config=_cfg.recall_pipeline)
+        return ReasoningEngine(ep, gr, model=_cfg.llm.model, on_think_hook=_cfg.hooks.on_think, recall_config=_cfg.recall_pipeline, scoring_config=_cfg.scoring)
 
     # --- Root-level public routes ---
 
@@ -421,13 +421,13 @@ def create_app(
             cached = await cache.get(auth.tenant_id, "think", {"q": req.question})
             if cached is not None:
                 return cached
-            answer = await eng.think(req.question)
-            result = {"status": "ok", "answer": answer}
+            think_result = await eng.think(req.question)
+            result = {"status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"]}
             await cache.set(auth.tenant_id, "think", {"q": req.question}, result, ttl=_cfg.cache.think_ttl)
             return result
 
-        answer = await eng.think(req.question)
-        return {"status": "ok", "answer": answer}
+        think_result = await eng.think(req.question)
+        return {"status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"]}
 
     @v1.get("/recall")
     async def recall(

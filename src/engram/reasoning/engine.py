@@ -85,6 +85,7 @@ class ReasoningEngine:
         on_think_hook: str | None = None,
         providers: list[MemoryProvider] | None = None,
         recall_config=None,
+        scoring_config=None,
     ):
         self._episodic = episodic
         self._graph = graph
@@ -94,6 +95,7 @@ class ReasoningEngine:
         # Cache of graph node names to avoid full scan on every think() call
         self._node_names_cache: list[str] | None = None
         self._recall_config = recall_config
+        self._scoring_config = scoring_config
         self._parallel_search = getattr(recall_config, "parallel_search", False) if recall_config else False
 
     def invalidate_cache(self) -> None:
@@ -161,8 +163,13 @@ class ReasoningEngine:
 
         return summary
 
-    async def think(self, question: str) -> str:
-        """Answer a question by combining episodic, semantic, and federated memory."""
+    async def think(self, question: str) -> dict:
+        """Answer a question by combining episodic, semantic, and federated memory.
+
+        Returns a dict with keys:
+            answer (str): The synthesized or raw answer text.
+            degraded (bool): True when LLM was skipped due to resource tier.
+        """
         _SEARCH_LIMIT = 15
 
         # 0. Resolve temporal references in question so search finds dated memories
@@ -178,7 +185,7 @@ class ReasoningEngine:
         # 1. Vector search for relevant episodic memories
         if self._parallel_search and self._episodic and self._graph:
             from engram.recall.parallel_search import ParallelSearcher
-            searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config)
+            searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config, self._scoring_config)
             search_results = await searcher.search(search_question, limit=_SEARCH_LIMIT)
             # Format parallel search results grouped by memory type for LLM context
             from engram.recall.fusion_formatter import format_for_llm
@@ -240,23 +247,29 @@ class ReasoningEngine:
         monitor = get_resource_monitor()
         if episodic_results or semantic_results or provider_results:
             if monitor.can_use_llm():
-                answer = await self._synthesize(
+                result = await self._synthesize(
                     question, episodic_results, semantic_results, provider_results,
                     episodic_context_override=episodic_context if _use_parallel else None,
                 )
             else:
                 # BASIC tier: return raw results without LLM synthesis
                 tier = monitor.get_tier()
-                logger.info("Resource tier %s — skipping LLM synthesis", tier.value)
+                logger.warning(
+                    "think() degraded: resource tier %s — skipping LLM synthesis",
+                    tier.value,
+                )
                 if _use_parallel:
-                    answer = episodic_context or "No relevant memories found for this question."
+                    result = {
+                        "answer": episodic_context or "No relevant memories found for this question.",
+                        "degraded": True,
+                    }
                 else:
-                    answer = self._format_raw_results(episodic_results, semantic_results)
+                    result = self._format_raw_results(episodic_results, semantic_results)
         else:
-            answer = "No relevant memories found for this question."
+            result = {"answer": "No relevant memories found for this question.", "degraded": False}
 
-        fire_hook(self._on_think_hook, {"question": question, "answer": answer})
-        return answer
+        fire_hook(self._on_think_hook, {"question": question, "answer": result["answer"]})
+        return result
 
     async def _extract_entity_hints(self, question: str) -> list[str]:
         """Match words in question against known graph node names.
@@ -315,8 +328,11 @@ class ReasoningEngine:
         self,
         episodic: list[EpisodicMemory],
         semantic: dict[str, Any],
-    ) -> str:
-        """Format raw memory results without LLM synthesis (degraded mode)."""
+    ) -> dict:
+        """Format raw memory results without LLM synthesis (degraded mode).
+
+        Returns a dict with answer (str) and degraded=True.
+        """
         lines = ["[Resource-aware mode: returning raw memories without LLM synthesis]\n"]
         if episodic:
             lines.append("## Episodic Memories")
@@ -331,7 +347,7 @@ class ReasoningEngine:
                     for n in data.get("nodes", []):
                         if isinstance(n, SemanticNode):
                             lines.append(f"  - [{n.type}] {n.name}")
-        return "\n".join(lines)
+        return {"answer": "\n".join(lines), "degraded": True}
 
     async def _synthesize(
         self,
@@ -340,8 +356,11 @@ class ReasoningEngine:
         semantic: dict[str, Any],
         provider_results: list | None = None,
         episodic_context_override: str | None = None,
-    ) -> str:
-        """Use LLM to reason over combined memory results."""
+    ) -> dict:
+        """Use LLM to reason over combined memory results.
+
+        Returns a dict with answer (str) and degraded (bool).
+        """
         from engram.providers.base import ProviderResult
 
         # Format episodic context — use pre-built parallel search context if provided
@@ -408,7 +427,7 @@ class ReasoningEngine:
                     temperature=0.0,
                 )
                 monitor.record_success()
-                return response.choices[0].message.content
+                return {"answer": response.choices[0].message.content, "degraded": False}
             except Exception as e:
                 last_exc = e
                 err_str = str(e).lower()
@@ -428,4 +447,7 @@ class ReasoningEngine:
 
         # Fallback: return raw results without LLM synthesis
         logger.error("LLM synthesis failed: %s", last_exc)
-        return f"Memory results (LLM synthesis failed: {last_exc}):\n\n{episodic_ctx}\n\n{semantic_ctx}"
+        return {
+            "answer": f"Memory results (LLM synthesis failed: {last_exc}):\n\n{episodic_ctx}\n\n{semantic_ctx}",
+            "degraded": True,
+        }
