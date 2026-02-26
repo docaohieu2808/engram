@@ -87,6 +87,78 @@ async function loadGraph() {
 // XSS defense: escape user-controlled strings before inserting into innerHTML
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 
+function stableSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) || 1;
+}
+
+function createRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function drawThreadEdges(ctx) {
+  if (!network || !allEdges?.length) return;
+
+  const fanCounter = new Map();
+  const baseColor = 'rgba(255,157,47,0.72)';
+  const glowColor = 'rgba(255,157,47,0.34)';
+
+  for (const e of allEdges) {
+    const p1 = network.getPosition(e.from);
+    const p2 = network.getPosition(e.to);
+    if (!p1 || !p2) continue;
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 2) continue;
+
+    const nx = -dy / dist;
+    const ny = dx / dist;
+
+    const fan = fanCounter.get(e.from) || 0;
+    fanCounter.set(e.from, fan + 1);
+
+    const rng = createRng(stableSeed(`${e.from}|${e.label}|${e.to}`));
+    const alt = fan % 2 === 0 ? 1 : -1;
+    const baseOffset = alt * (10 + fan * 1.6 + rng() * 10);
+    const tangent = (rng() - 0.5) * 28;
+
+    const startJitter = 1 + Math.min(6, fan * 0.32);
+    const sx = p1.x + nx * ((rng() - 0.5) * startJitter * 2);
+    const sy = p1.y + ny * ((rng() - 0.5) * startJitter * 2);
+    const ex = p2.x + nx * ((rng() - 0.5) * 2);
+    const ey = p2.y + ny * ((rng() - 0.5) * 2);
+
+    const t1 = 0.18 + rng() * 0.18;
+    const t2 = 0.56 + rng() * 0.24;
+    const c1x = sx + (ex - sx) * t1 + nx * (baseOffset * (0.9 + rng() * 0.7));
+    const c1y = sy + (ey - sy) * t1 + ny * (baseOffset * (0.9 + rng() * 0.7));
+    const c2x = sx + (ex - sx) * t2 + nx * (baseOffset * (0.2 + rng() * 0.8)) + ((ex - sx) / dist) * tangent;
+    const c2y = sy + (ey - sy) * t2 + ny * (baseOffset * (0.2 + rng() * 0.8)) + ((ey - sy) / dist) * tangent;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, ex, ey);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = baseColor;
+    ctx.lineWidth = 1.05 + Math.min(1.25, (e.weight || 1) * 0.25);
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 3.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function renderGraph(nodes, edges) {
   document.getElementById('loading').style.display = 'none';
 
@@ -105,8 +177,18 @@ function renderGraph(nodes, edges) {
   edgesDataset = new vis.DataSet(edges.map(e => ({
     ...e,
     font: { color: mutedColor, size: 10, align: 'middle' },
-    color: { color: borderColor, hover: accentColor, highlight: accentColor },
-    smooth: { type: 'curvedCW', roundness: 0.2 },
+    // Ẩn line mặc định để tránh double-line khi hover/selected
+    color: {
+      color: 'rgba(0,0,0,0)',
+      hover: 'rgba(0,0,0,0)',
+      highlight: 'rgba(0,0,0,0)',
+      inherit: false,
+    },
+    smooth: { type: 'dynamic', roundness: 0.15 },
+    width: 1,
+    hoverWidth: 0,
+    selectionWidth: 0,
+    chosen: false,
   })));
 
   const container = document.getElementById('graph-container');
@@ -119,11 +201,22 @@ function renderGraph(nodes, edges) {
     },
     interaction: { hover: true, tooltipDelay: 200 },
     nodes: { shape: 'dot', size: 16 },
-    edges: { arrows: { to: { enabled: true, scaleFactor: 0.6 } } },
+    edges: {
+      arrows: { to: { enabled: false } },
+      color: {
+        color: 'rgba(0,0,0,0)',
+        hover: 'rgba(0,0,0,0)',
+        highlight: 'rgba(0,0,0,0)',
+        inherit: false,
+      },
+      hoverWidth: 0,
+      selectionWidth: 0,
+    },
     background: { color: '#1a1a2e' },
   };
 
   network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);
+  network.on('beforeDrawing', drawThreadEdges);
   network.on('click', params => {
     if (params.nodes.length > 0) showNodeDetails(params.nodes[0]);
     else clearNodeDetails();
