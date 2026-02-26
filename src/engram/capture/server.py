@@ -952,6 +952,10 @@ def create_app(
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+    # --- WebSocket routes ---
+    from engram.ws import register_ws_routes
+    register_ws_routes(app, store_factory, episodic, graph, engine, ingest_fn, cache, _cfg)
+
     app.include_router(v1)
     return app
 
