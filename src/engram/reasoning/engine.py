@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 import litellm
@@ -25,6 +26,9 @@ logger = logging.getLogger("engram")
 SUMMARIZE_PROMPT = """You are a memory assistant. Summarize the following memories into key insights.
 Be concise. Group related items. Highlight patterns, decisions, and important facts.
 
+## Current Date & Time
+{current_datetime}
+
 ## Memories
 {memories}
 
@@ -36,6 +40,9 @@ Be concise. Group related items. Highlight patterns, decisions, and important fa
 """
 
 REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retrieved memories below, answer the user's question.
+
+## Current Date & Time
+{current_datetime}
 
 ## Episodic Memories (experiences, events)
 {episodic_context}
@@ -55,6 +62,7 @@ REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retriev
 - Look for patterns: repeated behavior, contradictions between words and actions, emotional subtext
 - Answer the REAL question, not the surface question. What is the user truly asking?
 - Be specific - cite dates, names, and details from memories
+- TEMPORAL AWARENESS: Use the current date to resolve relative time references ("hôm nay", "hôm qua", "tuần trước"). Distinguish old events from recent ones by comparing timestamps.
 - If memories contradict, note the conflict and reason about what it reveals
 - If no relevant memories found, say so honestly
 - Keep answer concise and direct — one strong insight beats five weak summaries
@@ -108,7 +116,11 @@ class ReasoningEngine:
 
         # Inject constitution as immutable prefix
         constitution_prefix = get_constitution_prompt_prefix()
-        prompt = constitution_prefix + SUMMARIZE_PROMPT.format(memories=memories_text)
+        now = datetime.now(timezone.utc).astimezone()
+        prompt = constitution_prefix + SUMMARIZE_PROMPT.format(
+            current_datetime=now.strftime("%Y-%m-%d %H:%M (%A, %Z)"),
+            memories=memories_text,
+        )
 
         monitor = get_resource_monitor()
         if not monitor.can_use_llm():
@@ -299,7 +311,9 @@ class ReasoningEngine:
 
         # Inject constitution as immutable prefix (Law I, II, III)
         constitution_prefix = get_constitution_prompt_prefix()
+        now = datetime.now(timezone.utc).astimezone()
         prompt = constitution_prefix + REASONING_PROMPT.format(
+            current_datetime=now.strftime("%Y-%m-%d %H:%M (%A, %Z)"),
             episodic_context=episodic_ctx,
             semantic_context=semantic_ctx,
             provider_context=provider_ctx,
