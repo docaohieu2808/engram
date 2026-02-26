@@ -93,7 +93,7 @@ const Graph = {
           highlight: { background: colors.background, border: '#fff' },
           hover: { background: colors.background, border: '#fff' },
         },
-        font: { color: colors.font, size: 12 },
+        font: { color: textColor, size: 12 },
         borderWidth: 2,
       };
     }));
@@ -102,6 +102,7 @@ const Graph = {
     const bgColor = cs.getPropertyValue('--bg-canvas').trim();
     const accentColor = cs.getPropertyValue('--accent').trim();
     const mutedColor = cs.getPropertyValue('--text-muted').trim();
+    const textColor = cs.getPropertyValue('--text-primary').trim();
 
     this._edgesDS = new vis.DataSet(this._edges.map(e => ({
       ...e, font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
