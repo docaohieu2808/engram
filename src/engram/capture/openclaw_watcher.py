@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-from watchdog.events import FileModifiedEvent, FileCreatedEvent, FileSystemEventHandler
+from watchdog.events import FileModifiedEvent, FileCreatedEvent, FileMovedEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 logger = logging.getLogger("engram")
@@ -112,6 +112,19 @@ class _SessionFileHandler(FileSystemEventHandler):
         self._positions[event.src_path] = 0
         self._process_new_lines(event.src_path)
 
+    def on_moved(self, event: FileMovedEvent) -> None:
+        if event.is_directory:
+            return
+        dest = getattr(event, "dest_path", "")
+        if not dest.endswith(".jsonl"):
+            return
+        # Handle atomic-rename writes (temp file -> session.jsonl)
+        if event.src_path in self._positions:
+            self._positions[dest] = self._positions.pop(event.src_path)
+        else:
+            self._positions.setdefault(dest, 0)
+        self._process_new_lines(dest)
+
     def _process_new_lines(self, path: str) -> None:
         """Read new lines from file since last known position, parse and ingest."""
         try:
@@ -145,9 +158,15 @@ class _SessionFileHandler(FileSystemEventHandler):
                     len(messages),
                     Path(path).name,
                 )
-                asyncio.run_coroutine_threadsafe(
+                fut = asyncio.run_coroutine_threadsafe(
                     self._ingest_fn(messages), self._loop
                 )
+                def _done(f):
+                    try:
+                        f.result()
+                    except Exception as ex:
+                        logger.warning("OpenClaw ingest failed for %s: %s", Path(path).name, ex)
+                fut.add_done_callback(_done)
 
         except Exception as e:
             logger.warning("OpenClaw watcher error on %s: %s", path, e)
