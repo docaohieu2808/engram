@@ -82,6 +82,7 @@ def register(app: typer.Typer, add_app: typer.Typer, remove_app: typer.Typer, ge
         min_co_mentions: int = typer.Option(3, "--min-co-mentions", help="Minimum co-mentions to suggest a link"),
         apply: bool = typer.Option(False, "--apply", help="Apply suggestions instead of dry-run"),
         limit: int = typer.Option(50, "--limit", help="Max suggestions to apply"),
+        include_person: bool = typer.Option(False, "--include-person", help="Include Person nodes in auto-linking (off by default for safety)"),
     ):
         """Suggest/apply links for orphan nodes from episodic co-mentions."""
         from engram.semantic.orphan_linker import apply_suggestions, suggest_orphan_links
@@ -90,6 +91,17 @@ def register(app: typer.Typer, add_app: typer.Typer, remove_app: typer.Typer, ge
         episodic = _get_episodic(get_config)
 
         suggestions = run_async(suggest_orphan_links(graph, episodic, recent=recent, min_co_mentions=min_co_mentions))
+
+        if not include_person and suggestions:
+            nodes = run_async(graph.get_nodes())
+            by_key = {n.key: n for n in nodes}
+            suggestions = [
+                s for s in suggestions
+                if by_key.get(s.orphan_key) and by_key.get(s.target_key)
+                and by_key[s.orphan_key].type != "Person"
+                and by_key[s.target_key].type != "Person"
+            ]
+
         if not suggestions:
             console.print("[dim]No orphan link suggestions found.[/dim]")
             return
