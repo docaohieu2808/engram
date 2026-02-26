@@ -46,6 +46,41 @@ def _safe_json_list(val: str | None) -> list:
         return []
 
 
+def _canonicalize_entities(entities: list[str] | None) -> list[str]:
+    """Normalize + case-insensitive dedupe entity names.
+
+    Keeps first meaningful casing and applies a small canonical map for
+    frequent product names to avoid duplicates like Engram/engram.
+    """
+    if not entities:
+        return []
+
+    canonical_map = {
+        "engram": "Engram",
+        "openclaw": "OpenClaw",
+        "claude code": "Claude Code",
+    }
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in entities:
+        if not raw:
+            continue
+        e = str(raw).strip()
+        if not e:
+            continue
+
+        low = e.casefold()
+        e = canonical_map.get(low, e)
+        key = e.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(e)
+
+    return out
+
+
 def _collection_name(namespace: str) -> str:
     """Build ChromaDB collection name from namespace."""
     return f"engram_{namespace}"
@@ -162,7 +197,7 @@ class EpisodicStore:
 
         memory_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
-        entities = entities or []
+        entities = _canonicalize_entities(entities)
         tags = tags or []
 
         doc_metadata: dict[str, Any] = {
@@ -256,7 +291,7 @@ class EpisodicStore:
                     raise ValueError(f"Content rejected: {reason}")
             memory_type = mem.get("memory_type", MemoryType.FACT)
             priority = mem.get("priority", 5)
-            entities = mem.get("entities") or []
+            entities = _canonicalize_entities(mem.get("entities") or [])
             tags = mem.get("tags") or []
             extra_meta = mem.get("metadata") or {}
             expires_at = mem.get("expires_at")
@@ -627,6 +662,25 @@ class EpisodicStore:
         """Update metadata fields on an existing memory. Returns True on success."""
         try:
             collection = self._ensure_collection()
+
+            # Canonicalize entities on every write path to prevent duplicates
+            # like Engram/engram from being persisted again.
+            if "entities" in metadata:
+                raw = metadata.get("entities")
+                parsed: list[str]
+                if isinstance(raw, str):
+                    if raw.startswith("["):
+                        try:
+                            parsed = json.loads(raw)
+                        except (json.JSONDecodeError, ValueError):
+                            parsed = []
+                    else:
+                        parsed = [e.strip() for e in raw.split(",") if e.strip()]
+                elif isinstance(raw, list):
+                    parsed = raw
+                else:
+                    parsed = []
+                metadata["entities"] = json.dumps(_canonicalize_entities(parsed))
             # Capture before-value for audit trail
             before_meta = None
             if self._audit and self._audit.enabled:
@@ -957,9 +1011,10 @@ class EpisodicStore:
             existing_meta = result["metadatas"][0][0]
             existing_content = result["documents"][0][0] if result["documents"] else ""
 
-            # Merge entities
-            old_entities = set(json.loads(existing_meta.get("entities", "[]")))
-            merged_entities = sorted(old_entities | set(entities))
+            # Merge entities (canonicalized, case-insensitive dedupe)
+            old_entities_list = _canonicalize_entities(json.loads(existing_meta.get("entities", "[]")))
+            merged_entities = _canonicalize_entities(old_entities_list + (entities or []))
+            old_entities = set(old_entities_list)
 
             # Merge tags
             old_tags = set(json.loads(existing_meta.get("tags", "[]")))
@@ -1031,6 +1086,8 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
             entities = [e.strip() for e in raw_entities.split(",") if e.strip()]
     else:
         entities = []
+
+    entities = _canonicalize_entities(entities)
 
     # Parse tags (JSON array)
     raw_tags = metadata.get("tags", "[]")
