@@ -186,7 +186,7 @@ const Graph = {
       interaction: { hover: true, tooltipDelay: 200 },
       nodes: { shape: 'dot', size: 18 },
       edges: {
-        arrows: false,
+        arrows: { to: { enabled: false } },
         width: 1,
         smooth: { enabled: true, type: 'continuous' },
       },
