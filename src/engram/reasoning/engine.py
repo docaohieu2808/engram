@@ -321,8 +321,9 @@ class ReasoningEngine:
         # Inject constitution as immutable prefix (Law I, II, III)
         constitution_prefix = get_constitution_prompt_prefix()
         now = datetime.now(timezone.utc).astimezone()
+        import secrets
         prompt = constitution_prefix + REASONING_PROMPT.format(
-            current_datetime=now.strftime("%Y-%m-%d %H:%M (%A, %Z)"),
+            current_datetime=now.strftime("%Y-%m-%d %H:%M:%S (%A, %Z)") + f" [sid:{secrets.token_hex(4)}]",
             episodic_context=episodic_ctx,
             semantic_context=semantic_ctx,
             provider_context=provider_ctx,
@@ -335,8 +336,11 @@ class ReasoningEngine:
             try:
                 response = await litellm.acompletion(
                     model=self._model,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
+                    messages=[
+                        {"role": "system", "content": "You are a memory assistant. ONLY use information from the provided memories. NEVER add facts, dates, locations, or details not explicitly stated in the memories."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.0,
                 )
                 monitor.record_success()
                 return response.choices[0].message.content
