@@ -32,6 +32,43 @@ function renderLegend(nodeTypes) {
   `;
 }
 
+function stableSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) || 1;
+}
+
+function createRng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function toRgbaHexOrRgb(color, alpha) {
+  const a = Math.max(0, Math.min(1, alpha));
+  const c = (color || '').trim();
+
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c)) {
+    const raw = c.slice(1);
+    const hex = raw.length === 3 ? raw.split('').map(ch => ch + ch).join('') : raw;
+    const int = Number.parseInt(hex, 16);
+    const r = (int >> 16) & 255;
+    const g = (int >> 8) & 255;
+    const b = int & 255;
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  }
+
+  const rgb = c.match(/^rgb\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)$/i);
+  if (rgb) return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${a})`;
+
+  return c;
+}
+
 const Graph = {
   _loaded: false,
   _network: null,
@@ -39,6 +76,7 @@ const Graph = {
   _edges: [],
   _nodesDS: null,
   _edgesDS: null,
+  _threadRenderer: null,
 
   async load() {
     if (!this._loaded) {
@@ -107,24 +145,99 @@ const Graph = {
     }));
 
     this._edgesDS = new vis.DataSet(this._edges.map(e => ({
-      ...e, font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
-      color: { color: edgeColor, hover: accentColor, highlight: accentColor },
-      smooth: { type: 'curvedCW', roundness: 0.2 },
+      ...e,
+      // Giữ edge để tương tác + label, còn nét "sợi chỉ" sẽ do custom canvas renderer vẽ
+      font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
+      color: {
+        color: toRgbaHexOrRgb(edgeColor, 0.04),
+        hover: toRgbaHexOrRgb(accentColor, 0.08),
+        highlight: toRgbaHexOrRgb(accentColor, 0.08),
+      },
+      smooth: { type: 'dynamic', roundness: 0.15 },
+      width: 6,
     })));
 
     this._network = new vis.Network(container, { nodes: this._nodesDS, edges: this._edgesDS }, {
       physics: { enabled: true, forceAtlas2Based: { gravitationalConstant: -50, springLength: 120 }, solver: 'forceAtlas2Based', stabilization: { iterations: 150 } },
       interaction: { hover: true, tooltipDelay: 200 },
       nodes: { shape: 'dot', size: 18 },
-      edges: { arrows: { to: { enabled: true, scaleFactor: 0.6 } }, width: 1.5 },
+      edges: { arrows: { to: { enabled: false } }, width: 1.5 },
       background: { color: bgColor },
     });
+
+    // Custom thread-like renderer (vẽ trước node để ra cảm giác dây chỉ mềm)
+    if (this._threadRenderer) this._network.off('beforeDrawing', this._threadRenderer);
+    this._threadRenderer = (ctx) => this._drawThreadEdges(ctx, accentColor);
+    this._network.on('beforeDrawing', this._threadRenderer);
 
     this._network.on('click', params => {
       if (params.nodes.length > 0) this._showNodeDetail(params.nodes[0]);
       else if (params.edges.length > 0) this._showEdgeDetail(params.edges[0]);
       else document.getElementById('graph-detail').innerHTML = '<span style="color:var(--text-muted)">Click a node or edge</span>';
     });
+  },
+
+  _drawThreadEdges(ctx, accentColor) {
+    if (!this._network || !this._edges || !this._edges.length) return;
+
+    const fanCounter = new Map();
+    const baseColor = toRgbaHexOrRgb(accentColor, 0.24);
+    const glowColor = toRgbaHexOrRgb(accentColor, 0.14);
+
+    for (const e of this._edges) {
+      const p1 = this._network.getPosition(e.from);
+      const p2 = this._network.getPosition(e.to);
+      if (!p1 || !p2) continue;
+
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 2) continue;
+
+      const nx = -dy / dist;
+      const ny = dx / dist;
+
+      const fan = fanCounter.get(e.from) || 0;
+      fanCounter.set(e.from, fan + 1);
+
+      const key = `${e.from}|${e.label}|${e.to}`;
+      const rng = createRng(stableSeed(key));
+      const alt = fan % 2 === 0 ? 1 : -1;
+      const baseOffset = alt * (7 + fan * 1.25 + rng() * 8);
+      const tangent = (rng() - 0.5) * 18;
+
+      const mx = (p1.x + p2.x) / 2;
+      const my = (p1.y + p2.y) / 2;
+      const cx = mx + nx * baseOffset + (dx / dist) * tangent;
+      const cy = my + ny * baseOffset + (dy / dist) * tangent;
+
+      // strand 1
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.quadraticCurveTo(cx, cy, p2.x, p2.y);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = baseColor;
+      ctx.lineWidth = 0.7 + Math.min(1.2, (e.weight || 1) * 0.22);
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur = 3.5;
+      ctx.stroke();
+      ctx.restore();
+
+      // strand 2 (lệch nhẹ để thành cảm giác sợi chỉ lỏng)
+      const wobble = (rng() - 0.5) * 5;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p1.x + nx * 0.8, p1.y + ny * 0.8);
+      ctx.quadraticCurveTo(cx + nx * wobble, cy + ny * wobble, p2.x - nx * 0.6, p2.y - ny * 0.6);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = toRgbaHexOrRgb(accentColor, 0.16);
+      ctx.lineWidth = 0.55;
+      ctx.shadowColor = toRgbaHexOrRgb(accentColor, 0.1);
+      ctx.shadowBlur = 2.4;
+      ctx.stroke();
+      ctx.restore();
+    }
   },
 
   _showNodeDetail(nodeId) {
