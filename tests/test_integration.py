@@ -27,7 +27,7 @@ def _mock_embeddings(_model, texts, _dim=None):
 
 @pytest.fixture
 def episodic(tmp_path):
-    cfg = EpisodicConfig(path=str(tmp_path / "episodic"))
+    cfg = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
     embed = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     with patch("engram.episodic.store._get_embeddings", side_effect=_mock_embeddings):
         yield EpisodicStore(config=cfg, embedding_config=embed)
@@ -41,7 +41,7 @@ def graph(tmp_path):
 
 @pytest.fixture
 def tenant_a(tmp_path):
-    cfg = EpisodicConfig(path=str(tmp_path / "shared_episodic"))
+    cfg = EpisodicConfig(path=str(tmp_path / "shared_episodic"), dedup_enabled=False)
     embed = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     with patch("engram.episodic.store._get_embeddings", side_effect=_mock_embeddings):
         yield EpisodicStore(config=cfg, embedding_config=embed, namespace="tenant_a")
@@ -49,7 +49,7 @@ def tenant_a(tmp_path):
 
 @pytest.fixture
 def tenant_b(tmp_path):
-    cfg = EpisodicConfig(path=str(tmp_path / "shared_episodic"))
+    cfg = EpisodicConfig(path=str(tmp_path / "shared_episodic"), dedup_enabled=False)
     embed = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     with patch("engram.episodic.store._get_embeddings", side_effect=_mock_embeddings):
         yield EpisodicStore(config=cfg, embedding_config=embed, namespace="tenant_b")
@@ -254,7 +254,7 @@ async def test_backup_restore_roundtrip(episodic, graph, tmp_path):
     assert manifest["episodic_count"] >= 1
 
     # Restore into a fresh store
-    fresh_cfg = EpisodicConfig(path=str(tmp_path / "restored_episodic"))
+    fresh_cfg = EpisodicConfig(path=str(tmp_path / "restored_episodic"), dedup_enabled=False)
     fresh_embed = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     with patch("engram.episodic.store._get_embeddings", side_effect=_mock_embeddings):
         fresh_store = EpisodicStore(config=fresh_cfg, embedding_config=fresh_embed)

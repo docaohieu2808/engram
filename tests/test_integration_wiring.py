@@ -57,7 +57,7 @@ def mock_embeddings():
 @pytest.fixture
 def episodic_store(tmp_path, mock_embeddings):
     """EpisodicStore with guard enabled for testing."""
-    config = EpisodicConfig(path=str(tmp_path / "episodic"))
+    config = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
     embed_config = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     return EpisodicStore(
         config=config,
@@ -69,7 +69,7 @@ def episodic_store(tmp_path, mock_embeddings):
 @pytest.fixture
 def episodic_store_with_guard(tmp_path, mock_embeddings):
     """EpisodicStore with guard enabled."""
-    config = EpisodicConfig(path=str(tmp_path / "episodic_guarded"))
+    config = EpisodicConfig(path=str(tmp_path / "episodic_guarded"), dedup_enabled=False)
     embed_config = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     return EpisodicStore(
         config=config,

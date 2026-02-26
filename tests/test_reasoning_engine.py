@@ -38,7 +38,7 @@ async def test_think_no_results(tmp_path):
 
     with patch("engram.episodic.store._get_embeddings", side_effect=lambda m, t, d=None: [[0.1] * 384] * len(t)):
         store = EpisodicStore(
-            config=EpisodicConfig(path=str(tmp_path / "ep")),
+            config=EpisodicConfig(path=str(tmp_path / "ep"), dedup_enabled=False),
             embedding_config=EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2"),
         )
     graph = create_graph(SemanticConfig(path=str(tmp_path / "sem.db")))

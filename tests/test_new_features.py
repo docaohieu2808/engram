@@ -22,7 +22,7 @@ def _fake_embeddings(_model, texts, _expected_dim=None):
 @pytest.fixture
 def store(tmp_path):
     with patch("engram.episodic.store._get_embeddings", side_effect=_fake_embeddings):
-        cfg = EpisodicConfig(path=str(tmp_path / "episodic"))
+        cfg = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
         emb = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
         yield EpisodicStore(config=cfg, embedding_config=emb)
 
@@ -31,7 +31,7 @@ def store(tmp_path):
 def ns_store(tmp_path):
     """Factory fixture returning a function that creates stores with specified namespaces."""
     def _make(namespace: str):
-        cfg = EpisodicConfig(path=str(tmp_path / "episodic"))
+        cfg = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
         emb = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
         return EpisodicStore(config=cfg, embedding_config=emb, namespace=namespace)
     return _make
@@ -167,7 +167,7 @@ async def test_namespace_sees_own_data(tmp_path, ns_store):
 @pytest.mark.asyncio
 async def test_namespace_collection_name(tmp_path):
     """EpisodicStore uses namespace-specific collection name."""
-    cfg = EpisodicConfig(path=str(tmp_path / "ep"))
+    cfg = EpisodicConfig(path=str(tmp_path / "ep"), dedup_enabled=False)
     emb = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     store = EpisodicStore(config=cfg, embedding_config=emb, namespace="myns")
     assert store.COLLECTION_NAME == "engram_myns"
@@ -176,7 +176,7 @@ async def test_namespace_collection_name(tmp_path):
 @pytest.mark.asyncio
 async def test_default_namespace_collection_name(tmp_path):
     """Default namespace uses 'engram_default' collection name."""
-    cfg = EpisodicConfig(path=str(tmp_path / "ep"))
+    cfg = EpisodicConfig(path=str(tmp_path / "ep"), dedup_enabled=False)
     emb = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     store = EpisodicStore(config=cfg, embedding_config=emb)
     assert store.COLLECTION_NAME == "engram_default"

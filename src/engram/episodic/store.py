@@ -118,6 +118,8 @@ class EpisodicStore:
         self._default_decay_rate = getattr(config, "decay_rate", 0.1)
         self._scoring = scoring or ScoringConfig()
         self._guard_enabled = guard_enabled
+        self._dedup_enabled = getattr(config, "dedup_enabled", True)
+        self._dedup_threshold = getattr(config, "dedup_threshold", 0.85)
         # FTS5 full-text search index (always-on, no config needed)
         self._fts = FtsIndex()
 
@@ -168,6 +170,14 @@ class EpisodicStore:
             existing = await self._find_by_topic_key(topic_key)
             if existing:
                 return await self._update_topic(existing, content, topic_key, metadata, entities, tags, priority, memory_type)
+
+        # Semantic dedup: merge into existing memory if cosine similarity > threshold
+        if self._dedup_enabled:
+            dedup_result = await self._dedup_merge(
+                content, entities or [], tags or [], priority, memory_type, metadata,
+            )
+            if dedup_result:
+                return dedup_result
 
         memory_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
@@ -494,7 +504,8 @@ class EpisodicStore:
             memories.append(_build_memory(mem_id, doc, meta))
 
         # Sort by timestamp descending, take top N
-        memories.sort(key=lambda m: m.timestamp, reverse=True)
+        # Use isoformat() to handle mixed offset-naive/offset-aware datetimes
+        memories.sort(key=lambda m: m.timestamp.isoformat() if m.timestamp else "", reverse=True)
         return memories[:n]
 
     async def get(self, id: str) -> EpisodicMemory | None:
@@ -701,6 +712,98 @@ class EpisodicStore:
             )
         logger.info("Updated topic-keyed memory %s (revision=%d)", mem_id[:8], revision)
         return mem_id
+
+    async def _dedup_merge(
+        self,
+        content: str,
+        entities: list[str],
+        tags: list[str],
+        priority: int,
+        memory_type: MemoryType,
+        metadata: dict[str, Any] | None,
+    ) -> str | None:
+        """Check if a semantically similar memory exists. If so, merge entities/tags.
+
+        ChromaDB cosine distance: 0.0 = identical, 2.0 = opposite.
+        Similarity = 1 - (distance / 2).  Threshold of 0.85 → distance < 0.30.
+
+        Returns existing memory ID if merged, None if no duplicate found.
+        """
+        try:
+            collection = self._ensure_collection()
+            coll_count = await asyncio.to_thread(collection.count)
+            if coll_count == 0:
+                return None
+
+            self._detect_embedding_dim()
+            embedding = await asyncio.to_thread(
+                _get_embeddings, self._embed_model, [content], self._embedding_dim,
+            )
+            result = await asyncio.to_thread(
+                collection.query,
+                query_embeddings=embedding,
+                n_results=1,
+                include=["metadatas", "documents", "distances"],
+            )
+            if not result["ids"] or not result["ids"][0]:
+                return None
+
+            distance = result["distances"][0][0]
+            similarity = 1.0 - (distance / 2.0)
+
+            if similarity < self._dedup_threshold:
+                return None
+
+            # Found a near-duplicate — merge entities and tags into existing
+            existing_id = result["ids"][0][0]
+            existing_meta = result["metadatas"][0][0]
+            existing_content = result["documents"][0][0] if result["documents"] else ""
+
+            # Merge entities
+            old_entities = set(json.loads(existing_meta.get("entities", "[]")))
+            merged_entities = sorted(old_entities | set(entities))
+
+            # Merge tags
+            old_tags = set(json.loads(existing_meta.get("tags", "[]")))
+            merged_tags = sorted(old_tags | set(tags))
+
+            # Keep higher priority
+            old_priority = int(existing_meta.get("priority", 5))
+            merged_priority = max(old_priority, priority)
+
+            update_meta: dict[str, Any] = {
+                "entities": json.dumps(merged_entities),
+                "tags": json.dumps(merged_tags),
+                "priority": merged_priority,
+            }
+            if metadata:
+                update_meta.update(metadata)
+
+            await asyncio.to_thread(collection.update, ids=[existing_id], metadatas=[update_meta])
+
+            logger.info(
+                "Dedup merged into %s (sim=%.2f): +%d entities, +%d tags",
+                existing_id[:8], similarity,
+                len(set(entities) - old_entities),
+                len(set(tags) - old_tags),
+            )
+
+            if self._audit:
+                self._audit.log(
+                    tenant_id=self._namespace, actor="system",
+                    operation="episodic.dedup_merge",
+                    resource_id=existing_id,
+                    details={
+                        "similarity": round(similarity, 3),
+                        "new_content": content[:200],
+                        "existing_content": existing_content[:200],
+                    },
+                )
+            return existing_id
+        except Exception as e:
+            # Fail-open: if dedup check fails, let remember() create a new memory
+            logger.debug("Dedup check failed (proceeding with new memory): %s", e)
+            return None
 
 
 def _compute_activation_score(

@@ -174,7 +174,7 @@ class TestEpisodicStoreFtsIntegration:
         from engram.config import EpisodicConfig, EmbeddingConfig
         from engram.episodic.store import EpisodicStore
 
-        config = EpisodicConfig(path=str(tmp_path / "chroma"))
+        config = EpisodicConfig(path=str(tmp_path / "chroma"), dedup_enabled=False)
         embed_config = EmbeddingConfig()
 
         store = EpisodicStore.__new__(EpisodicStore)

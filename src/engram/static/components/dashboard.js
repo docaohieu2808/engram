@@ -1,8 +1,11 @@
 /**
- * Dashboard tab — stats cards, recent memories, quick actions.
+ * Dashboard tab — stats cards, recent memories with pagination, quick actions.
  */
 const Dashboard = {
   _loaded: false,
+  _offset: 0,
+  _limit: 10,
+  _total: 0,
 
   async load() {
     if (this._loaded) return;
@@ -17,7 +20,7 @@ const Dashboard = {
     }
   },
 
-  reload() { this._loaded = false; this.load(); },
+  reload() { this._loaded = false; this._offset = 0; this.load(); },
 
   _render(el, status, health) {
     const ep = status.episodic || {};
@@ -27,7 +30,7 @@ const Dashboard = {
         <div class="card stat-card"><div class="value">${ep.count || 0}</div><div class="label">Episodic Memories</div></div>
         <div class="card stat-card"><div class="value">${sem.node_count || 0}</div><div class="label">Semantic Nodes</div></div>
         <div class="card stat-card"><div class="value">${sem.edge_count || 0}</div><div class="label">Semantic Edges</div></div>
-        <div class="card stat-card"><div class="value" style="font-size:18px;color:var(--success)">${health.status || '?'}</div><div class="label">Health</div></div>
+        <div class="card stat-card"><div class="value" style="font-size:32px;color:var(--success)">${(health.status || '?').toUpperCase()}</div><div class="label">Health</div></div>
       </div>
       ${sem.node_types ? this._nodeTypesHtml(sem.node_types) : ''}
       <div style="display:flex;gap:12px;margin-bottom:16px">
@@ -38,6 +41,7 @@ const Dashboard = {
         <h3>Recent Memories</h3>
         <div id="dash-recent"><div class="loading-overlay"><div class="spinner"></div></div></div>
       </div>`;
+    this._offset = 0;
     this._loadRecent();
   },
 
@@ -47,21 +51,61 @@ const Dashboard = {
   },
 
   async _loadRecent() {
+    const el = document.getElementById('dash-recent');
     try {
-      const res = await API.listMemories({ limit: 10 });
-      const el = document.getElementById('dash-recent');
-      if (!res.memories || !res.memories.length) { el.innerHTML = '<span style="color:var(--text-muted)">No memories yet</span>'; return; }
-      el.innerHTML = '<table><thead><tr><th>Content</th><th>Type</th><th>Priority</th><th>Confidence</th><th>Created</th></tr></thead><tbody>' +
-        res.memories.map(m => `<tr style="cursor:pointer" onclick="Memories.showDetail('${m.id}')">
+      const res = await API.listMemories({ limit: this._limit, offset: this._offset });
+      this._total = res.total || 0;
+
+      if (this._offset === 0) {
+        el.innerHTML = `
+          <div class="table-info">Showing ${Math.min(this._limit, res.memories.length)} of ${this._total.toLocaleString()} memories</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Content</th><th>Type</th><th>Priority</th><th>Confidence</th><th>Created</th></tr></thead>
+              <tbody id="dash-recent-tbody"></tbody>
+            </table>
+          </div>
+          <div id="dash-load-more"></div>
+        `;
+      }
+
+      const tbody = document.getElementById('dash-recent-tbody');
+      res.memories.forEach(m => {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => Memories.showDetail(m.id);
+        tr.innerHTML = `
           <td><span class="truncate truncate-wide" title="${this._esc(m.content)}">${App.truncate(m.content)}</span></td>
           <td>${App.typeBadge(m.memory_type)}</td>
           <td>${App.priorityBar(m.priority)}</td>
           <td>${App.confidenceBar(m.confidence)}</td>
           <td style="white-space:nowrap">${App.formatDate(m.timestamp)}</td>
-        </tr>`).join('') + '</tbody></table>';
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const shown = this._offset + res.memories.length;
+      const infoEl = el.querySelector('.table-info');
+      if (infoEl) infoEl.textContent = `Showing ${shown} of ${this._total.toLocaleString()} memories`;
+
+      const loadMoreEl = document.getElementById('dash-load-more');
+      if (shown < this._total) {
+        loadMoreEl.innerHTML = `
+          <button class="btn" onclick="Dashboard.loadMore()">
+            Load More (${(this._total - shown).toLocaleString()} remaining)
+          </button>
+        `;
+      } else {
+        loadMoreEl.innerHTML = '<span class="text-muted">All memories loaded</span>';
+      }
     } catch (e) {
-      document.getElementById('dash-recent').innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+      el.innerHTML = `<span class="text-error">${e.message}</span>`;
     }
+  },
+
+  async loadMore() {
+    this._offset += this._limit;
+    await this._loadRecent();
   },
 
   _esc(s) { return (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); },

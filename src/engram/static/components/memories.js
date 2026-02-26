@@ -91,11 +91,11 @@ const Memories = {
       <td style="text-align:center">${m.access_count}</td>
       <td style="white-space:nowrap">${App.formatDate(m.timestamp)}</td>
       <td style="white-space:nowrap">
-        <button class="btn-icon" title="View" onclick="Memories.showDetail('${m.id}')">👁️</button>
-        <button class="btn-icon" title="Edit" onclick="Memories.showEdit('${m.id}')">✏️</button>
-        <button class="btn-icon" title="Positive" onclick="Memories.feedback('${m.id}','positive')">👍</button>
-        <button class="btn-icon" title="Negative" onclick="Memories.feedback('${m.id}','negative')">👎</button>
-        <button class="btn-icon" title="Delete" onclick="Memories.confirmDelete('${m.id}')">🗑️</button>
+        <button class="btn-icon" title="View" onclick="Memories.showDetail('${m.id}')">${Icons.eye}</button>
+        <button class="btn-icon" title="Edit" onclick="Memories.showEdit('${m.id}')">${Icons.edit}</button>
+        <button class="btn-icon" title="Positive" onclick="Memories.feedback('${m.id}','positive')">${Icons.thumbsUp}</button>
+        <button class="btn-icon" title="Negative" onclick="Memories.feedback('${m.id}','negative')">${Icons.thumbsDown}</button>
+        <button class="btn-icon" title="Delete" onclick="Memories.confirmDelete('${m.id}')">${Icons.trash}</button>
       </td>
     </tr>`;
   },
@@ -138,22 +138,28 @@ const Memories = {
     try {
       const res = await API.getMemory(id);
       const m = res.memory;
+      const entList = m.entities || [];
+      const entLimit = 10;
+      const entHtml = entList.length <= entLimit
+        ? App.pills(entList)
+        : `<div class="entities-list collapsed" id="ent-list">${entList.map(e => `<span class="pill">${e}</span>`).join('')}</div>
+           <span class="entities-toggle" onclick="document.getElementById('ent-list').classList.toggle('collapsed');this.textContent=this.textContent.includes('Show')?'Show less':'Show ${entList.length - entLimit} more'">Show ${entList.length - entLimit} more</span>`;
       App.showModal(`<h2>Memory Detail</h2><div class="memory-detail">
-        <div class="field"><div class="field-label">ID</div><div class="field-value" style="font-family:var(--mono)">${m.id}</div></div>
-        <div class="field"><div class="field-label">Content</div><div class="field-value" style="white-space:pre-wrap">${this._esc(m.content)}</div></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="field"><div class="field-label">ID</div><div class="field-value" style="font-family:var(--mono);font-size:12px">${m.id}</div></div>
+        <div class="field"><div class="field-label">Content</div><div class="field-value" style="white-space:pre-wrap;line-height:1.6">${this._esc(m.content)}</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div class="field"><div class="field-label">Type</div><div class="field-value">${App.typeBadge(m.memory_type)}</div></div>
           <div class="field"><div class="field-label">Priority</div><div class="field-value">${App.priorityBar(m.priority)}</div></div>
           <div class="field"><div class="field-label">Confidence</div><div class="field-value">${App.confidenceBar(m.confidence)}</div></div>
         </div>
         <div class="field"><div class="field-label">Tags</div><div class="field-value">${App.pills(m.tags)}</div></div>
-        <div class="field"><div class="field-label">Entities</div><div class="field-value">${App.pills(m.entities)}</div></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="field"><div class="field-label">Entities</div><div class="field-value">${entHtml}</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div class="field"><div class="field-label">Access Count</div><div class="field-value">${m.access_count}</div></div>
           <div class="field"><div class="field-label">Decay Rate</div><div class="field-value">${m.decay_rate}</div></div>
-          <div class="field"><div class="field-label">Negative Count</div><div class="field-value">${m.negative_count}</div></div>
+          <div class="field"><div class="field-label">Neg. Count</div><div class="field-value">${m.negative_count}</div></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="field"><div class="field-label">Created</div><div class="field-value">${App.formatDate(m.timestamp)}</div></div>
           <div class="field"><div class="field-label">Expires</div><div class="field-value">${m.expires_at ? App.formatDate(m.expires_at) : '—'}</div></div>
         </div>

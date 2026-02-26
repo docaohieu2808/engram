@@ -77,7 +77,7 @@ def mock_config():
         HooksConfig, LLMConfig,
     )
     cfg = Config(
-        episodic=EpisodicConfig(path="/tmp/engram-test-episodic", namespace="default"),
+        episodic=EpisodicConfig(path="/tmp/engram-test-episodic", namespace="default", dedup_enabled=False),
         embedding=EmbeddingConfig(provider="gemini", model="gemini-embedding-001"),
         semantic=SemanticConfig(provider="sqlite", path="/tmp/engram-test.db"),
     )

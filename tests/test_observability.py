@@ -182,7 +182,7 @@ class TestEpisodicStoreAudit:
         audit.enabled = True
 
         store = EpisodicStore(
-            config=EpisodicConfig(path=str(tmp_path / "episodic")),
+            config=EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False),
             embedding_config=EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2"),
             audit=audit,
         )
@@ -198,7 +198,7 @@ class TestEpisodicStoreAudit:
         from engram.episodic.store import EpisodicStore
 
         store = EpisodicStore(
-            config=EpisodicConfig(path=str(tmp_path / "episodic")),
+            config=EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False),
             embedding_config=EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2"),
             audit=None,
         )

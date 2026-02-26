@@ -225,7 +225,7 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             if abs((m.timestamp - anchor.timestamp).total_seconds()) <= window.total_seconds()
             and m.id != anchor.id
         ]
-        nearby.sort(key=lambda m: m.timestamp)
+        nearby.sort(key=lambda m: m.timestamp.isoformat() if m.timestamp else "")
 
         lines = [f"Timeline around [{memory_id[:8]}] (±{window_minutes}min):"]
         for m in nearby:

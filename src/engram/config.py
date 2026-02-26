@@ -20,6 +20,8 @@ class EpisodicConfig(BaseModel):
     namespace: str = "default"
     decay_rate: float = 0.1
     decay_enabled: bool = True
+    dedup_enabled: bool = True
+    dedup_threshold: float = 0.85  # cosine similarity; 1.0 = identical
 
 
 class EmbeddingConfig(BaseModel):
@@ -324,6 +326,8 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "CAPTURE_OPENCLAW_SESSIONS_DIR": ("capture.openclaw", "sessions_dir"),
     "EPISODIC_DECAY_RATE": ("episodic", "decay_rate"),
     "EPISODIC_DECAY_ENABLED": ("episodic", "decay_enabled"),
+    "EPISODIC_DEDUP_ENABLED": ("episodic", "dedup_enabled"),
+    "EPISODIC_DEDUP_THRESHOLD": ("episodic", "dedup_threshold"),
     "SCORING_SIMILARITY_WEIGHT": ("scoring", "similarity_weight"),
     "SCORING_RETENTION_WEIGHT": ("scoring", "retention_weight"),
     "SCORING_RECENCY_WEIGHT": ("scoring", "recency_weight"),

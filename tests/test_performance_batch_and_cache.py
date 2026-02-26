@@ -49,7 +49,7 @@ async def test_remember_batch_uses_single_embedding_call(tmp_path):
     from engram.config import EmbeddingConfig, EpisodicConfig
     from engram.episodic.store import EpisodicStore
 
-    cfg = EpisodicConfig(path=str(tmp_path / "ep"))
+    cfg = EpisodicConfig(path=str(tmp_path / "ep"), dedup_enabled=False)
     emb = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     store = EpisodicStore(config=cfg, embedding_config=emb)
 

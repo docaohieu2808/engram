@@ -1,6 +1,37 @@
 /**
- * Graph tab — vis-network visualization with node/edge CRUD.
+ * Graph tab — vis-network visualization with node/edge CRUD and colored nodes.
  */
+const NODE_TYPE_COLORS = {
+  'Person':       { background: '#73bf69', border: '#5a9952', font: '#fff' },
+  'Technology':   { background: '#5794f2', border: '#4477cc', font: '#fff' },
+  'Project':      { background: '#ff9830', border: '#cc7a26', font: '#000' },
+  'Service':      { background: '#b877d9', border: '#9360ae', font: '#fff' },
+  'Organization': { background: '#f2495c', border: '#c23a4a', font: '#fff' },
+  'Location':     { background: '#ffb357', border: '#cc8f46', font: '#000' },
+  'default':      { background: '#6e6e6e', border: '#555555', font: '#fff' },
+};
+
+function getNodeColor(type) {
+  return NODE_TYPE_COLORS[type] || NODE_TYPE_COLORS.default;
+}
+
+function renderLegend(nodeTypes) {
+  const types = Object.keys(nodeTypes);
+  if (!types.length) return '';
+  return `
+    <div class="graph-legend">
+      <h4>Node Types</h4>
+      ${types.map(t => {
+        const c = getNodeColor(t);
+        return `<div class="legend-item">
+          <svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="${c.background}"/></svg>
+          <span>${t} (${nodeTypes[t]})</span>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
 const Graph = {
   _loaded: false,
   _network: null,
@@ -51,21 +82,39 @@ const Graph = {
 
   _renderGraph() {
     const container = document.getElementById('graph-vis');
-    this._nodesDS = new vis.DataSet(this._nodes.map(n => ({
-      ...n, font: { color: '#e0e0e0', size: 12 }, borderWidth: 1,
-    })));
+    this._nodesDS = new vis.DataSet(this._nodes.map(n => {
+      const colors = getNodeColor(n.group);
+      return {
+        ...n,
+        title: `${n.group}: ${n.label}`,
+        color: {
+          background: colors.background,
+          border: colors.border,
+          highlight: { background: colors.background, border: '#fff' },
+          hover: { background: colors.background, border: '#fff' },
+        },
+        font: { color: colors.font, size: 12 },
+        borderWidth: 2,
+      };
+    }));
+    const cs = getComputedStyle(document.documentElement);
+    const edgeColor = cs.getPropertyValue('--border').trim();
+    const bgColor = cs.getPropertyValue('--bg-canvas').trim();
+    const accentColor = cs.getPropertyValue('--accent').trim();
+    const mutedColor = cs.getPropertyValue('--text-muted').trim();
+
     this._edgesDS = new vis.DataSet(this._edges.map(e => ({
-      ...e, font: { color: '#aaa', size: 10, align: 'middle' },
-      color: { color: '#334', hover: '#2196F3', highlight: '#2196F3' },
+      ...e, font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
+      color: { color: edgeColor, hover: accentColor, highlight: accentColor },
       smooth: { type: 'curvedCW', roundness: 0.1 },
     })));
 
     this._network = new vis.Network(container, { nodes: this._nodesDS, edges: this._edgesDS }, {
-      physics: { enabled: true, forceAtlas2Based: { gravitationalConstant: -50, springLength: 100 }, solver: 'forceAtlas2Based', stabilization: { iterations: 150 } },
+      physics: { enabled: true, forceAtlas2Based: { gravitationalConstant: -50, springLength: 120 }, solver: 'forceAtlas2Based', stabilization: { iterations: 150 } },
       interaction: { hover: true, tooltipDelay: 200 },
-      nodes: { shape: 'dot', size: 16 },
-      edges: { arrows: { to: { enabled: true, scaleFactor: 0.6 } } },
-      background: { color: '#1a1a2e' },
+      nodes: { shape: 'dot', size: 18 },
+      edges: { arrows: { to: { enabled: true, scaleFactor: 0.6 } }, width: 1.5 },
+      background: { color: bgColor },
     });
 
     this._network.on('click', params => {
@@ -79,8 +128,8 @@ const Graph = {
     const node = this._nodes.find(n => n.id === nodeId);
     if (!node) return;
     const connected = this._edges.filter(e => e.from === nodeId || e.to === nodeId);
-    let html = `<div style="font-weight:600;font-size:14px;margin-bottom:4px">${node.label}</div>`;
-    html += `<span class="badge" style="background:${node.color}22;color:${node.color}">${node.group}</span>`;
+    let html = `<div style="font-weight:600;font-size:14px;margin-bottom:6px;color:#d8d9da">${node.label}</div>`;
+    html += `<span class="badge type-preference">${node.group}</span>`;
     if (node.attributes && Object.keys(node.attributes).length) {
       html += '<div style="margin-top:8px;font-size:11px">';
       for (const [k, v] of Object.entries(node.attributes)) html += `<div><span style="color:var(--text-secondary)">${k}:</span> ${v}</div>`;
@@ -123,11 +172,7 @@ const Graph = {
     const rels = {};
     this._edges.forEach(e => { rels[e.label] = (rels[e.label] || 0) + 1; });
     let html = `<div style="font-size:12px"><strong>${this._nodes.length}</strong> nodes, <strong>${this._edges.length}</strong> edges</div>`;
-    if (Object.keys(types).length) {
-      html += '<div style="margin-top:6px;font-size:11px">';
-      for (const [t, c] of Object.entries(types)) html += `<div><span class="pill">${t}: ${c}</span></div>`;
-      html += '</div>';
-    }
+    html += renderLegend(types);
     if (Object.keys(rels).length) {
       html += '<div style="margin-top:6px;font-size:11px;font-weight:600;color:var(--text-secondary)">Relations</div>';
       for (const [r, c] of Object.entries(rels)) html += `<div style="font-size:11px"><span class="pill">${r}: ${c}</span></div>`;

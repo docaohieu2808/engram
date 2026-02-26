@@ -20,7 +20,7 @@ def _fake_embeddings(_model, texts, _expected_dim=None):
 @pytest.fixture
 def store(tmp_path):
     with patch("engram.episodic.store._get_embeddings", side_effect=_fake_embeddings):
-        cfg = EpisodicConfig(path=str(tmp_path / "episodic"))
+        cfg = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
         emb = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
         yield EpisodicStore(config=cfg, embedding_config=emb)
 

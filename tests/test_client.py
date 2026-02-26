@@ -36,7 +36,7 @@ def _make_litellm_response(content: str = "Test response"):
 @pytest.fixture
 def tmp_client(tmp_path):
     """EngramClient backed by tmp stores with mocked embeddings and config."""
-    episodic_cfg = EpisodicConfig(path=str(tmp_path / "episodic"))
+    episodic_cfg = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
     semantic_cfg = SemanticConfig(path=str(tmp_path / "semantic.db"))
     embed_cfg = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
 
@@ -260,8 +260,8 @@ def test_sync_wrappers_work(tmp_client):
 @pytest.mark.asyncio
 async def test_namespace_isolation(tmp_path):
     """Two clients with different namespaces have separate memory stores."""
-    episodic_cfg_a = EpisodicConfig(path=str(tmp_path / "episodic"))
-    episodic_cfg_b = EpisodicConfig(path=str(tmp_path / "episodic"))
+    episodic_cfg_a = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
+    episodic_cfg_b = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
     semantic_cfg = SemanticConfig(path=str(tmp_path / "semantic.db"))
     embed_cfg = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
 
@@ -348,7 +348,7 @@ def test_high_overlap_allows_distinct():
 @pytest.mark.asyncio
 async def test_context_manager_closes_on_exit(tmp_path):
     """async with EngramClient closes resources on exit."""
-    episodic_cfg = EpisodicConfig(path=str(tmp_path / "episodic"))
+    episodic_cfg = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
     semantic_cfg = SemanticConfig(path=str(tmp_path / "semantic.db"))
     embed_cfg = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     cfg = MagicMock()

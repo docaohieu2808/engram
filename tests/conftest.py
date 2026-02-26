@@ -36,7 +36,7 @@ def mock_embeddings():
 @pytest.fixture
 def episodic_store(tmp_path, mock_embeddings):
     """EpisodicStore backed by tmp ChromaDB path with mocked embeddings."""
-    config = EpisodicConfig(path=str(tmp_path / "episodic"))
+    config = EpisodicConfig(path=str(tmp_path / "episodic"), dedup_enabled=False)
     embed_config = EmbeddingConfig(provider="test", model="all-MiniLM-L6-v2")
     return EpisodicStore(config=config, embedding_config=embed_config)
 
