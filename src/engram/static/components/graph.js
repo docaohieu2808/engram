@@ -146,22 +146,37 @@ const Graph = {
 
     this._edgesDS = new vis.DataSet(this._edges.map(e => ({
       ...e,
-      // Giữ edge để tương tác + label, còn nét "sợi chỉ" sẽ do custom canvas renderer vẽ
+      // Giữ edge để tương tác + label, nhưng ẩn hoàn toàn nét mặc định của vis
       font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
       color: {
-        color: toRgbaHexOrRgb(edgeColor, 0.04),
-        hover: toRgbaHexOrRgb(accentColor, 0.08),
-        highlight: toRgbaHexOrRgb(accentColor, 0.08),
+        color: 'rgba(0,0,0,0)',
+        hover: 'rgba(0,0,0,0)',
+        highlight: 'rgba(0,0,0,0)',
+        inherit: false,
       },
       smooth: { type: 'dynamic', roundness: 0.15 },
-      width: 6,
+      width: 1,
+      hoverWidth: 0,
+      selectionWidth: 0,
+      chosen: false,
     })));
 
     this._network = new vis.Network(container, { nodes: this._nodesDS, edges: this._edgesDS }, {
       physics: { enabled: true, forceAtlas2Based: { gravitationalConstant: -50, springLength: 120 }, solver: 'forceAtlas2Based', stabilization: { iterations: 150 } },
       interaction: { hover: true, tooltipDelay: 200 },
       nodes: { shape: 'dot', size: 18 },
-      edges: { arrows: { to: { enabled: false } }, width: 1.5 },
+      edges: {
+        arrows: { to: { enabled: false } },
+        width: 1,
+        color: {
+          color: 'rgba(0,0,0,0)',
+          hover: 'rgba(0,0,0,0)',
+          highlight: 'rgba(0,0,0,0)',
+          inherit: false,
+        },
+        hoverWidth: 0,
+        selectionWidth: 0,
+      },
       background: { color: bgColor },
     });
 
@@ -206,35 +221,24 @@ const Graph = {
       const baseOffset = alt * (7 + fan * 1.25 + rng() * 8);
       const tangent = (rng() - 0.5) * 18;
 
-      const mx = (p1.x + p2.x) / 2;
-      const my = (p1.y + p2.y) / 2;
-      const cx = mx + nx * baseOffset + (dx / dist) * tangent;
-      const cy = my + ny * baseOffset + (dy / dist) * tangent;
+      // Cubic bezier với 2 control points để bớt "hình cung" cứng
+      const t1 = 0.26 + rng() * 0.08;
+      const t2 = 0.68 + rng() * 0.1;
+      const c1x = p1.x + dx * t1 + nx * (baseOffset * (0.85 + rng() * 0.35));
+      const c1y = p1.y + dy * t1 + ny * (baseOffset * (0.85 + rng() * 0.35));
+      const c2x = p1.x + dx * t2 + nx * (baseOffset * (0.35 + rng() * 0.45)) + (dx / dist) * tangent;
+      const c2y = p1.y + dy * t2 + ny * (baseOffset * (0.35 + rng() * 0.45)) + (dy / dist) * tangent;
 
-      // strand 1
+      // 1 sợi duy nhất để tránh cảm giác double-line khi hover
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
-      ctx.quadraticCurveTo(cx, cy, p2.x, p2.y);
+      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
       ctx.lineCap = 'round';
       ctx.strokeStyle = baseColor;
-      ctx.lineWidth = 0.95 + Math.min(1.4, (e.weight || 1) * 0.28);
+      ctx.lineWidth = 1.05 + Math.min(1.3, (e.weight || 1) * 0.26);
       ctx.shadowColor = glowColor;
-      ctx.shadowBlur = 3.5;
-      ctx.stroke();
-      ctx.restore();
-
-      // strand 2 (lệch nhẹ để thành cảm giác sợi chỉ lỏng)
-      const wobble = (rng() - 0.5) * 5;
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(p1.x + nx * 0.8, p1.y + ny * 0.8);
-      ctx.quadraticCurveTo(cx + nx * wobble, cy + ny * wobble, p2.x - nx * 0.6, p2.y - ny * 0.6);
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = toRgbaHexOrRgb(accentColor, 0.34);
-      ctx.lineWidth = 0.7;
-      ctx.shadowColor = toRgbaHexOrRgb(accentColor, 0.2);
-      ctx.shadowBlur = 2.4;
+      ctx.shadowBlur = 3.2;
       ctx.stroke();
       ctx.restore();
     }
