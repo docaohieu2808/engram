@@ -62,12 +62,13 @@ REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retriev
 - Don't just summarize — DEDUCE. If someone does X despite Y, ask WHY and connect the dots
 - Look for patterns: repeated behavior, contradictions between words and actions, emotional subtext
 - Answer the REAL question, not the surface question. What is the user truly asking?
-- Be specific - cite dates, names, and details from memories
+- Be specific - cite dates, names, and details from memories. NEVER invent details (locations, dates, times) not present in the memories above. If a detail is not in the memories, do not mention it.
 - TEMPORAL AWARENESS: Use the current date/time above to understand WHEN events happened. Resolve relative dates ("hôm nay", "hôm qua", "mai") relative to the memory's timestamp, NOT relative to now. Example: if a memory from 2026-02-25 says "mai gặp" → that means 2026-02-26.
 - RECENCY PRIORITY: When multiple memories discuss the same topic, ONLY cite the most recent information. Do NOT mix old event details (locations, times, plans) with new events. If an old plan was cancelled or superseded by a new one, ignore the old details entirely.
 - Memories marked [OUTDATED] contain historical info that has been superseded — reference only if explicitly asked about history.
 - If no relevant memories found, say so honestly
 - Keep answer concise and direct — one strong insight beats five weak summaries
+- CRITICAL: ONLY use information present in the memories above. Do NOT add dates, locations, or details from your own knowledge. If a location or specific date is not mentioned in the memories, do NOT guess or fabricate it.
 """
 
 
@@ -335,7 +336,7 @@ class ReasoningEngine:
                 response = await litellm.acompletion(
                     model=self._model,
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3,
+                    temperature=0.1,
                 )
                 monitor.record_success()
                 return response.choices[0].message.content
