@@ -4,6 +4,26 @@ All notable changes to this project are documented here. Follows [Keep a Changel
 
 ---
 
+## [v0.4.1] — 2026-02-27
+### WebSocket API + Test Coverage
+
+**Added**
+- **WebSocket API** (`src/engram/ws/` — 4 files)
+  - `protocol.py` — Message protocol: command schema, event types, JSON serialization
+  - `event_bus.py` — In-process pub/sub; broadcasts memory events per tenant namespace
+  - `connection_manager.py` — Active connection lifecycle, per-tenant isolation
+  - `handler.py` — FastAPI route `GET /ws?token=JWT`; JWT auth on upgrade
+  - **7 commands:** recall, remember, think, query, ingest, feedback, status
+  - **Push events:** memory.created, memory.deleted, memory.updated, consolidation.completed, error
+  - Per-tenant isolation: connections scoped to tenant_id from JWT claim
+
+- **71 WebSocket tests** covering protocol, event bus, connection manager, handler auth + commands
+- **33 P0 gap tests** covering rate limiter edge cases, consolidation triggers, MCP server tools
+
+**Tests:** 893 total (71 WebSocket + 33 P0 gap = 104 new from 789 base)
+
+---
+
 ## [v0.4.0] — 2026-02-25
 ### Intelligence Layer + Graph Visualization
 

@@ -2,9 +2,9 @@
 
 **Memory traces for AI agents — Think like humans.**
 
-![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-726+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Python](https://img.shields.io/badge/python-3.11+-blue) ![Tests](https://img.shields.io/badge/tests-893+-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green) ![Version](https://img.shields.io/badge/version-0.4.1-blue)
 
-Dual-memory AI system combining episodic (vector) + semantic (graph) memory with LLM reasoning. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment. Exposes CLI, MCP, and versioned HTTP API (/api/v1/).
+Dual-memory AI system combining episodic (vector) + semantic (graph) memory with LLM reasoning. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment. Exposes CLI, MCP, HTTP API (/api/v1/), and WebSocket API (/ws) for real-time agent communication.
 
 ## Features
 
@@ -27,6 +27,7 @@ Dual-memory AI system combining episodic (vector) + semantic (graph) memory with
 - **Resource-Aware Retrieval** — 4-tier degradation (FULL→STANDARD→BASIC→READONLY) with auto-recovery
 - **Data Constitution** — 3-law governance with SHA-256 tamper detection, injected into every LLM prompt
 - **Consolidation Scheduler** — Asyncio-based background tasks (cleanup, consolidation, decay) with tier-aware execution
+- **WebSocket API** — Real-time bidirectional agent communication with 7 commands, push event broadcasting, per-tenant isolation
 
 ## Installation
 
@@ -440,6 +441,43 @@ curl -X POST http://localhost:8765/api/v1/think \
   -d '{"question": "What deployment issues have we had?"}'
 ```
 
+## WebSocket API
+
+Real-time bidirectional communication for AI agents. Connect via `ws://host:8765/ws?token=JWT` (token optional when auth disabled).
+
+**Commands** (client → server):
+```json
+{"id": "corr-1", "type": "remember", "payload": {"content": "User prefers dark mode", "priority": 7}}
+{"id": "corr-2", "type": "recall", "payload": {"query": "user preferences", "limit": 5}}
+{"id": "corr-3", "type": "think", "payload": {"question": "What does the user prefer?"}}
+{"id": "corr-4", "type": "feedback", "payload": {"memory_id": "abc123", "feedback": "positive"}}
+{"id": "corr-5", "type": "query", "payload": {"keyword": "PostgreSQL"}}
+{"id": "corr-6", "type": "status"}
+```
+
+**Responses** (server → client):
+```json
+{"id": "corr-1", "type": "response", "status": "ok", "data": {"id": "mem-xyz"}}
+{"type": "error", "code": "UNKNOWN_COMMAND", "message": "Unknown command: foo"}
+```
+
+**Push Events** (server → all agents in same tenant):
+```json
+{"type": "event", "event": "memory_created", "tenant_id": "default", "data": {"id": "mem-xyz"}}
+{"type": "event", "event": "feedback_recorded", "tenant_id": "default", "data": {"memory_id": "abc123"}}
+```
+
+Events: `memory_created`, `memory_updated`, `memory_deleted`, `feedback_recorded`
+
+**Features:** JWT auth via query param, RBAC enforcement, per-tenant isolation, sender excluded from own broadcasts, connection-resilient error handling.
+
+```bash
+# Connect with wscat
+wscat -c "ws://localhost:8765/ws"
+> {"type": "status", "id": "1"}
+< {"id": "1", "type": "response", "status": "ok", "data": {"episodic": {"count": 42}}}
+```
+
 ## Embeddings
 
 Two embedding modes depending on API key availability:
@@ -478,10 +516,11 @@ See [deployment-guide.md](docs/deployment-guide.md) for Docker Compose with Post
 
 ## Test Coverage
 
-- **726+ tests** across all modules (181 new in v0.4.0)
-- **75%+ code coverage** target
+- **893+ tests** across all modules
+- **61%+ code coverage** (core features 80%+)
 - **CI/CD:** GitHub Actions runs full test suite on every PR and commit
 - **Load tests:** Marked as excluded from CI; run separately in staging
+- **WebSocket tests:** Protocol, connection manager, event bus, all 7 commands, RBAC, multi-tenant
 - **Recall pipeline tests:** Decision, resolution, search, feedback, auto-memory, guard, benchmarking
 - **Brain feature tests:** Audit trail, resource tier, constitution, scheduler
 - **Intelligence tests:** Temporal resolution, pronoun resolution, fusion formatter, graph visualization
@@ -501,13 +540,19 @@ pytest tests/ -k "recall or resolution or feedback or decision" -v
 
 ## Advanced Features
 
+### WebSocket API (v0.4.1)
+✓ Real-time bidirectional — 7 commands (remember, recall, think, feedback, query, ingest, status)
+✓ Push event broadcasting — memory_created, feedback_recorded to all agents in same tenant
+✓ JWT auth via query param — RBAC enforcement (READER blocked from writes)
+✓ Per-tenant connection isolation — events don't cross tenant boundaries
+✓ 893 tests, 33 new P0 gap tests + 71 WebSocket tests
+
 ### Intelligence Layer (v0.4.0)
 ✓ Temporal Resolution — Vietnamese+English date patterns resolve "hôm nay/yesterday" → ISO dates before storing
 ✓ Pronoun Resolution — "anh ấy/he/she" → named entity from graph context, LLM-based fallback
 ✓ Fusion Formatter — group recall results by type [preference]/[fact]/[lesson] for LLM context
 ✓ Graph Visualization — interactive entity relationship explorer, vis-network, dark theme, search, click-to-inspect
 ✓ Feedback Loop + Auto-delete — confidence ±0.15/0.2, importance ±1, auto-delete on 3× negative
-✓ 726 tests, 181 new (v0.4.0)
 
 ### Brain Features (v0.3.2)
 ✓ Memory audit trail — before/after log for every mutation (create, update, delete, cleanup, batch)

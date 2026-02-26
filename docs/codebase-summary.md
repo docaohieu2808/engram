@@ -1,7 +1,7 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.4.0 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, automated maintenance, and interactive graph visualization. Combines episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, background scheduler, temporal/pronoun resolution, feedback loop, and fusion formatting. ~4500 LoC, 726+ tests, Python 3.11+.
+Engram v0.4.1 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, automated maintenance, interactive graph visualization, and real-time WebSocket API. Combines episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, background scheduler, temporal/pronoun resolution, feedback loop, fusion formatting, and bidirectional WebSocket push. ~4600 LoC, 893+ tests, Python 3.11+.
 
 **Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `constitution.py` (LLM governance), `resource_tier.py` (degradation), `scheduler.py` (background tasks), `audit.py` (mutation log), `recall/temporal_resolver.py` (date resolution), `recall/pronoun_resolver.py` (entity mapping), `recall/fusion_formatter.py` (result grouping), `feedback/auto_adjust.py` (confidence tracking).
 
@@ -452,6 +452,35 @@ Interactive entity relationship explorer using vis-network library.
 
 ---
 
+### `src/engram/ws/` — WebSocket API (v0.4.1)
+
+#### `protocol.py` (60 LOC) — **NEW (v0.4.1)**
+WebSocket message protocol definitions.
+- Command schema: {type, payload, request_id}
+- Event types: memory.created, memory.deleted, memory.updated, consolidation.completed, error
+- JSON serialization/deserialization helpers
+
+#### `event_bus.py` (80 LOC) — **NEW (v0.4.1)**
+In-process pub/sub event bus for memory change propagation.
+- Per-tenant subscriber channels
+- Async broadcast to all connections in a namespace
+- Decouples episodic/semantic mutations from WebSocket delivery
+
+#### `connection_manager.py` (100 LOC) — **NEW (v0.4.1)**
+Active WebSocket connection lifecycle management.
+- Per-tenant connection registry
+- Connect/disconnect with cleanup on client drop
+- Broadcast helpers for targeted or all-tenant delivery
+
+#### `handler.py` (120 LOC) — **NEW (v0.4.1)**
+FastAPI WebSocket route handler.
+- Route: `GET /ws?token=JWT`
+- Authenticates client via JWT on upgrade; rejects invalid/missing tokens
+- Dispatches 7 commands to existing memory operations
+- Subscribes connection to event_bus for push events
+
+---
+
 ### `src/engram/capture/` — External agent integration
 
 #### `server.py` (650 LOC) — HTTP API
@@ -617,10 +646,10 @@ Load and validate schemas; enforce type constraints on graph operations.
 | Metric | Value |
 |--------|-------|
 | Python version | 3.11+ |
-| Total LOC | ~4200 |
-| Test count | 545+ |
-| Modules | 34+ |
-| Endpoints | 13 (HTTP) |
+| Total LOC | ~4600 |
+| Test count | 893+ |
+| Modules | 38+ |
+| Endpoints | 13 (HTTP) + 1 (WebSocket /ws) |
 | CLI commands | 35+ |
 | MCP tools | 12 (8 original + 4 session) |
 | Config fields | 70+ |

@@ -9,9 +9,9 @@ Engram is a dual-memory AI agent system that thinks like humans. It combines:
 - **Reasoning Engine** — LLM synthesis (Gemini) that connects episodic + semantic memory to answer questions
 - **Federation Layer** — External provider adapters (REST, File, Postgres, MCP) extending recall across services
 
-Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI).
+Exposes four interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI), **WebSocket API** (real-time bidirectional).
 
-**Version:** 0.4.0 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline + Brain Features + Intelligence Layer | **Tests:** 726+ | **License:** MIT
+**Version:** 0.4.1 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline + Brain Features + Intelligence Layer + WebSocket API | **Tests:** 893+ | **License:** MIT
 
 ---
 
@@ -26,6 +26,7 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 1. **CLI** — `engram remember`, `engram recall`, `engram think`, etc.
 2. **MCP** — Tools for Claude Code and other MCP clients
 3. **HTTP API** — REST endpoints at `/api/v1/` with structured errors, pagination
+4. **WebSocket API** — Bidirectional real-time at `/ws?token=JWT`; 7 commands + push events; per-tenant isolation via event bus
 
 ### Enterprise Features
 - **Multi-Tenancy** — Per-tenant isolation via tenant_id
@@ -379,6 +380,16 @@ Exposes three interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP 
 - **FR32.6** MCP tool: `engram_get_graph_data(search_keyword)` returns filtered graph JSON
 - **Acceptance:** Graph renders in <500ms; interactive exploration works; search filters correctly
 
+#### FR33: WebSocket API (v0.4.1)
+- **FR33.1** Route: `GET /ws?token=<JWT>` — JWT verified on WebSocket upgrade; reject 401 on invalid/missing
+- **FR33.2** New package `src/engram/ws/`: protocol.py, event_bus.py, connection_manager.py, handler.py
+- **FR33.3** **7 commands (client → server):** recall, remember, think, query, ingest, feedback, status
+- **FR33.4** **Push events (server → client):** memory.created, memory.deleted, memory.updated, consolidation.completed, error
+- **FR33.5** Per-tenant isolation: connection_manager partitions subscriptions by tenant_id; clients only receive their namespace events
+- **FR33.6** event_bus.py decouples EpisodicStore mutations from WebSocket delivery; episodic store fires events post-mutation
+- **FR33.7** 71 WebSocket tests + 33 P0 gap tests = 104 new tests (total: 893)
+- **Acceptance:** Clients receive push events within 100ms of mutation; unauthenticated connections rejected; per-tenant isolation verified
+
 ---
 
 ### Non-Functional Requirements
@@ -554,6 +565,12 @@ engram serve
 ---
 
 ## Change Log
+
+**v0.4.1** (2026-02-27) — WebSocket API + Real-Time Push
+- WebSocket API: bidirectional `/ws?token=JWT`; 7 commands + push events (memory.created/deleted/updated, consolidation.completed, error)
+- Per-tenant isolation via connection_manager + event_bus; JWT auth on upgrade
+- New package: `src/engram/ws/` (protocol.py, event_bus.py, connection_manager.py, handler.py)
+- 71 WebSocket tests + 33 P0 gap tests = 104 new; 893 total
 
 **v0.4.0** (2026-02-25) — Intelligence Layer + Graph Visualization
 - Temporal Resolution: 28 Vietnamese+English patterns resolve "hôm nay/yesterday" → ISO dates before storing

@@ -2,6 +2,25 @@
 
 ## Version History
 
+### v0.4.1 (Completed — 2026-02-27)
+**WebSocket API + Real-Time Push**
+
+**WebSocket API** ✓
+- Route: `GET /ws?token=JWT` — JWT authenticated on upgrade
+- 7 bidirectional commands: recall, remember, think, query, ingest, feedback, status
+- Push events: memory.created, memory.deleted, memory.updated, consolidation.completed, error
+- Per-tenant isolation via connection manager (tenant_id from JWT)
+- Event bus: in-process pub/sub decouples mutations from WebSocket delivery
+- New package: `src/engram/ws/` (protocol.py, event_bus.py, connection_manager.py, handler.py)
+
+**Test Coverage** ✓
+- 71 WebSocket tests (protocol, event bus, connection manager, handler auth + commands)
+- 33 P0 gap tests (rate limiter edge cases, consolidation triggers, MCP server tools)
+
+**Current stats:** 893 tests passing (104 new).
+
+---
+
 ### v0.4.0 (Completed — 2026-02-25)
 **Intelligence Layer + Graph Visualization**
 
@@ -304,7 +323,7 @@ Transformed engram from prototype to enterprise-grade system with 10 independent
   - Aggregations (count, sum, avg on attributes; weight-aware)
 - **Query optimization:** Index creation suggestions, explain plans
 - **Batch operations:** Bulk remember, bulk ingest, bulk add_nodes
-- **WebSocket API:** Real-time memory feed for multi-agent sync (live push on remember/delete/update across agents sharing namespace)
+- **WebSocket API:** Real-time memory feed for multi-agent sync (live push on remember/delete/update across agents sharing namespace) — **Completed in v0.4.1**
 - **Query caching:** Smarter cache invalidation strategies
 - **Memory auto-consolidation:** Background task for periodic consolidation
 - **TUI enhancements:** Export/import in TUI, session merge/split, bulk operations
@@ -577,7 +596,8 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 | v0.3.0 | 2026-02-25 | Activation-Based Recall + Consolidation + TUI | ✓ Released |
 | v0.3.1 | 2026-02-25 | Recall Pipeline + Entity Resolution + Learning | ✓ Released |
 | v0.3.2 | 2026-02-25 | Brain Features (Audit Trail, Resource Tier, Constitution, Scheduler) | ✓ Released |
-| v0.3.3+ | 2026-06-30 | Advanced Queries + Performance | Planned |
+| v0.4.1 | 2026-02-27 | WebSocket API + Real-Time Push | ✓ Released |
+| v0.4.2+ | 2026-06-30 | Advanced Queries + Performance | Planned |
 | v0.4.0 | 2026-09-30 | Multi-Node Distribution | Planned |
 | v0.5.0 | 2026-12-31 | Dashboard + Features | Planned |
 | v1.0.0 | 2027-03-31 | Production Release | Planned |

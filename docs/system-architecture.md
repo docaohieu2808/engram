@@ -9,7 +9,7 @@ Engram is a dual-memory AI system that enables agents to reason like humans by c
 3. **Reasoning Engine** — LLM synthesis connecting both stores (Gemini via litellm)
 4. **Federation Layer** — External memory providers (REST, File, Postgres, MCP) via smart query router
 
-All three interfaces (CLI, MCP, HTTP) share the same memory layers.
+All four interfaces (CLI, MCP, HTTP, WebSocket) share the same memory layers.
 
 ---
 
@@ -18,10 +18,11 @@ All three interfaces (CLI, MCP, HTTP) share the same memory layers.
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │                         Interfaces                             │
-├──────────────────────┬─────────────────┬──────────────────────┤
-│   CLI (Typer)        │  MCP (FastMCP)  │  HTTP API (FastAPI)  │
-│   Local tools        │  stdio-based    │  /api/v1/ endpoints  │
-└──────────────────────┴────────┬────────┴──────────┬────────────┘
+├──────────────────────┬─────────────────┬──────────────────────┬──────────────────────┤
+│   CLI (Typer)        │  MCP (FastMCP)  │  HTTP API (FastAPI)  │  WebSocket API       │
+│   Local tools        │  stdio-based    │  /api/v1/ endpoints  │  /ws?token=JWT       │
+│                      │                 │                      │  bidirectional push  │
+└──────────────────────┴────────┬────────┴──────────┬───────────┴──────────┬───────────┘
                                  │                   │
                     ┌────────────┴───────────────────┘
                     │
@@ -581,6 +582,43 @@ Errors:
 - NOT_FOUND — Resource not found
 - RATE_LIMITED — Too many requests
 - INTERNAL_ERROR — Server error
+
+---
+
+### Layer 5b: WebSocket API (v0.4.1)
+
+**Path:** `src/engram/ws/`
+
+**Purpose:** Bidirectional real-time communication for live memory push events to connected clients.
+
+**Components:**
+- **protocol.py** — WebSocket message protocol: command schema, event types, serialization
+- **event_bus.py** — In-process pub/sub bus; broadcasts memory events (remember, delete, update) to all subscribers
+- **connection_manager.py** — Manages active WebSocket connections with per-tenant isolation; handles connect/disconnect lifecycle
+- **handler.py** — FastAPI WebSocket route handler; authenticates via JWT, dispatches commands, subscribes to event bus
+
+**Connection:**
+```
+ws://localhost:8765/ws?token=<JWT>
+```
+
+**Supported Commands (client → server):**
+- `recall` — Search memories
+- `remember` — Store a memory
+- `think` — LLM reasoning
+- `query` — Graph query
+- `ingest` — Entity extraction
+- `feedback` — Record feedback
+- `status` — Get memory counts
+
+**Push Events (server → client):**
+- `memory.created` — New memory stored
+- `memory.deleted` — Memory removed
+- `memory.updated` — Memory content/metadata changed
+- `consolidation.completed` — Consolidation run finished
+- `error` — Command error response
+
+**Per-Tenant Isolation:** Connection manager partitions subscriptions by `tenant_id` from JWT; tenants only receive events for their own namespace.
 
 ---
 
