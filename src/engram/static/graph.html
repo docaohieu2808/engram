@@ -65,6 +65,11 @@ const COLOR_MAP = {
 let network = null;
 let allNodes = [], allEdges = [];
 let nodesDataset, edgesDataset;
+let edgeState = new Map();
+let nodePrevPos = new Map();
+let animRaf = null;
+let lastFrame = 0;
+let animTime = 0;
 
 async function loadGraph() {
   try {
@@ -87,6 +92,120 @@ async function loadGraph() {
 // XSS defense: escape user-controlled strings before inserting into innerHTML
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
 
+function stableSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) || 1;
+}
+
+function startAnimationLoop() {
+  if (animRaf || !network) return;
+  const tick = (ts) => {
+    const now = ts || performance.now();
+    const dt = Math.min(0.05, Math.max(0.008, (now - (lastFrame || now)) / 1000));
+    lastFrame = now;
+    animTime += dt;
+
+    // khi physics đang chạy hoặc vừa kéo node, redraw để edge có độ "lắc"
+    network.redraw();
+    animRaf = requestAnimationFrame(tick);
+  };
+  animRaf = requestAnimationFrame(tick);
+}
+
+function stopAnimationLoop() {
+  if (!animRaf) return;
+  cancelAnimationFrame(animRaf);
+  animRaf = null;
+}
+
+function drawSoftEdges(ctx) {
+  if (!network || !allEdges?.length) return;
+
+  const fanCount = new Map();
+  const spring = 42;   // độ bật
+  const damping = 11;  // giảm chấn
+  const dt = 1 / 60;
+
+  for (const e of allEdges) {
+    const p1 = network.getPosition(e.from);
+    const p2 = network.getPosition(e.to);
+    if (!p1 || !p2) continue;
+
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 2) continue;
+
+    const nx = -dy / dist;
+    const ny = dx / dist;
+
+    const slot = fanCount.get(e.from) || 0;
+    fanCount.set(e.from, slot + 1);
+
+    const seed = stableSeed(`${e.from}|${e.label}|${e.to}`);
+    const alt = slot % 2 === 0 ? 1 : -1;
+
+    const prev1 = nodePrevPos.get(e.from) || p1;
+    const prev2 = nodePrevPos.get(e.to) || p2;
+    const v1x = p1.x - prev1.x;
+    const v1y = p1.y - prev1.y;
+    const v2x = p2.x - prev2.x;
+    const v2y = p2.y - prev2.y;
+
+    // năng lượng kích thích theo vận tốc vuông góc dây
+    const excite = ((v1x + v2x) * nx + (v1y + v2y) * ny) * 0.8;
+
+    const base = alt * Math.min(24, 6 + slot * 0.9 + dist * 0.015);
+    const micro = Math.sin(animTime * (1.1 + ((seed >> 3) % 40) / 100) + ((seed % 628) / 100)) * 1.2;
+    const target = base + excite * 3.6 + micro;
+
+    const key = `${e.from}->${e.to}:${e.label}`;
+    let st = edgeState.get(key);
+    if (!st) {
+      st = { off: target, vel: 0, tan: 0, tanVel: 0 };
+      edgeState.set(key, st);
+    }
+
+    // spring-damper cho offset chính
+    st.vel += (target - st.off) * spring * dt;
+    st.vel *= Math.exp(-damping * dt);
+    st.off += st.vel * dt;
+
+    // tangent cũng có dao động riêng để tránh 1 form cố định
+    const tanTarget = ((v2x - v1x) * (dx / dist) + (v2y - v1y) * (dy / dist)) * 1.2;
+    st.tanVel += (tanTarget - st.tan) * 28 * dt;
+    st.tanVel *= Math.exp(-9 * dt);
+    st.tan += st.tanVel * dt;
+
+    const mx = (p1.x + p2.x) / 2;
+    const my = (p1.y + p2.y) / 2;
+    const cx = mx + nx * st.off + (dx / dist) * st.tan;
+    const cy = my + ny * st.off + (dy / dist) * st.tan;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.quadraticCurveTo(cx, cy, p2.x, p2.y);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,157,47,0.62)';
+    ctx.lineWidth = 0.95 + Math.min(1.1, (e.weight || 1) * 0.2);
+    ctx.shadowColor = 'rgba(255,157,47,0.22)';
+    ctx.shadowBlur = 2.4;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // cập nhật previous positions để frame sau tính velocity
+  for (const n of allNodes) {
+    const p = network.getPosition(n.id);
+    if (p) nodePrevPos.set(n.id, { x: p.x, y: p.y });
+  }
+}
+
 function renderGraph(nodes, edges) {
   document.getElementById('loading').style.display = 'none';
 
@@ -105,17 +224,18 @@ function renderGraph(nodes, edges) {
   edgesDataset = new vis.DataSet(edges.map(e => ({
     ...e,
     font: { color: mutedColor, size: 10, align: 'middle' },
-    // Link kiểu SEMrush: mảnh, nhẹ, gần-thẳng (không quạt hình cung)
+    // Ẩn line mặc định, chỉ dùng cho label + interaction
     color: {
-      color: 'rgba(255,157,47,0.34)',
-      hover: 'rgba(255,157,47,0.62)',
-      highlight: 'rgba(255,157,47,0.72)',
+      color: 'rgba(0,0,0,0)',
+      hover: 'rgba(0,0,0,0)',
+      highlight: 'rgba(0,0,0,0)',
       inherit: false,
     },
     smooth: false,
-    width: 0.9,
-    hoverWidth: 0.4,
-    selectionWidth: 0.6,
+    width: 1,
+    hoverWidth: 0,
+    selectionWidth: 0,
+    chosen: false,
   })));
 
   const container = document.getElementById('graph-container');
@@ -131,11 +251,23 @@ function renderGraph(nodes, edges) {
     edges: {
       arrows: { to: { enabled: false } },
       smooth: false,
+      color: {
+        color: 'rgba(0,0,0,0)',
+        hover: 'rgba(0,0,0,0)',
+        highlight: 'rgba(0,0,0,0)',
+        inherit: false,
+      },
+      hoverWidth: 0,
+      selectionWidth: 0,
     },
     background: { color: '#1a1a2e' },
   };
 
   network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);
+  edgeState = new Map();
+  nodePrevPos = new Map();
+  network.on('beforeDrawing', drawSoftEdges);
+  startAnimationLoop();
 
   network.on('click', params => {
     if (params.nodes.length > 0) showNodeDetails(params.nodes[0]);
@@ -215,6 +347,12 @@ document.getElementById('search').addEventListener('input', e => {
 
   if (matched.size > 0) network.fit({ nodes: [...matched], animation: true });
 });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopAnimationLoop();
+  else startAnimationLoop();
+});
+window.addEventListener('pagehide', stopAnimationLoop);
 
 loadGraph();
 </script>
