@@ -57,6 +57,7 @@ REASONING_PROMPT = """You are a memory reasoning assistant. Based on the retriev
 {question}
 
 ## Instructions
+- LANGUAGE: Always respond in the SAME language as the question. If the question is in Vietnamese, answer in Vietnamese. If English, answer in English.
 - THINK LIKE A HUMAN: read between the lines, infer hidden motivations, unspoken intentions
 - Don't just summarize — DEDUCE. If someone does X despite Y, ask WHY and connect the dots
 - Look for patterns: repeated behavior, contradictions between words and actions, emotional subtext
