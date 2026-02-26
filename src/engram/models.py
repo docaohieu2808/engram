@@ -17,6 +17,20 @@ from typing import Any
 from pydantic import BaseModel, Field, computed_field, field_validator
 
 
+def _normalize_entity_name(name: str) -> str:
+    """Normalize entity display name: trim spaces and capitalize first letter.
+
+    Examples:
+      - "engram" -> "Engram"
+      - "  gitpocket" -> "Gitpocket"
+      - "API" -> "API" (keeps rest as-is)
+    """
+    s = (name or "").strip()
+    if not s:
+        return s
+    return s[0].upper() + s[1:]
+
+
 # --- Enums ---
 
 
@@ -130,6 +144,11 @@ class SemanticNode(BaseModel):
     type: str
     name: str
     attributes: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name")
+    @classmethod
+    def _normalize_name(cls, v: str) -> str:
+        return _normalize_entity_name(v)
 
     @computed_field
     @property

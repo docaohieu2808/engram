@@ -19,6 +19,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger("engram")
 
 
+def _normalize_node_name(name: str) -> str:
+    s = (name or "").strip()
+    if not s:
+        return s
+    return s[0].upper() + s[1:]
+
+
+def _canonicalize_node_key(key: str) -> str:
+    if ":" not in key:
+        return key
+    type_, name = key.split(":", 1)
+    return f"{type_}:{_normalize_node_name(name)}"
+
+
 class SemanticGraph:
     """NetworkX in-memory graph with pluggable storage backend (SQLite or PostgreSQL)."""
 
@@ -51,20 +65,44 @@ class SemanticGraph:
                 )
                 nodes = nodes[:self._max_nodes]
             loaded_keys: set[str] = set()
+            key_map: dict[str, str] = {}
             for key, type_, name, attrs in nodes:
                 node = SemanticNode(type=type_, name=name, attributes=json.loads(attrs or "{}"))
-                self._graph.add_node(key, data=node)
-                loaded_keys.add(key)
+                canonical_key = node.key
+                key_map[key] = canonical_key
+                loaded_keys.add(canonical_key)
+
+                # Merge case-variant duplicates (e.g. "engram" + "Engram" -> "Engram")
+                if canonical_key in self._graph:
+                    existing: SemanticNode | None = self._graph.nodes[canonical_key].get("data")
+                    merged_attrs = dict(existing.attributes if existing else {})
+                    merged_attrs.update(node.attributes)
+                    if existing and existing.name != node.name:
+                        aliases = list(merged_attrs.get("aliases", []))
+                        for alias in (existing.name, node.name):
+                            if alias and alias != node.name and alias not in aliases:
+                                aliases.append(alias)
+                        if aliases:
+                            merged_attrs["aliases"] = aliases
+                    self._graph.nodes[canonical_key]["data"] = SemanticNode(
+                        type=node.type,
+                        name=node.name,
+                        attributes=merged_attrs,
+                    )
+                else:
+                    self._graph.add_node(canonical_key, data=node)
             # D-H5: skip edges whose endpoints were truncated due to max_nodes cap
             for row in await self._backend.load_edges():
                 key, from_key, to_key, relation = row[0], row[1], row[2], row[3]
-                if from_key not in loaded_keys or to_key not in loaded_keys:
+                mapped_from = key_map.get(from_key, from_key)
+                mapped_to = key_map.get(to_key, to_key)
+                if mapped_from not in loaded_keys or mapped_to not in loaded_keys:
                     continue  # skip edges referencing truncated nodes
                 weight = float(row[4]) if len(row) > 4 else 1.0
                 attrs = json.loads(row[5]) if len(row) > 5 and row[5] else {}
-                edge = SemanticEdge(from_node=from_key, to_node=to_key, relation=relation,
+                edge = SemanticEdge(from_node=mapped_from, to_node=mapped_to, relation=relation,
                                     weight=weight, attributes=attrs)
-                self._graph.add_edge(from_key, to_key, key=key, data=edge)
+                self._graph.add_edge(mapped_from, mapped_to, key=edge.key, data=edge)
             self._loaded = True
 
     async def close(self) -> None:
@@ -86,16 +124,25 @@ class SemanticGraph:
     async def add_edge(self, edge: SemanticEdge) -> bool:
         """Add to both stores. Return True if new."""
         await self._ensure_loaded()
-        is_new = not self._graph.has_edge(edge.from_node, edge.to_node)
-        await self._backend.save_edge(
-            edge.key, edge.from_node, edge.to_node, edge.relation,
-            edge.weight, json.dumps(edge.attributes),
+        from_key = _canonicalize_node_key(edge.from_node)
+        to_key = _canonicalize_node_key(edge.to_node)
+        normalized_edge = SemanticEdge(
+            from_node=from_key,
+            to_node=to_key,
+            relation=edge.relation,
+            weight=edge.weight,
+            attributes=edge.attributes,
         )
-        self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
+        is_new = not self._graph.has_edge(from_key, to_key)
+        await self._backend.save_edge(
+            normalized_edge.key, from_key, to_key, normalized_edge.relation,
+            normalized_edge.weight, json.dumps(normalized_edge.attributes),
+        )
+        self._graph.add_edge(from_key, to_key, key=normalized_edge.key, data=normalized_edge)
         if self._audit:
             self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.add_edge",
-                            resource_id=edge.key, details={"relation": edge.relation,
-                            "from": edge.from_node, "to": edge.to_node})
+                            resource_id=normalized_edge.key, details={"relation": normalized_edge.relation,
+                            "from": normalized_edge.from_node, "to": normalized_edge.to_node})
         return is_new
 
     async def add_nodes_batch(self, nodes: list[SemanticNode]) -> None:
@@ -113,9 +160,19 @@ class SemanticGraph:
         if not edges:
             return
         await self._ensure_loaded()
-        rows = [(e.key, e.from_node, e.to_node, e.relation, e.weight, json.dumps(e.attributes)) for e in edges]
+        normalized_edges = [
+            SemanticEdge(
+                from_node=_canonicalize_node_key(e.from_node),
+                to_node=_canonicalize_node_key(e.to_node),
+                relation=e.relation,
+                weight=e.weight,
+                attributes=e.attributes,
+            )
+            for e in edges
+        ]
+        rows = [(e.key, e.from_node, e.to_node, e.relation, e.weight, json.dumps(e.attributes)) for e in normalized_edges]
         await self._backend.save_edges_batch(rows)
-        for edge in edges:
+        for edge in normalized_edges:
             self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
 
     async def get_node(self, key: str) -> SemanticNode | None:
@@ -210,7 +267,8 @@ class SemanticGraph:
         await self._ensure_loaded()
         result: dict[str, Any] = {}
         for name in entity_names:
-            matching = [k for k in self._graph.nodes if k.endswith(f":{name}")]
+            canonical_name = _normalize_node_name(name)
+            matching = [k for k in self._graph.nodes if k.endswith(f":{canonical_name}")]
             nodes: list[SemanticNode] = []
             edges: list[SemanticEdge] = []
             for start in matching:

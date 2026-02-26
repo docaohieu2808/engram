@@ -56,7 +56,7 @@ async def test_query_by_keyword(semantic_graph):
     await semantic_graph.add_node(SemanticNode(type="Service", name="auth-service"))
     results = await semantic_graph.query("payment")
     assert len(results) == 1
-    assert results[0].name == "payment-gateway"
+    assert results[0].name.lower() == "payment-gateway"
 
 
 async def test_get_related(semantic_graph):
@@ -64,7 +64,7 @@ async def test_get_related(semantic_graph):
     await _add_service_team(semantic_graph)
     result = await semantic_graph.get_related(["platform"], depth=1)
     nodes = result["platform"]["nodes"]
-    node_names = [n.name for n in nodes]
+    node_names = [n.name.lower() for n in nodes]
     assert "api" in node_names or "platform" in node_names
 
 
