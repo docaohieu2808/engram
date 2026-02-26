@@ -20,7 +20,8 @@ class SqliteBackend:
     """
 
     def __init__(self, db_path: str) -> None:
-        self._db_path = Path(db_path)
+        # Expand ~ to HOME to avoid creating a literal "~" directory depending on cwd.
+        self._db_path = Path(db_path).expanduser()
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn: sqlite3.Connection | None = None
 
