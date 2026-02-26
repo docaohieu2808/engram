@@ -20,6 +20,8 @@ class APIKeyRecord(BaseModel):
     role: Role
     tenant_id: str = "default"
     active: bool = True
+    created_at: str = ""   # ISO timestamp when key was created
+    expires_at: str = ""   # ISO timestamp when key expires (empty = no expiry)
 
 
 class TokenPayload(BaseModel):

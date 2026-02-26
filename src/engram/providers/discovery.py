@@ -168,6 +168,12 @@ async def discover(config: DiscoveryConfig | None = None) -> list[ProviderEntry]
 
     # 2. Direct endpoints (user-provided, skip scan)
     for endpoint in config.endpoints:
+        from urllib.parse import urlparse
+        parsed = urlparse(endpoint)
+        host = parsed.hostname or ""
+        if host and host != "localhost" and not _is_safe_discovery_host(host):
+            logger.warning("Skipping unsafe direct endpoint (SSRF guard): %s", endpoint)
+            continue
         svc = await _detect_service_type(endpoint)
         if svc and svc["name"] not in seen_names:
             entry = _build_entry_from_service(svc, url=endpoint)
@@ -238,8 +244,8 @@ def _parse_mcp_config(config_path: Path, seen: set[str]) -> list[ProviderEntry]:
         data = json.loads(config_path.read_text())
         servers = data.get("mcpServers", {})
 
-        # Known MCP memory tool names
-        memory_tools = {"search_memory", "recall", "search", "query_memory"}
+        # Known MCP memory tool names (used for heuristic matching below)
+        _MEMORY_TOOL_NAMES = {"search_memory", "recall", "search", "query_memory"}  # noqa: F841
 
         for server_name, server_config in servers.items():
             name_lower = server_name.lower()

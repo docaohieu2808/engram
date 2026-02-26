@@ -41,13 +41,13 @@ def register(app: typer.Typer, get_config) -> None:
         from engram.providers.router import classify_intent
         intent = classify_intent(query)
         if intent == "think":
-            console.print(f"[dim]intent: think[/dim]")
+            console.print("[dim]intent: think[/dim]")
             engine = _get_engine()
             answer = run_async(engine.think(query))
             console.print(answer)
         else:
-            console.print(f"[dim]intent: recall[/dim]")
-            from engram.cli.episodic import _get_episodic, _get_semantic
+            console.print("[dim]intent: recall[/dim]")
+            from engram.cli.episodic import _get_episodic
             from engram.providers.registry import ProviderRegistry
             from engram.providers.router import federated_search
             cfg = get_config()

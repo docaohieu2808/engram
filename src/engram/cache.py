@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger("engram.cache")
 
 try:
     from redis.asyncio import Redis
@@ -27,7 +30,8 @@ class EngramCache:
         try:
             self._redis = Redis.from_url(self._url, decode_responses=False)
             await self._redis.ping()
-        except Exception:
+        except Exception as exc:
+            logger.debug("cache: Redis unavailable, degrading to no-op (%s)", exc)
             self._redis = None  # graceful degradation
 
     async def get(self, tenant_id: str, operation: str, params: dict) -> dict | None:
@@ -38,7 +42,8 @@ class EngramCache:
         try:
             data = await self._redis.get(key)
             return json.loads(data) if data else None
-        except Exception:
+        except Exception as exc:
+            logger.debug("cache: get error for key %s: %s", key, exc)
             return None
 
     async def set(
@@ -55,8 +60,8 @@ class EngramCache:
         key = self._cache_key(tenant_id, operation, params)
         try:
             await self._redis.setex(key, ttl, json.dumps(result, default=str))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("cache: set error for key %s: %s", key, exc)
 
     async def invalidate(self, tenant_id: str, operation: str = "*") -> None:
         """Delete all cache entries for a tenant+operation pattern."""
@@ -66,8 +71,8 @@ class EngramCache:
         try:
             async for key in self._redis.scan_iter(pattern):
                 await self._redis.delete(key)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("cache: invalidate error for pattern %s: %s", pattern, exc)
 
     def _cache_key(self, tenant_id: str, operation: str, params: dict) -> str:
         """Deterministic cache key: engram:{tenant}:{op}:{hash}."""

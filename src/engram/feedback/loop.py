@@ -7,6 +7,7 @@ Auto-deletes memories with repeated negative feedback and low confidence.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -62,6 +63,7 @@ class FeedbackProcessor:
     def __init__(self, store: EpisodicStore, config: FeedbackConfig | None = None):
         self._store = store
         self._config = config or FeedbackConfig()
+        self._locks: dict[str, asyncio.Lock] = {}
 
     async def apply_feedback(self, memory_id: str, feedback: FeedbackType) -> dict:
         """Apply feedback to a memory. Returns updated metadata dict.
@@ -69,53 +71,64 @@ class FeedbackProcessor:
         POSITIVE: confidence += boost, priority += 1 (capped at 10)
         NEGATIVE: confidence -= penalty, priority -= 1 (min 1), negative_count += 1
         Auto-delete if negative_count >= threshold AND confidence < min_confidence.
+        Per-memory lock prevents lost updates from concurrent feedback.
         """
-        memory = await self._store.get(memory_id)
-        if memory is None:
-            logger.warning("Feedback target memory %s not found", memory_id)
-            return {"error": "memory_not_found"}
+        if memory_id not in self._locks:
+            self._locks[memory_id] = asyncio.Lock()
 
-        confidence = memory.confidence
-        priority = memory.priority
-        negative_count = memory.negative_count
-        now = datetime.now(timezone.utc).isoformat()
+        async with self._locks[memory_id]:
+            memory = await self._store.get(memory_id)
+            if memory is None:
+                logger.warning("Feedback target memory %s not found", memory_id)
+                return {"error": "memory_not_found"}
 
-        if feedback == FeedbackType.POSITIVE:
-            confidence = min(1.0, confidence + self._config.positive_boost)
-            priority = min(10, priority + 1)
-        elif feedback == FeedbackType.NEGATIVE:
-            confidence = max(0.0, confidence - self._config.negative_penalty)
-            priority = max(1, priority - 1)
-            negative_count += 1
+            confidence = memory.confidence
+            priority = memory.priority
+            negative_count = memory.negative_count
+            now = datetime.now(timezone.utc).isoformat()
 
-        # Check auto-delete condition
-        if (
-            negative_count >= self._config.auto_delete_threshold
-            and confidence < self._config.min_confidence_for_delete
-        ):
-            await self._store.delete(memory_id)
-            logger.info(
-                "Auto-deleted memory %s (negative_count=%d, confidence=%.2f)",
-                memory_id[:8], negative_count, confidence,
-            )
-            return {"action": "deleted", "memory_id": memory_id}
+            if feedback == FeedbackType.POSITIVE:
+                confidence = min(1.0, confidence + self._config.positive_boost)
+                priority = min(10, priority + 1)
+            elif feedback == FeedbackType.NEGATIVE:
+                confidence = max(0.0, confidence - self._config.negative_penalty)
+                priority = max(1, priority - 1)
+                negative_count += 1
 
-        # Update metadata
-        update = {
-            "confidence": confidence,
-            "priority": priority,
-            "negative_count": negative_count,
-            "last_feedback_at": now,
-        }
-        await self._store.update_metadata(memory_id, update)
-        logger.debug(
-            "Applied %s feedback to %s: confidence=%.2f, priority=%d",
-            feedback.value, memory_id[:8], confidence, priority,
-        )
-        return {
-            "action": "updated",
-            "memory_id": memory_id,
-            "confidence": confidence,
-            "priority": priority,
-            "negative_count": negative_count,
-        }
+            # Check auto-delete condition
+            if (
+                negative_count >= self._config.auto_delete_threshold
+                and confidence < self._config.min_confidence_for_delete
+            ):
+                await self._store.delete(memory_id)
+                logger.info(
+                    "Auto-deleted memory %s (negative_count=%d, confidence=%.2f)",
+                    memory_id[:8], negative_count, confidence,
+                )
+                result: dict = {"action": "deleted", "memory_id": memory_id}
+            else:
+                # Update metadata
+                update = {
+                    "confidence": confidence,
+                    "priority": priority,
+                    "negative_count": negative_count,
+                    "last_feedback_at": now,
+                }
+                await self._store.update_metadata(memory_id, update)
+                logger.debug(
+                    "Applied %s feedback to %s: confidence=%.2f, priority=%d",
+                    feedback.value, memory_id[:8], confidence, priority,
+                )
+                result = {
+                    "action": "updated",
+                    "memory_id": memory_id,
+                    "confidence": confidence,
+                    "priority": priority,
+                    "negative_count": negative_count,
+                }
+
+        # Cleanup lock if no longer held (prevents unbounded growth)
+        if memory_id in self._locks and not self._locks[memory_id].locked():
+            del self._locks[memory_id]
+
+        return result

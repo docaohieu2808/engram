@@ -280,11 +280,11 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         content = load_constitution()
         hash_val = compute_constitution_hash(content)
         path = get_constitution_path()
-        console.print(f"[bold]Data Constitution[/bold]")
+        console.print("[bold]Data Constitution[/bold]")
         console.print(f"  Path: {path}")
         console.print(f"  Exists: {path.exists()}")
         console.print(f"  Hash: {hash_val}")
-        console.print(f"  Laws: 3 (namespace isolation, no fabrication, audit rights)")
+        console.print("  Laws: 3 (namespace isolation, no fabrication, audit rights)")
 
     @app.command("scheduler-status")
     def scheduler_status():
@@ -387,7 +387,8 @@ async def _do_ingest(file: Path, dry_run: bool, get_extractor, get_graph, get_ep
     for msg in messages:
         content = msg.get("content", "")
         if content:
-            await episodic.remember(content, entities=entity_names)
+            per_content = extractor.filter_entities_for_content(content, entity_names)
+            await episodic.remember(content, entities=per_content)
 
     return IngestResult(
         episodic_count=len(messages),
@@ -410,7 +411,8 @@ async def _do_ingest_messages(messages: list[dict], get_extractor, get_graph, ge
     for msg in messages:
         content = msg.get("content", "")
         if content:
-            await episodic.remember(content, entities=entity_names)
+            per_content = extractor.filter_entities_for_content(content, entity_names)
+            await episodic.remember(content, entities=per_content)
     return IngestResult(
         episodic_count=len(messages),
         semantic_nodes=len(result.nodes),

@@ -66,6 +66,16 @@ class EntityExtractor:
         messages = [{"role": "user", "content": text}]
         return await self.extract_entities(messages)
 
+    @staticmethod
+    def filter_entities_for_content(content: str, all_entity_names: list[str]) -> list[str]:
+        """Filter entity names to only those mentioned in the given content.
+
+        Uses case-insensitive substring matching. This avoids the over-linking
+        problem where batch-extracted entities get attached to every memory item.
+        """
+        content_lower = content.lower()
+        return [name for name in all_entity_names if name.lower() in content_lower]
+
     async def _extract_chunk(self, messages: list[dict]) -> ExtractionResult:
         """Run LLM extraction on a chunk of messages, with up to 2 retries on transient errors."""
         formatted = "\n".join(

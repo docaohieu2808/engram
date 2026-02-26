@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from engram.semantic.graph import SemanticGraph
+
+if TYPE_CHECKING:
+    from engram.audit import AuditLogger
+    from engram.config import SemanticConfig
 
 __all__ = ["SemanticGraph", "create_graph"]
 
 
 def create_graph(
-    config: "engram.config.SemanticConfig",  # type: ignore[name-defined]
-    audit: "engram.audit.AuditLogger | None" = None,  # type: ignore[name-defined]
+    config: "SemanticConfig",
+    audit: "AuditLogger | None" = None,
     tenant_id: str = "default",  # M10: passed to SemanticGraph for audit logging
 ) -> SemanticGraph:
     """Factory: pick backend from config.provider and return a SemanticGraph."""

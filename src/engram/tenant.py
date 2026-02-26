@@ -65,6 +65,7 @@ class StoreFactory:
     """
 
     _MAX_GRAPH_CACHE = 100
+    _MAX_EPISODIC_CACHE = 1000
 
     def __init__(self, config: "Config") -> None:
         self._config = config
@@ -91,8 +92,16 @@ class StoreFactory:
             self._config.embedding,
             namespace=tid,
             on_remember_hook=self._config.hooks.on_remember,
+            guard_enabled=self._config.ingestion.poisoning_guard,
         )
         self._episodic_stores[tid] = store
+
+        # LRU eviction: remove oldest when over limit
+        if len(self._episodic_stores) > self._MAX_EPISODIC_CACHE:
+            oldest_tid = next(iter(self._episodic_stores))
+            del self._episodic_stores[oldest_tid]
+            logger.info("Evicted episodic store for tenant %s (LRU cache full)", oldest_tid)
+
         return store
 
     async def _get_lock(self) -> asyncio.Lock:
@@ -146,8 +155,8 @@ class StoreFactory:
                 del self._graphs[oldest_tid]
                 try:
                     await oldest_graph.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("tenant: error closing evicted graph for %s: %s", oldest_tid, exc)
                 logger.info("Evicted semantic graph for tenant %s (LRU cache full)", oldest_tid)
 
             return graph
@@ -158,7 +167,7 @@ class StoreFactory:
             for graph in self._graphs.values():
                 try:
                     await graph.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("tenant: error closing graph on shutdown: %s", exc)
             self._graphs.clear()
             self._episodic_stores.clear()

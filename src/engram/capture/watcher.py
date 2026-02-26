@@ -192,15 +192,15 @@ class InboxWatcher:
                 try:
                     dest = self._failed_dir / path.name
                     shutil.move(str(processing), str(dest))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("watcher: could not move %s to failed dir: %s", path.name, exc)
                 self._retry_counts.pop(file_key, None)
             else:
                 # Restore to inbox for retry
                 try:
                     processing.rename(path)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("watcher: could not restore %s for retry: %s", path.name, exc)
 
     @staticmethod
     def _load_chat_file(path: Path, is_jsonl: bool | None = None) -> list[dict[str, Any]]:
@@ -242,8 +242,8 @@ def _cleanup_pid() -> None:
             pid = int(PID_FILE.read_text().strip())
             if pid == os.getpid():
                 PID_FILE.unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("watcher: PID file cleanup error: %s", exc)
 
 
 def daemonize() -> None:

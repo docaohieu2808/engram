@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from functools import partial
 from pathlib import Path
+
+logger = logging.getLogger("engram.semantic.sqlite")
 
 
 class SqliteBackend:
@@ -49,13 +52,13 @@ class SqliteBackend:
         try:
             conn.execute("ALTER TABLE edges ADD COLUMN weight REAL DEFAULT 1.0")
             conn.commit()
-        except Exception:
-            pass  # Column already exists
+        except Exception as exc:
+            logger.debug("sqlite_backend: weight column migration skipped (already exists): %s", exc)
         try:
             conn.execute("ALTER TABLE edges ADD COLUMN attributes TEXT DEFAULT '{}'")
             conn.commit()
-        except Exception:
-            pass  # Column already exists
+        except Exception as exc:
+            logger.debug("sqlite_backend: attributes column migration skipped (already exists): %s", exc)
 
     def _sync_load_nodes(self) -> list[tuple[str, str, str, str]]:
         conn = self._connect()

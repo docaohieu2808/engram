@@ -121,7 +121,7 @@ class RetrievalAuditLog:
                     # Keep the incomplete first line in buf for next iteration
                     buf = lines[0]
                     # Collect complete lines from end (skip empty)
-                    entries = [l.decode("utf-8", errors="replace") for l in lines[1:] if l.strip()] + entries
+                    entries = [ln.decode("utf-8", errors="replace") for ln in lines[1:] if ln.strip()] + entries
                     if len(entries) >= n:
                         break
                 # Handle remaining buffer (first partial line)

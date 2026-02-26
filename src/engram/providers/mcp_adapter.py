@@ -60,14 +60,14 @@ class McpAdapter(MemoryProvider):
             if self._session:
                 try:
                     await self._session.__aexit__(None, None, None)
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    logger.debug("mcp_adapter: session cleanup error: %s", cleanup_exc)
                 self._session = None
             if self._transport:
                 try:
                     await self._transport.__aexit__(None, None, None)
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    logger.debug("mcp_adapter: transport cleanup error: %s", cleanup_exc)
                 self._transport = None
             raise
 

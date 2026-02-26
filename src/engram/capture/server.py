@@ -78,6 +78,32 @@ class FeedbackRequest(BaseModel):
     feedback: str = Field(..., pattern="^(positive|negative)$")
 
 
+class BulkDeleteRequest(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=1000)
+
+
+class CreateNodeRequest(BaseModel):
+    type: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class CreateEdgeRequest(BaseModel):
+    from_node: str = Field(..., min_length=1)
+    to_node: str = Field(..., min_length=1)
+    relation: str = Field(..., min_length=1)
+    weight: float = 1.0
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class DeleteEdgeRequest(BaseModel):
+    key: str = Field(..., min_length=1)
+
+
+class UpdateNodeRequest(BaseModel):
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
 # --- Middleware ---
 
 
@@ -95,7 +121,7 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Per-tenant sliding-window rate limiting. Skips when rate_limiter is None."""
 
-    def __init__(self, app: Any, rate_limiter: RateLimiter | None = None, jwt_secret: str = "") -> None:
+    def __init__(self, app: Any, rate_limiter: RateLimiter | None = None, jwt_secret: str = "") -> None:  # noqa: B107 — empty string default is not a credential
         super().__init__(app)
         self._limiter = rate_limiter
         self._jwt_secret = jwt_secret
@@ -118,8 +144,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 tenant_id = data.get("tenant_id") or data.get("sub")
                 if tenant_id and isinstance(tenant_id, str):
                     return tenant_id
-            except Exception:
-                pass  # Fall through to IP-based fallback
+            except Exception as exc:
+                logger.debug("rate_limit: JWT decode failed, falling back to IP: %s", exc)
 
         client_host = request.client.host if request.client else "anonymous"
         return client_host or "anonymous"
@@ -352,7 +378,7 @@ def create_app(
         token = create_jwt(payload, _cfg.auth.jwt_secret)
         return {
             "access_token": token,
-            "token_type": "bearer",
+            "token_type": "bearer",  # noqa: B105 — OAuth2 standard string literal, not a password
             "expires_in": _cfg.auth.jwt_expiry_hours * 3600,
         }
 
@@ -429,6 +455,8 @@ def create_app(
                 return cached
 
         ep = _resolve_episodic(auth)
+        limit = min(limit, 100)
+        offset = min(offset, 500)
         filters = {"memory_type": memory_type} if memory_type else None
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         results = await ep.search(query, limit=limit + offset, filters=filters, tags=tag_list)
@@ -574,6 +602,7 @@ def create_app(
         """List memories with pagination and filters."""
         ep = _resolve_episodic(auth)
         limit = min(limit, 100)
+        offset = min(offset, 500)
         # Fetch enough to filter server-side
         fetch_limit = min((offset + limit) * 3, 1000)
         if search:
@@ -621,16 +650,12 @@ def create_app(
         return {"status": "ok", "memories": [_serialize_memory(m) for m in raw], "count": len(raw)}
 
     @v1.post("/memories/bulk-delete")
-    async def bulk_delete_memories(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    async def bulk_delete_memories(body: BulkDeleteRequest, auth: AuthContext = Depends(get_auth_context)):
         """Delete multiple memories by IDs."""
         _require_admin(auth)
-        body = await request.json()
-        ids = body.get("ids", [])
-        if not ids:
-            raise EngramError(ErrorCode.VALIDATION_ERROR, "ids list required")
         ep = _resolve_episodic(auth)
         deleted = []
-        for mid in ids:
+        for mid in body.ids:
             if await ep.delete(mid):
                 deleted.append(mid)
         return {"status": "ok", "deleted": deleted, "count": len(deleted)}
@@ -655,6 +680,10 @@ def create_app(
         body = await request.json()
         meta_update: dict[str, Any] = {}
         if "memory_type" in body:
+            try:
+                MemoryType(body["memory_type"])
+            except ValueError:
+                raise EngramError(ErrorCode.VALIDATION_ERROR, f"Invalid memory_type: {body['memory_type']}")
             meta_update["memory_type"] = body["memory_type"]
         if "priority" in body:
             p = int(body["priority"])
@@ -689,8 +718,19 @@ def create_app(
     # --- Graph visualization & mutation routes ---
 
     @v1.get("/graph/data")
-    async def graph_data(request: Request, auth: AuthContext = Depends(get_auth_context)):
-        """Return all nodes and edges in vis-network format for graph visualization."""
+    async def graph_data(
+        request: Request,
+        auth: AuthContext = Depends(get_auth_context),
+        limit: int = 500,
+        offset: int = 0,
+    ):
+        """Return paginated nodes and edges in vis-network format. Admin only."""
+        _require_admin(auth)
+        if limit < 1 or limit > 5000:
+            raise EngramError(ErrorCode.VALIDATION_ERROR, "limit must be between 1 and 5000")
+        if offset < 0:
+            raise EngramError(ErrorCode.VALIDATION_ERROR, "offset must be >= 0")
+
         gr = await _resolve_graph(auth)
         nodes = await gr.get_nodes()
         color_map = {
@@ -699,14 +739,13 @@ def create_app(
             "Project": "#FF9800",
             "Service": "#9C27B0",
         }
-        vis_nodes = []
-        vis_edges = []
+        vis_nodes_all = []
         for node in nodes:
             attrs = node.attributes or {}
             tooltip = f"{node.type}: {node.name}"
             if attrs:
                 tooltip += "\n" + "\n".join(f"{k}: {v}" for k, v in attrs.items())
-            vis_nodes.append({
+            vis_nodes_all.append({
                 "id": node.key,
                 "label": node.name,
                 "group": node.type,
@@ -716,12 +755,13 @@ def create_app(
             })
 
         all_edges = await gr.get_edges()
+        vis_edges_all = []
         seen: set[tuple[str, str, str]] = set()
         for edge in all_edges:
             key = (edge.from_node, edge.to_node, edge.relation)
             if key not in seen:
                 seen.add(key)
-                vis_edges.append({
+                vis_edges_all.append({
                     "from": edge.from_node,
                     "to": edge.to_node,
                     "label": edge.relation,
@@ -730,31 +770,37 @@ def create_app(
                     "attributes": edge.attributes,
                 })
 
-        return {"nodes": vis_nodes, "edges": vis_edges}
+        total_nodes = len(vis_nodes_all)
+        total_edges = len(vis_edges_all)
+        vis_nodes = vis_nodes_all[offset: offset + limit]
+        vis_edges = vis_edges_all[offset: offset + limit]
+
+        return {
+            "nodes": vis_nodes,
+            "edges": vis_edges,
+            "total_nodes": total_nodes,
+            "total_edges": total_edges,
+        }
 
     @v1.post("/graph/nodes")
-    async def create_node(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    async def create_node(body: CreateNodeRequest, auth: AuthContext = Depends(get_auth_context)):
         """Create a semantic graph node."""
         from engram.models import SemanticNode
-        body = await request.json()
-        if not body.get("type") or not body.get("name"):
-            raise EngramError(ErrorCode.VALIDATION_ERROR, "type and name required")
-        node = SemanticNode(type=body["type"], name=body["name"], attributes=body.get("attributes", {}))
+        node = SemanticNode(type=body.type, name=body.name, attributes=body.attributes)
         gr = await _resolve_graph(auth)
         is_new = await gr.add_node(node)
         return {"status": "ok", "key": node.key, "created": is_new}
 
     @v1.put("/graph/nodes/{node_key:path}")
-    async def update_node(node_key: str, request: Request, auth: AuthContext = Depends(get_auth_context)):
+    async def update_node(node_key: str, body: UpdateNodeRequest, auth: AuthContext = Depends(get_auth_context)):
         """Update node attributes."""
         from engram.models import SemanticNode
-        body = await request.json()
         gr = await _resolve_graph(auth)
         nodes = await gr.get_nodes()
         existing = next((n for n in nodes if n.key == node_key), None)
         if not existing:
             raise EngramError(ErrorCode.NOT_FOUND, f"Node {node_key} not found")
-        updated = SemanticNode(type=existing.type, name=existing.name, attributes={**existing.attributes, **body.get("attributes", {})})
+        updated = SemanticNode(type=existing.type, name=existing.name, attributes={**existing.attributes, **body.attributes})
         await gr.add_node(updated)
         return {"status": "ok", "key": updated.key}
 
@@ -769,34 +815,27 @@ def create_app(
         return {"status": "ok", "deleted": node_key}
 
     @v1.post("/graph/edges")
-    async def create_edge(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    async def create_edge(body: CreateEdgeRequest, auth: AuthContext = Depends(get_auth_context)):
         """Create a semantic graph edge."""
         from engram.models import SemanticEdge
-        body = await request.json()
-        if not body.get("from_node") or not body.get("to_node") or not body.get("relation"):
-            raise EngramError(ErrorCode.VALIDATION_ERROR, "from_node, to_node, and relation required")
         edge = SemanticEdge(
-            from_node=body["from_node"], to_node=body["to_node"],
-            relation=body["relation"], weight=body.get("weight", 1.0),
-            attributes=body.get("attributes", {}),
+            from_node=body.from_node, to_node=body.to_node,
+            relation=body.relation, weight=body.weight,
+            attributes=body.attributes,
         )
         gr = await _resolve_graph(auth)
         is_new = await gr.add_edge(edge)
         return {"status": "ok", "key": edge.key, "created": is_new}
 
     @v1.delete("/graph/edges")
-    async def delete_edge(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    async def delete_edge(body: DeleteEdgeRequest, auth: AuthContext = Depends(get_auth_context)):
         """Delete a semantic graph edge by key. S-H1: ADMIN role required."""
         _require_admin(auth)
-        body = await request.json()
-        edge_key = body.get("key")
-        if not edge_key:
-            raise EngramError(ErrorCode.VALIDATION_ERROR, "edge key required")
         gr = await _resolve_graph(auth)
-        ok = await gr.remove_edge(edge_key)
+        ok = await gr.remove_edge(body.key)
         if not ok:
-            raise EngramError(ErrorCode.NOT_FOUND, f"Edge {edge_key} not found")
-        return {"status": "ok", "deleted": edge_key}
+            raise EngramError(ErrorCode.NOT_FOUND, f"Edge {body.key} not found")
+        return {"status": "ok", "deleted": body.key}
 
     # --- Feedback & Audit routes ---
 
@@ -836,9 +875,11 @@ def create_app(
     async def scheduler_tasks(auth: AuthContext = Depends(get_auth_context)):
         """List all scheduled tasks and their status."""
         try:
-            from engram.scheduler import MemoryScheduler
-            scheduler = MemoryScheduler()
-            tasks = scheduler.status()
+            sched = getattr(app.state, "scheduler", None)
+            if sched is not None:
+                tasks = sched.status()
+            else:
+                tasks = []
         except Exception:
             tasks = []
         return {"status": "ok", "tasks": tasks}
@@ -877,8 +918,8 @@ def create_app(
     # --- UI routes ---
 
     @app.get("/graph")
-    async def graph_ui(auth: AuthContext = Depends(get_auth_context)):
-        """Serve the graph visualization HTML page. S-H2: auth required."""
+    async def graph_ui():
+        """Serve the graph visualization HTML page. Auth handled by frontend API calls."""
         html_path = Path(__file__).parent.parent / "static" / "graph.html"
         if html_path.exists():
             return HTMLResponse(html_path.read_text())
@@ -891,16 +932,16 @@ def create_app(
         return RedirectResponse(url="/ui")
 
     @app.get("/ui")
-    async def ui_root(auth: AuthContext = Depends(get_auth_context)):
-        """Serve the WebUI HTML page. S-H2: auth required."""
+    async def ui_root():
+        """Serve the WebUI HTML page. Auth handled by frontend API calls."""
         html_path = Path(__file__).parent.parent / "static" / "ui.html"
         if html_path.exists():
             return HTMLResponse(html_path.read_text())
         return HTMLResponse("<h1>WebUI not found</h1>", status_code=404)
 
     @app.get("/ui/{path:path}")
-    async def ui_catchall(path: str, auth: AuthContext = Depends(get_auth_context)):
-        """SPA catch-all — serve ui.html for all /ui/* routes. S-H2: auth required."""
+    async def ui_catchall(path: str):
+        """SPA catch-all — serve ui.html for all /ui/* routes."""
         html_path = Path(__file__).parent.parent / "static" / "ui.html"
         if html_path.exists():
             return HTMLResponse(html_path.read_text())
@@ -986,4 +1027,25 @@ def run_server(
     setup_telemetry(config)
     app_cache, app_limiter = asyncio.run(_build_cache_and_limiter(config))
     app = create_app(episodic, graph, engine, ingest_fn, store_factory, app_cache, app_limiter, config)
+
+    # Start memory scheduler (cleanup, consolidation, decay) with the server
+    if episodic is not None:
+        from engram.scheduler import create_default_scheduler
+        consolidation_engine = None
+        if config.consolidation.enabled:
+            try:
+                from engram.consolidation.engine import ConsolidationEngine
+                consolidation_engine = ConsolidationEngine(
+                    episodic, model=config.llm.model, config=config.consolidation,
+                )
+            except Exception as e:
+                logger.warning("Consolidation engine unavailable: %s", e)
+        scheduler = create_default_scheduler(episodic, consolidation_engine)
+        app.state.scheduler = scheduler
+
+        @app.on_event("startup")
+        async def _start_scheduler():
+            scheduler.start()
+            logger.info("Memory scheduler started with HTTP server")
+
     uvicorn.run(app, host=config.serve.host, port=config.serve.port)

@@ -72,7 +72,7 @@ async def restore(episodic, graph, archive_path: str) -> dict:
             # path traversal (e.g. ../../etc/passwd). Fall back to manual
             # validation on older Python versions.
             if sys.version_info >= (3, 12):
-                tar.extractall(tmp_path, filter="data")
+                tar.extractall(tmp_path, filter="data")  # noqa: B202 — filter="data" blocks traversal on 3.12+
             else:
                 # S-H6: build safe member list — reject symlinks, hardlinks, and path traversal
                 safe_members = []

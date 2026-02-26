@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Union
 
 from engram.models import MemoryType
+
+logger = logging.getLogger("engram.mcp")
 
 
 def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> None:
@@ -32,6 +35,8 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             namespace: Override config namespace for this operation
             topic_key: Optional unique key — if same key exists, updates the existing memory instead of creating new
         """
+        if len(content) > 10_000:
+            return {"error": "Content too long (max 10000 chars)"}
         store = _get_store(get_episodic, get_config, namespace)
         try:
             mem_type = MemoryType(memory_type)
@@ -47,8 +52,8 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             active_id = sess_store.get_active_id()
             if active_id:
                 metadata = {"session_id": active_id}
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("mcp: session store unavailable, skipping session metadata: %s", exc)
         mem_id = await store.remember(
             content, memory_type=mem_type, priority=priority,
             entities=entities or [], tags=tags or [],
@@ -96,8 +101,8 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
                 if person_names:
                     from engram.recall.pronoun_resolver import resolve_pronouns
                     query = resolve_pronouns(query, person_names)
-        except Exception:
-            pass  # graceful fallback — never block recall on resolution failure
+        except Exception as exc:
+            logger.debug("mcp: pronoun resolution failed, using original query: %s", exc)
 
         if start_date or end_date:
             from engram.episodic.search import temporal_search
@@ -317,7 +322,8 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         for msg in messages:
             content = msg.get("content", "")
             if content:
-                await episodic.remember(content, entities=entity_names)
+                per_content = extractor.filter_entities_for_content(content, entity_names)
+                await episodic.remember(content, entities=per_content)
                 count += 1
 
         return f"Ingested: {count} memories, {len(result.nodes)} entities, {len(result.edges)} relations"
@@ -362,7 +368,6 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         """
         try:
             from engram.feedback.loop import detect_feedback
-            from engram.models import FeedbackType
             feedback_enum = detect_feedback(message)
         except Exception as e:
             return f"Could not detect feedback from message: {e}"

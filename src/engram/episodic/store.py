@@ -2,15 +2,16 @@
 
 Handles embeddings manually (not via ChromaDB embedding_function) to avoid
 dimension mismatch when switching between providers (e.g. default 384 vs gemini 3072).
+
+Embedding helpers → episodic/embeddings.py
+Decay scoring    → episodic/decay.py
 """
 
 from __future__ import annotations
 
 import asyncio
-import functools
 import json
 import logging
-import math
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -19,6 +20,12 @@ import litellm
 
 from engram.audit import AuditLogger
 from engram.config import EmbeddingConfig, EpisodicConfig, ScoringConfig
+from engram.episodic.decay import compute_activation_score
+from engram.episodic.embeddings import (
+    _EMBEDDING_DIMS,
+    _detect_embedding_dim_from_model,
+    _get_embeddings,
+)
 from engram.episodic.fts_index import FtsIndex
 from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, MemoryType
@@ -26,22 +33,6 @@ from engram.sanitize import sanitize_content
 
 litellm.suppress_debug_info = True
 logger = logging.getLogger("engram")
-
-# Known embedding dimensions per model
-_EMBEDDING_DIMS: dict[str, int] = {
-    "gemini-embedding-001": 3072,
-    "text-embedding-3-small": 1536,
-    "text-embedding-3-large": 3072,
-    "text-embedding-ada-002": 1536,
-    "all-MiniLM-L6-v2": 384,
-}
-
-
-@functools.lru_cache(maxsize=1)
-def _get_default_ef():
-    """Lazy-load ChromaDB's default embedding function (all-MiniLM-L6-v2, 384d)."""
-    from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-    return DefaultEmbeddingFunction()
 
 
 def _safe_json_list(val: str | None) -> list:
@@ -53,36 +44,6 @@ def _safe_json_list(val: str | None) -> list:
         return result if isinstance(result, list) else []
     except (json.JSONDecodeError, TypeError):
         return []
-
-
-def _get_embeddings(model: str, texts: list[str], expected_dim: int | None = None) -> list[list[float]]:
-    """Generate embeddings via litellm, fallback to ChromaDB default on error.
-
-    Args:
-        expected_dim: If set, validates fallback embeddings match this dimension.
-                      Raises RuntimeError on mismatch to prevent silent corruption.
-    """
-    try:
-        response = litellm.embedding(model=model, input=texts)
-        return [item["embedding"] for item in response.data]
-    except Exception:
-        import warnings
-        fallback = _get_default_ef()(input=texts)
-        fallback_dim = len(fallback[0]) if fallback else 0
-        # Prevent dimension mismatch: if collection already has higher-dim embeddings,
-        # silently inserting 384d vectors would corrupt search quality
-        if expected_dim and fallback_dim != expected_dim:
-            raise RuntimeError(
-                f"Embedding API unavailable and fallback dimension ({fallback_dim}d) "
-                f"doesn't match collection ({expected_dim}d). "
-                f"Set GEMINI_API_KEY or ensure API access to avoid data corruption."
-            )
-        warnings.warn(
-            "Embedding API unavailable, using ChromaDB default (384d). "
-            "Set GEMINI_API_KEY for higher-quality embeddings.",
-            stacklevel=2,
-        )
-        return fallback
 
 
 def _collection_name(namespace: str) -> str:
@@ -425,7 +386,7 @@ class EpisodicStore:
 
             # Compute activation score
             similarity = max(0.0, 1.0 - distance)  # ChromaDB cosine distance → similarity
-            score = _compute_activation_score(
+            score = compute_activation_score(
                 similarity, memory.timestamp, memory.access_count,
                 memory.decay_rate, now, self._scoring, self._decay_enabled,
             )
@@ -495,6 +456,10 @@ class EpisodicStore:
             for i in range(0, len(expired_ids), _PAGE):
                 batch = expired_ids[i:i + _PAGE]
                 await asyncio.to_thread(collection.delete, ids=batch)
+                # Sync FTS5 index
+                if self._fts:
+                    for mid in batch:
+                        self._fts.delete(mid)
             if self._audit:
                 self._audit.log_modification(
                     tenant_id=self._namespace, actor="system",
@@ -563,8 +528,8 @@ class EpisodicStore:
                     result = await asyncio.to_thread(self._ensure_collection().get, ids=[id], include=["documents", "metadatas"])
                     if result["ids"]:
                         before_content = result["documents"][0] if result["documents"] else ""
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("store: audit pre-fetch before delete failed for %s: %s", id, exc)
 
             await asyncio.to_thread(self._ensure_collection().delete, ids=[id])
 
@@ -669,8 +634,8 @@ class EpisodicStore:
                     existing = await asyncio.to_thread(collection.get, ids=[mem_id], include=["metadatas"])
                     if existing["metadatas"]:
                         before_meta = {k: existing["metadatas"][0].get(k) for k in metadata}
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("store: audit pre-fetch before metadata update failed for %s: %s", mem_id, exc)
 
             await asyncio.to_thread(collection.update, ids=[mem_id], metadatas=[metadata])
 
@@ -690,10 +655,10 @@ class EpisodicStore:
         """Detect embedding dimension from existing collection data (D-H1: async to avoid blocking)."""
         if self._embedding_dim is not None:
             return
-        # Check known dimensions for configured model
-        model_name = self._embed_model.split("/")[-1] if "/" in self._embed_model else self._embed_model
-        if model_name in _EMBEDDING_DIMS:
-            self._embedding_dim = _EMBEDDING_DIMS[model_name]
+        # Check known dimensions for configured model (fast path via registry)
+        known_dim = _detect_embedding_dim_from_model(self._embed_model)
+        if known_dim is not None:
+            self._embedding_dim = known_dim
             return
         # Peek at existing data to detect dimension (wrapped in thread to avoid blocking event loop)
         collection = self._ensure_collection()
@@ -710,8 +675,8 @@ class EpisodicStore:
             result = await asyncio.to_thread(collection.get, where={"topic_key": topic_key})
             if result["ids"]:
                 return result["ids"][0]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("store: topic lookup failed for key %s: %s", topic_key, exc)
         return None
 
     async def _update_topic(
@@ -749,8 +714,8 @@ class EpisodicStore:
                 old_doc = await asyncio.to_thread(collection.get, ids=[mem_id], include=["documents"])
                 if old_doc["documents"]:
                     old_content = old_doc["documents"][0]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("store: audit pre-fetch before topic update failed for %s: %s", mem_id, exc)
 
         await asyncio.to_thread(
             collection.update,
@@ -924,8 +889,8 @@ class EpisodicStore:
                 for dup_id in batch:
                     try:
                         await asyncio.to_thread(self._fts.delete, dup_id)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("store: FTS dedup delete failed for %s: %s", dup_id, exc)
         elif dry_run:
             deleted_count = len(to_delete)
 
@@ -1037,41 +1002,6 @@ class EpisodicStore:
             # Fail-open: if dedup check fails, let remember() create a new memory
             logger.debug("Dedup check failed (proceeding with new memory): %s", e)
             return None
-
-
-def _compute_activation_score(
-    similarity: float,
-    timestamp: datetime,
-    access_count: int,
-    decay_rate: float,
-    now: datetime,
-    scoring: ScoringConfig,
-    decay_enabled: bool,
-) -> float:
-    """Compute composite activation score for a memory.
-
-    Components: vector similarity, Ebbinghaus retention, recency, frequency.
-    """
-    if not decay_enabled:
-        return similarity
-
-    # Ensure both datetimes are tz-aware for safe subtraction
-    ts = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
-    days_old = max(0.0, (now - ts).total_seconds() / 86400)
-
-    # Ebbinghaus retention with access reinforcement
-    retention = math.exp(-decay_rate * days_old / (1 + 0.1 * access_count))
-    # Recency boost (newer = higher)
-    recency = 1.0 / (1.0 + days_old * 0.1)
-    # Frequency boost (myelination metaphor)
-    frequency = 1.0 + min(0.3, 0.05 * math.log1p(access_count))
-
-    return (
-        similarity * scoring.similarity_weight
-        + retention * scoring.retention_weight
-        + recency * scoring.recency_weight
-        + frequency * scoring.frequency_weight
-    )
 
 
 def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> EpisodicMemory:

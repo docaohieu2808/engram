@@ -77,7 +77,7 @@ class RestAdapter(MemoryProvider):
         timeout_seconds: float = 3.0,
         auth_login_endpoint: str = "",
         auth_username: str = "",
-        auth_password: str = "",
+        auth_password: str = "",  # noqa: B107 — empty string default; real value set from config
         **kwargs: Any,
     ):
         # M7 fix: validate URL scheme to prevent file://, ftp://, etc.

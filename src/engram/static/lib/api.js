@@ -17,6 +17,13 @@ const API = {
     opts.headers = { ...this._headers(), ...opts.headers };
     const res = await fetch(this.base + path, opts);
     if (!res.ok) {
+      if (res.status === 401) {
+        // Session expired or invalid credentials — show login
+        localStorage.removeItem('engram_token');
+        localStorage.removeItem('engram_api_key');
+        if (typeof App !== 'undefined') App.showLoginPage();
+        throw new Error('Session expired — please log in again');
+      }
       const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
       throw new Error(err.error?.message || err.detail || res.statusText);
     }

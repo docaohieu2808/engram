@@ -81,8 +81,9 @@ class FtsIndex:
             return
         conn = self._connect()
         ids = [e[0] for e in entries]
-        placeholders = ",".join("?" * len(ids))
-        conn.execute(f"DELETE FROM memories_fts WHERE id IN ({placeholders})", ids)
+        # Delete existing entries one-at-a-time via executemany to avoid dynamic
+        # SQL placeholder construction (eliminates B608 SQL f-string pattern).
+        conn.executemany("DELETE FROM memories_fts WHERE id = ?", [(i,) for i in ids])
         conn.executemany(
             "INSERT INTO memories_fts(id, content, memory_type) VALUES (?, ?, ?)",
             entries,

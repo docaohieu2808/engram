@@ -133,7 +133,7 @@ def fire_hook(url: str | None, data: dict) -> None:
                 headers={"Content-Type": "application/json", "Host": original_host},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: B310 — SSRF guard applied above via validate_webhook_url()
                 logger.debug("Hook %s responded %s", url, resp.status)
         except Exception as exc:
             logger.debug("Hook %s failed (ignored): %s", url, exc)

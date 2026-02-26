@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -73,15 +74,30 @@ def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def create_api_key(name: str, role: Role, tenant_id: str = "default") -> tuple[str, APIKeyRecord]:
-    """Generate a new API key. Returns (plaintext_key, record). Key is only shown once."""
+def create_api_key(
+    name: str,
+    role: Role,
+    tenant_id: str = "default",
+    expires_days: Optional[int] = None,
+) -> tuple[str, APIKeyRecord]:
+    """Generate a new API key. Returns (plaintext_key, record). Key is only shown once.
+
+    Args:
+        expires_days: If set, key expires after this many days from now.
+    """
     key = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    expires_at = ""
+    if expires_days is not None:
+        expires_at = (now + timedelta(days=expires_days)).isoformat()
     record = APIKeyRecord(
         key_hash=_hash_key(key),
         name=name,
         role=role,
         tenant_id=tenant_id,
         active=True,
+        created_at=now.isoformat(),
+        expires_at=expires_at,
     )
     keys = _load_api_keys()
     keys.append(record.model_dump())
@@ -90,11 +106,26 @@ def create_api_key(name: str, role: Role, tenant_id: str = "default") -> tuple[s
 
 
 def verify_api_key(key: str) -> Optional[APIKeyRecord]:
-    """Look up an API key by its hash. Returns record if active, else None."""
+    """Look up an API key by its hash. Returns record if active and not expired, else None."""
     key_hash = _hash_key(key)
+    now = datetime.now(timezone.utc)
     for entry in _load_api_keys():
-        if entry.get("key_hash") == key_hash and entry.get("active", True):
-            return APIKeyRecord(**entry)
+        if entry.get("key_hash") != key_hash:
+            continue
+        if not entry.get("active", True):
+            continue
+        # Check expiry if set
+        expires_at = entry.get("expires_at", "")
+        if expires_at:
+            try:
+                exp_dt = datetime.fromisoformat(expires_at)
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                if now >= exp_dt:
+                    return None  # Key expired
+            except (ValueError, TypeError):
+                pass  # Malformed expiry — treat as no expiry
+        return APIKeyRecord(**entry)
     return None
 
 
@@ -130,9 +161,18 @@ def create_jwt(payload: TokenPayload, secret: str) -> str:
 
 
 def verify_jwt(token: str, secret: str) -> Optional[TokenPayload]:
-    """Decode and verify JWT. Returns TokenPayload or None on any failure."""
+    """Decode and verify JWT. Returns TokenPayload or None on any failure.
+
+    PyJWT checks exp by default. We also add require=["exp"] so tokens
+    without an exp claim are explicitly rejected.
+    """
     try:
-        data = jwt.decode(token, secret, algorithms=["HS256"])
+        data = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            options={"require": ["exp"]},
+        )
         return TokenPayload(
             sub=data["sub"],
             role=Role(data["role"]),

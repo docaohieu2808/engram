@@ -118,9 +118,9 @@ def register(app: typer.Typer, providers_app: typer.Typer, get_config: Callable[
             # Health check
             healthy = await provider.health()
             if healthy:
-                console.print(f"  [green]✓ Health check passed[/green]")
+                console.print("  [green]✓ Health check passed[/green]")
             else:
-                console.print(f"  [red]✗ Health check failed[/red]")
+                console.print("  [red]✗ Health check failed[/red]")
                 return
 
             # Test search
@@ -151,7 +151,7 @@ def register(app: typer.Typer, providers_app: typer.Typer, get_config: Callable[
 
         for provider in registry.get_all():
             s = provider.stats
-            status = f"[green]✓ active[/green]" if provider.is_active else f"[red]✗ {provider.status_label}[/red]"
+            status = "[green]✓ active[/green]" if provider.is_active else f"[red]✗ {provider.status_label}[/red]"
             table.add_row(
                 provider.name,
                 str(s.query_count),

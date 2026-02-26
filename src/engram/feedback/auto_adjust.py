@@ -41,11 +41,17 @@ async def adjust_memory(
     # Resolve 8-char prefix to full ID if needed
     resolved_id = memory_id
     if len(memory_id) <= 8:
-        recent = await store.get_recent(n=500)
-        for m in recent:
-            if m.id.startswith(memory_id):
-                resolved_id = m.id
-                break
+        # Try exact match first (fast path)
+        mem = await store.get(memory_id)
+        if mem:
+            resolved_id = mem.id
+        else:
+            # Fallback: scan recent 50 only (not 500) for prefix match
+            recent = await store.get_recent(n=50)
+            for m in recent:
+                if m.id.startswith(memory_id):
+                    resolved_id = m.id
+                    break
 
     processor = FeedbackProcessor(store, config or FeedbackConfig())
     fb_type = FeedbackType.POSITIVE if feedback == "positive" else FeedbackType.NEGATIVE

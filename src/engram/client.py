@@ -329,8 +329,8 @@ class EngramClient:
                     if _high_overlap(candidate, existing_content, threshold=0.85):
                         logger.debug("Dedup skip: '%s'", item["content"][:60])
                         continue
-            except Exception:
-                pass  # fail-open: if dedup check fails, store the item
+            except Exception as exc:
+                logger.debug("client: dedup check failed, storing item as-is: %s", exc)
             new_items.append(item)
         return new_items
 

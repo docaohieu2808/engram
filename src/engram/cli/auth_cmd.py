@@ -35,7 +35,7 @@ def register(auth_app: typer.Typer, get_config: Callable[[], Config]) -> None:
         console.print(f"\n[green]API key created for '{name}'[/green]")
         console.print(f"  Role:      {record.role.value}")
         console.print(f"  Tenant:    {record.tenant_id}")
-        console.print(f"\n[bold yellow]Key (shown once — save it now):[/bold yellow]")
+        console.print("\n[bold yellow]Key (shown once — save it now):[/bold yellow]")
         console.print(f"  {key}\n")
 
     @auth_app.command("list-keys")

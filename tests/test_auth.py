@@ -133,6 +133,61 @@ def test_revoke_api_key(tmp_path, monkeypatch):
     assert verify_api_key(key) is None
 
 
+def test_api_key_expiry_future_is_valid(tmp_path, monkeypatch):
+    """API key with future expiry should be accepted."""
+    keys_file = tmp_path / "api_keys.json"
+    monkeypatch.setattr("engram.auth._api_keys_path", lambda: keys_file)
+
+    key, record = create_api_key("svc-expiring", Role.AGENT, expires_days=30)
+    assert record.expires_at != "", "expires_at should be set"
+    assert record.created_at != "", "created_at should be set"
+    found = verify_api_key(key)
+    assert found is not None, "Key with future expiry should be accepted"
+
+
+def test_api_key_expiry_past_is_rejected(tmp_path, monkeypatch):
+    """API key with past expiry should be rejected."""
+    from datetime import datetime, timedelta, timezone
+    import json
+
+    keys_file = tmp_path / "api_keys.json"
+    monkeypatch.setattr("engram.auth._api_keys_path", lambda: keys_file)
+
+    # Create a valid key first
+    key, record = create_api_key("svc-expired", Role.AGENT, expires_days=30)
+
+    # Manually backdate the expires_at in the stored file
+    past_dt = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    raw_keys = json.loads(keys_file.read_text())
+    raw_keys[0]["expires_at"] = past_dt
+    keys_file.write_text(json.dumps(raw_keys))
+
+    found = verify_api_key(key)
+    assert found is None, "Expired key should be rejected"
+
+
+def test_api_key_no_expiry_is_valid(tmp_path, monkeypatch):
+    """API key without expiry (expires_days=None) should not expire."""
+    keys_file = tmp_path / "api_keys.json"
+    monkeypatch.setattr("engram.auth._api_keys_path", lambda: keys_file)
+
+    key, record = create_api_key("svc-permanent", Role.ADMIN)
+    assert record.expires_at == "", "No expiry → expires_at should be empty"
+    found = verify_api_key(key)
+    assert found is not None
+
+
+def test_verify_jwt_requires_exp_claim():
+    """JWT without exp claim must be rejected (require=['exp'] enforced)."""
+    import jwt as pyjwt
+
+    # Encode a token that explicitly has NO exp field
+    data = {"sub": "agent", "role": "agent", "tenant_id": "default"}
+    token = pyjwt.encode(data, SECRET, algorithm="HS256")
+    result = verify_jwt(token, SECRET)
+    assert result is None, "JWT without exp claim should be rejected"
+
+
 # --- HTTP auth middleware tests ---
 
 def test_no_auth_health_always_public(client_no_auth):

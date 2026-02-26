@@ -16,7 +16,7 @@ from engram.hooks import fire_hook
 from engram.models import EpisodicMemory, SemanticEdge, SemanticNode
 from engram.providers.base import MemoryProvider
 from engram.providers.router import federated_search
-from engram.resource_tier import ResourceTier, get_resource_monitor
+from engram.resource_tier import get_resource_monitor
 from engram.sanitize import sanitize_llm_input
 from engram.semantic.graph import SemanticGraph
 from engram.utils import strip_diacritics
@@ -172,8 +172,8 @@ class ReasoningEngine:
             resolved_q, _resolved_date = resolve_temporal(question)
             if _resolved_date:
                 search_question = resolved_q
-        except Exception:
-            pass  # non-critical — fall back to original question
+        except Exception as exc:
+            logger.debug("engine: temporal resolution failed, using original query: %s", exc)
 
         # 1. Vector search for relevant episodic memories
         if self._parallel_search and self._episodic and self._graph:
@@ -283,7 +283,7 @@ class ReasoningEngine:
                 continue
             # Check individual words
             for word, word_s in zip(words, words_stripped):
-                if len(word) > 2 and (word in name_lower or word_s in name_stripped):
+                if len(word) > 2 and (word == name_lower or word_s == name_stripped):
                     found.append(name)
                     break
 

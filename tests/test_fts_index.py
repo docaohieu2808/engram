@@ -89,6 +89,25 @@ class TestFtsIndexCRUD:
         fts = make_fts(tmp_path)
         fts.insert_batch([])  # Should not raise
 
+    def test_fts_insert_batch_single_item(self, tmp_path):
+        """insert_batch with 1 item should not raise and be searchable."""
+        fts = make_fts(tmp_path)
+        fts.insert_batch([("id-1", "hello world", "episodic")])
+        results = fts.search("hello")
+        assert len(results) == 1
+        assert results[0].id == "id-1"
+
+    def test_fts_insert_batch_overwrite(self, tmp_path):
+        """insert_batch on existing IDs should update, not duplicate."""
+        fts = make_fts(tmp_path)
+        fts.insert_batch([("id-1", "original content", "episodic")])
+        fts.insert_batch([("id-1", "updated content", "episodic")])
+        updated = fts.search("updated")
+        assert len(updated) == 1
+        assert updated[0].id == "id-1"
+        old = fts.search("original")
+        assert len(old) == 0
+
 
 class TestFtsIndexSearch:
     def test_exact_keyword_match(self, tmp_path):

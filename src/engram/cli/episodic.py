@@ -35,7 +35,12 @@ def _parse_duration(duration_str: str) -> datetime:
 def _get_episodic(get_config, namespace: str | None = None):
     from engram.episodic.store import EpisodicStore
     cfg = get_config()
-    return EpisodicStore(cfg.episodic, cfg.embedding, namespace=namespace)
+    return EpisodicStore(
+        cfg.episodic,
+        cfg.embedding,
+        namespace=namespace,
+        guard_enabled=cfg.ingestion.poisoning_guard,
+    )
 
 
 def _get_semantic(get_config):
@@ -60,6 +65,9 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         topic_key: Optional[str] = typer.Option(None, "--topic-key", help="Unique key; updates existing memory if same key exists"),
     ):
         """Store a memory in episodic store."""
+        if len(content) > 10_000:
+            console.print("[red]Error: Content too long (max 10,000 chars)[/red]")
+            raise typer.Exit(1)
         store = _get_episodic(get_config, _resolve_namespace())
         mem_type = MemoryType(type)
 

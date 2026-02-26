@@ -106,14 +106,14 @@ class PostgresBackend:
             for mig_sql in _MIGRATE_EDGES:
                 try:
                     await conn.execute(mig_sql)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("pg_backend: edge migration step skipped (expected on existing schema): %s", exc)
             # D-H4: add FK constraints on existing deployments (idempotent)
             for fk_sql in _MIGRATE_FK:
                 try:
                     await conn.execute(fk_sql)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("pg_backend: FK migration step skipped (expected on existing schema): %s", exc)
 
     def _pool_or_raise(self) -> asyncpg.Pool:  # type: ignore[name-defined]
         if self._pool is None:
