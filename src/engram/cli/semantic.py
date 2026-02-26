@@ -20,6 +20,12 @@ def _get_graph(get_config):
     return create_graph(cfg.semantic)
 
 
+def _get_episodic(get_config):
+    from engram.episodic.store import EpisodicStore
+    cfg = get_config()
+    return EpisodicStore(cfg.episodic, cfg.embedding, namespace="default")
+
+
 def register(app: typer.Typer, add_app: typer.Typer, remove_app: typer.Typer, get_config) -> None:
     """Register semantic commands on add/remove sub-apps and main app."""
 
@@ -69,6 +75,40 @@ def register(app: typer.Typer, add_app: typer.Typer, remove_app: typer.Typer, ge
             console.print(f"[red]Removed[/red] edge {key}")
         else:
             console.print(f"[yellow]Not found:[/yellow] {key}")
+
+    @app.command("autolink-orphans")
+    def autolink_orphans(
+        recent: int = typer.Option(1000, "--recent", help="How many recent episodic memories to scan"),
+        min_co_mentions: int = typer.Option(3, "--min-co-mentions", help="Minimum co-mentions to suggest a link"),
+        apply: bool = typer.Option(False, "--apply", help="Apply suggestions instead of dry-run"),
+        limit: int = typer.Option(50, "--limit", help="Max suggestions to apply"),
+    ):
+        """Suggest/apply links for orphan nodes from episodic co-mentions."""
+        from engram.semantic.orphan_linker import apply_suggestions, suggest_orphan_links
+
+        graph = _get_graph(get_config)
+        episodic = _get_episodic(get_config)
+
+        suggestions = run_async(suggest_orphan_links(graph, episodic, recent=recent, min_co_mentions=min_co_mentions))
+        if not suggestions:
+            console.print("[dim]No orphan link suggestions found.[/dim]")
+            return
+
+        table = Table(title=f"Orphan Link Suggestions ({len(suggestions)})")
+        table.add_column("#", style="dim")
+        table.add_column("Orphan", style="yellow")
+        table.add_column("Target", style="cyan")
+        table.add_column("Relation", style="green")
+        table.add_column("Co-mentions", style="magenta")
+        for i, s in enumerate(suggestions[: min(len(suggestions), 30)], 1):
+            table.add_row(str(i), s.orphan_key, s.target_key, s.relation, str(s.co_mentions))
+        console.print(table)
+
+        if apply:
+            applied = run_async(apply_suggestions(graph, suggestions, limit=limit))
+            console.print(f"[green]Applied[/green] {applied} orphan links")
+        else:
+            console.print("[dim]Dry-run only. Use --apply to persist links.[/dim]")
 
     @app.command()
     def query(
