@@ -82,6 +82,13 @@ const Graph = {
 
   _renderGraph() {
     const container = document.getElementById('graph-vis');
+    const cs = getComputedStyle(document.documentElement);
+    const edgeColor = cs.getPropertyValue('--border').trim();
+    const bgColor = cs.getPropertyValue('--bg-canvas').trim();
+    const accentColor = cs.getPropertyValue('--accent').trim();
+    const mutedColor = cs.getPropertyValue('--text-muted').trim();
+    const textColor = cs.getPropertyValue('--text-primary').trim();
+
     this._nodesDS = new vis.DataSet(this._nodes.map(n => {
       const colors = getNodeColor(n.group);
       return {
@@ -97,12 +104,6 @@ const Graph = {
         borderWidth: 2,
       };
     }));
-    const cs = getComputedStyle(document.documentElement);
-    const edgeColor = cs.getPropertyValue('--border').trim();
-    const bgColor = cs.getPropertyValue('--bg-canvas').trim();
-    const accentColor = cs.getPropertyValue('--accent').trim();
-    const mutedColor = cs.getPropertyValue('--text-muted').trim();
-    const textColor = cs.getPropertyValue('--text-primary').trim();
 
     this._edgesDS = new vis.DataSet(this._edges.map(e => ({
       ...e, font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
