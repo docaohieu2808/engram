@@ -732,6 +732,21 @@ def create_app(
             raise EngramError(ErrorCode.VALIDATION_ERROR, "offset must be >= 0")
 
         gr = await _resolve_graph(auth)
+        def _norm_name(name: str) -> str:
+            s = (name or "").strip()
+            if not s:
+                return s
+            return s[0].upper() + s[1:]
+
+        def _norm_key(node_type: str, name: str) -> str:
+            return f"{node_type}:{_norm_name(name)}"
+
+        def _norm_key_from_key(key: str) -> str:
+            if ":" not in key:
+                return key
+            t, n = key.split(":", 1)
+            return _norm_key(t, n)
+
         nodes = await gr.get_nodes()
         color_map = {
             "Person": "#4CAF50",
@@ -739,31 +754,47 @@ def create_app(
             "Project": "#FF9800",
             "Service": "#9C27B0",
         }
-        vis_nodes_all = []
+
+        # Merge case-variant nodes for graph visualization (e.g. engram/Engram)
+        merged_nodes: dict[str, dict[str, Any]] = {}
         for node in nodes:
             attrs = node.attributes or {}
-            tooltip = f"{node.type}: {node.name}"
+            normalized_name = _norm_name(node.name)
+            node_id = _norm_key(node.type, node.name)
+            tooltip = f"{node.type}: {normalized_name}"
             if attrs:
                 tooltip += "\n" + "\n".join(f"{k}: {v}" for k, v in attrs.items())
-            vis_nodes_all.append({
-                "id": node.key,
-                "label": node.name,
-                "group": node.type,
-                "color": color_map.get(node.type, "#607D8B"),
-                "title": tooltip,
-                "attributes": attrs,
-            })
+
+            existing = merged_nodes.get(node_id)
+            if existing:
+                merged_attrs = dict(existing.get("attributes") or {})
+                merged_attrs.update(attrs)
+                existing["attributes"] = merged_attrs
+                existing["title"] = tooltip
+            else:
+                merged_nodes[node_id] = {
+                    "id": node_id,
+                    "label": normalized_name,
+                    "group": node.type,
+                    "color": color_map.get(node.type, "#607D8B"),
+                    "title": tooltip,
+                    "attributes": attrs,
+                }
+
+        vis_nodes_all = list(merged_nodes.values())
 
         all_edges = await gr.get_edges()
         vis_edges_all = []
         seen: set[tuple[str, str, str]] = set()
         for edge in all_edges:
-            key = (edge.from_node, edge.to_node, edge.relation)
+            from_key = _norm_key_from_key(edge.from_node)
+            to_key = _norm_key_from_key(edge.to_node)
+            key = (from_key, to_key, edge.relation)
             if key not in seen:
                 seen.add(key)
                 vis_edges_all.append({
-                    "from": edge.from_node,
-                    "to": edge.to_node,
+                    "from": from_key,
+                    "to": to_key,
                     "label": edge.relation,
                     "arrows": "to",
                     "weight": edge.weight,
