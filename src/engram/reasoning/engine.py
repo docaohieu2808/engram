@@ -163,11 +163,21 @@ class ReasoningEngine:
         """Answer a question by combining episodic, semantic, and federated memory."""
         _SEARCH_LIMIT = 15
 
+        # 0. Resolve temporal references in question so search finds dated memories
+        search_question = question
+        try:
+            from engram.recall.temporal_resolver import resolve_temporal
+            resolved_q, _resolved_date = resolve_temporal(question)
+            if _resolved_date:
+                search_question = resolved_q
+        except Exception:
+            pass  # non-critical — fall back to original question
+
         # 1. Vector search for relevant episodic memories
         if self._parallel_search and self._episodic and self._graph:
             from engram.recall.parallel_search import ParallelSearcher
             searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config)
-            search_results = await searcher.search(question, limit=_SEARCH_LIMIT)
+            search_results = await searcher.search(search_question, limit=_SEARCH_LIMIT)
             # Format parallel search results grouped by memory type for LLM context
             from engram.recall.fusion_formatter import format_for_llm
             episodic_context = format_for_llm(search_results, max_chars=6000) or "\n".join(
@@ -177,7 +187,7 @@ class ReasoningEngine:
             episodic_results = search_results
             _use_parallel = True
         else:
-            episodic_results = await self._episodic.search(question, limit=_SEARCH_LIMIT)
+            episodic_results = await self._episodic.search(search_question, limit=_SEARCH_LIMIT)
             episodic_context = None
             _use_parallel = False
 

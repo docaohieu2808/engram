@@ -78,7 +78,7 @@ async def adjust_memory(
     # Apply adjustment
     if feedback == "positive":
         confidence = min(1.0, confidence + _POSITIVE_BOOST)
-        importance = min(5, importance + 1)
+        importance = min(10, importance + 1)
         positive_count += 1
     else:  # negative
         confidence = max(0.0, confidence - _NEGATIVE_PENALTY)

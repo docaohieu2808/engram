@@ -72,6 +72,7 @@ def _get_engine() -> ReasoningEngine:
         _instances["engine"] = ReasoningEngine(
             _get_episodic(), _get_graph(), model=cfg.llm.model,
             on_think_hook=cfg.hooks.on_think, providers=_get_providers(),
+            recall_config=cfg.recall_pipeline,
         )
     return _instances["engine"]
 

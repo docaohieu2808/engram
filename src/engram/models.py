@@ -22,6 +22,9 @@ class MemoryType(str, Enum):
     ERROR = "error"
     CONTEXT = "context"
     WORKFLOW = "workflow"
+    LESSON = "lesson"
+    AVOIDANCE = "avoidance"
+    PERSONALITY_TRAIT = "personality_trait"
 
 
 class Priority(int, Enum):

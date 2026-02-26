@@ -132,11 +132,12 @@ async def test_confidence_floored_at_0():
 
 
 @pytest.mark.asyncio
-async def test_importance_capped_at_5():
-    meta = {"confidence": 0.5, "priority": 5, "positive_count": 0, "negative_count": 0}
+async def test_importance_capped_at_10():
+    # Cap is now 10 (aligned with loop.py) — priority 10 stays at 10 after positive feedback
+    meta = {"confidence": 0.5, "priority": 10, "positive_count": 0, "negative_count": 0}
     store = _make_store(meta)
     result = await adjust_memory(store, "test-memory-id-full-1234", "positive")
-    assert result["importance"] == 5
+    assert result["importance"] == 10
 
 
 @pytest.mark.asyncio

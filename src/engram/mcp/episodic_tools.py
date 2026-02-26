@@ -344,6 +344,45 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             return f"Memory {memory_id[:8]} auto-deleted (3× negative, confidence {result['confidence']:.2f})"
         return f"Memory {memory_id[:8]} adjusted: confidence={result['confidence']:.2f}, importance={result['importance']}"
 
+    @mcp.tool()
+    async def engram_auto_feedback(
+        message: str,
+        memory_id: str,
+        namespace: str | None = None,
+    ) -> str:
+        """Auto-detect feedback sentiment from message and apply to a memory.
+
+        Detects "correct"/"exactly"/"wrong"/"incorrect" etc. in the message
+        and adjusts the specified memory's confidence accordingly.
+
+        Args:
+            message: User message containing implicit feedback (e.g. "That's correct!")
+            memory_id: Full or 8-char prefix of memory to adjust
+            namespace: Override namespace
+        """
+        try:
+            from engram.feedback.loop import detect_feedback
+            from engram.models import FeedbackType
+            feedback_enum = detect_feedback(message)
+        except Exception as e:
+            return f"Could not detect feedback from message: {e}"
+
+        if feedback_enum is None:
+            return "No feedback signal detected in message (no positive/negative keywords found)."
+
+        feedback_type = feedback_enum.value  # "positive" or "negative"
+        store = _get_store(get_episodic, get_config, namespace)
+        from engram.feedback.auto_adjust import adjust_memory
+        result = await adjust_memory(store, memory_id, feedback_type)
+        if result.get("error"):
+            return f"Error: {result['error']}"
+        if result["action"] == "deleted":
+            return f"Memory {memory_id[:8]} auto-deleted (3× negative, confidence {result['confidence']:.2f})"
+        return (
+            f"Auto-feedback '{feedback_type}' applied to {memory_id[:8]}: "
+            f"confidence={result['confidence']:.2f}, importance={result['importance']}"
+        )
+
 
 def _get_store(get_episodic, get_config, namespace: str | None):
     """Return episodic store, optionally with a namespace override."""

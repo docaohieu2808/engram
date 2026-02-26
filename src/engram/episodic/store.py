@@ -176,6 +176,15 @@ class EpisodicStore:
         except Exception as _te:
             logger.debug("Temporal resolution skipped: %s", _te)
 
+        # Resolve pronouns using provided entity names (regex-based, no LLM)
+        if entities:
+            try:
+                from engram.recall.pronoun_resolver import resolve_pronouns, has_resolvable_pronouns
+                if has_resolvable_pronouns(content):
+                    content = resolve_pronouns(content, entities)
+            except Exception as _pe:
+                logger.debug("Pronoun resolution skipped: %s", _pe)
+
         # Topic key upsert: update existing memory if same topic_key exists
         if topic_key:
             existing = await self._find_by_topic_key(topic_key)
