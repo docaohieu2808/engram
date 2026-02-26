@@ -32,6 +32,39 @@ function renderLegend(nodeTypes) {
   `;
 }
 
+function toRgba(color, alpha) {
+  const c = (color || '').trim();
+  const a = Math.max(0, Math.min(1, alpha));
+
+  if (c.startsWith('#')) {
+    const hex = c.slice(1);
+    const norm = hex.length === 3 ? hex.split('').map(ch => ch + ch).join('') : hex;
+    if (norm.length === 6) {
+      const int = Number.parseInt(norm, 16);
+      const r = (int >> 16) & 255;
+      const g = (int >> 8) & 255;
+      const b = int & 255;
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+  }
+
+  const rgbMatch = c.match(/^rgb\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)$/i);
+  if (rgbMatch) {
+    return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${a})`;
+  }
+
+  return c;
+}
+
+function stableSeed(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h >>> 0);
+}
+
 const Graph = {
   _loaded: false,
   _network: null,
@@ -106,17 +139,39 @@ const Graph = {
       };
     }));
 
-    this._edgesDS = new vis.DataSet(this._edges.map(e => ({
-      ...e, font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
-      color: { color: edgeColor, hover: accentColor, highlight: accentColor },
-      smooth: { type: 'curvedCW', roundness: 0.2 },
-    })));
+    this._edgesDS = new vis.DataSet(this._edges.map(e => {
+      const seed = stableSeed(`${e.from}-${e.label}-${e.to}`);
+      const baseRoundness = 0.18 + (seed % 28) / 100; // 0.18..0.45 (mềm, không đều)
+      const fromFan = this._edges.filter(x => x.from === e.from).length;
+      const fanBoost = Math.min(0.14, fromFan * 0.01);
+      const width = 0.7 + Math.min(1.6, (e.weight || 1) * 0.35);
+
+      return {
+        ...e,
+        width,
+        font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
+        color: {
+          color: toRgba(edgeColor, 0.36),
+          hover: toRgba(accentColor, 0.8),
+          highlight: toRgba(accentColor, 0.9),
+          opacity: 1,
+          inherit: false,
+        },
+        smooth: { enabled: true, type: 'dynamic', roundness: Math.min(0.6, baseRoundness + fanBoost) },
+        shadow: { enabled: true, color: toRgba(accentColor, 0.22), size: 4, x: 0, y: 0 },
+        chosen: { edge: (values) => { values.width += 0.8; } },
+      };
+    }));
 
     this._network = new vis.Network(container, { nodes: this._nodesDS, edges: this._edgesDS }, {
       physics: { enabled: true, forceAtlas2Based: { gravitationalConstant: -50, springLength: 120 }, solver: 'forceAtlas2Based', stabilization: { iterations: 150 } },
       interaction: { hover: true, tooltipDelay: 200 },
       nodes: { shape: 'dot', size: 18 },
-      edges: { arrows: { to: { enabled: true, scaleFactor: 0.6 } }, width: 1.5 },
+      edges: {
+        arrows: { to: { enabled: true, scaleFactor: 0.45 } },
+        width: 1,
+        smooth: { enabled: true, type: 'dynamic' },
+      },
       background: { color: bgColor },
     });
 
