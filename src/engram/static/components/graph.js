@@ -87,7 +87,8 @@ const Graph = {
     const bgColor = cs.getPropertyValue('--bg-canvas').trim();
     const accentColor = cs.getPropertyValue('--accent').trim();
     const mutedColor = cs.getPropertyValue('--text-muted').trim();
-    const textColor = cs.getPropertyValue('--text-primary').trim();
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+    const textColor = isDark ? '#e0e0e0' : '#1a1a1a';
 
     this._nodesDS = new vis.DataSet(this._nodes.map(n => {
       const colors = getNodeColor(n.group);
@@ -100,7 +101,7 @@ const Graph = {
           highlight: { background: colors.background, border: '#fff' },
           hover: { background: colors.background, border: '#fff' },
         },
-        font: { color: textColor, size: 13, strokeWidth: 3, strokeColor: bgColor },
+        font: { color: textColor, size: 13 },
         borderWidth: 2,
       };
     }));
