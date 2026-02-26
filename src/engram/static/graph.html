@@ -152,27 +152,40 @@ function drawThreadEdges(ctx) {
     const rng = createRng(seed);
     const alt = fan % 2 === 0 ? 1 : -1;
 
-    // Nhịp dao động mềm theo thời gian: mỗi edge có phase/speed riêng
-    const phase = (seed % 628) / 100; // 0..6.28
-    const speed = 1.2 + ((seed >> 3) % 70) / 100; // 1.2..1.9
-    const amp = Math.min(7.5, 2.2 + fan * 0.18 + dist * 0.0045);
-    const pulse = Math.sin(animationTime * speed + phase) * amp;
+    // Dao động nhiều mode để hình dạng dây THẬT SỰ biến dạng (không chỉ kéo tới-lui)
+    const phaseA = (seed % 628) / 100;
+    const phaseB = ((seed >> 5) % 628) / 100;
+    const speedA = 0.9 + ((seed >> 3) % 80) / 100;   // 0.9..1.69
+    const speedB = 1.6 + ((seed >> 9) % 90) / 100;   // 1.6..2.49
 
-    const baseOffset = alt * (10 + fan * 1.6 + rng() * 10) + pulse;
-    const tangent = (rng() - 0.5) * 28 + pulse * 0.35;
+    const ampBase = Math.min(10.5, 3.2 + fan * 0.22 + dist * 0.006);
+    const waveA = Math.sin(animationTime * speedA + phaseA);
+    const waveB = Math.cos(animationTime * speedB + phaseB);
 
-    const startJitter = 1 + Math.min(6, fan * 0.32) + Math.abs(pulse) * 0.08;
-    const sx = p1.x + nx * ((rng() - 0.5) * startJitter * 2);
-    const sy = p1.y + ny * ((rng() - 0.5) * startJitter * 2);
-    const ex = p2.x + nx * ((rng() - 0.5) * 2);
-    const ey = p2.y + ny * ((rng() - 0.5) * 2);
+    // offset tổng cho thân dây
+    const baseOffset = alt * (10 + fan * 1.6 + rng() * 10) + (waveA * ampBase) + (waveB * ampBase * 0.55);
 
-    const t1 = 0.18 + rng() * 0.18;
-    const t2 = 0.56 + rng() * 0.24;
-    const c1x = sx + (ex - sx) * t1 + nx * (baseOffset * (0.9 + rng() * 0.7));
-    const c1y = sy + (ey - sy) * t1 + ny * (baseOffset * (0.9 + rng() * 0.7));
-    const c2x = sx + (ex - sx) * t2 + nx * (baseOffset * (0.2 + rng() * 0.8)) + ((ex - sx) / dist) * tangent;
-    const c2y = sy + (ey - sy) * t2 + ny * (baseOffset * (0.2 + rng() * 0.8)) + ((ey - sy) / dist) * tangent;
+    // tangent riêng theo nhịp khác để dây "lắc" thay vì trượt nguyên khối
+    const tangent = (rng() - 0.5) * 22 + (waveA * 7.5) - (waveB * 5.2);
+
+    const startJitter = 1 + Math.min(6.5, fan * 0.35) + Math.abs(waveA) * 0.9;
+    const endJitter = 0.8 + Math.abs(waveB) * 0.8;
+    const sx = p1.x + nx * ((rng() - 0.5) * startJitter * 2.2);
+    const sy = p1.y + ny * ((rng() - 0.5) * startJitter * 2.2);
+    const ex = p2.x + nx * ((rng() - 0.5) * endJitter * 2);
+    const ey = p2.y + ny * ((rng() - 0.5) * endJitter * 2);
+
+    // Tỷ lệ control points cũng dao động theo thời gian => form thay đổi liên tục
+    const t1 = 0.16 + rng() * 0.15 + waveA * 0.035;
+    const t2 = 0.54 + rng() * 0.2 + waveB * 0.04;
+
+    const bend1 = baseOffset * (0.95 + rng() * 0.8) + waveA * 6.2;
+    const bend2 = baseOffset * (0.15 + rng() * 0.9) - waveB * 5.6;
+
+    const c1x = sx + (ex - sx) * t1 + nx * bend1;
+    const c1y = sy + (ey - sy) * t1 + ny * bend1;
+    const c2x = sx + (ex - sx) * t2 + nx * bend2 + ((ex - sx) / dist) * tangent;
+    const c2y = sy + (ey - sy) * t2 + ny * bend2 + ((ey - sy) / dist) * tangent;
 
     ctx.save();
     ctx.beginPath();
