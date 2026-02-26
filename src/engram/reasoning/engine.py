@@ -161,26 +161,57 @@ class ReasoningEngine:
 
     async def think(self, question: str) -> str:
         """Answer a question by combining episodic, semantic, and federated memory."""
+        _SEARCH_LIMIT = 15
+
         # 1. Vector search for relevant episodic memories
         if self._parallel_search and self._episodic and self._graph:
             from engram.recall.parallel_search import ParallelSearcher
             searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config)
-            search_results = await searcher.search(question, limit=5)
+            search_results = await searcher.search(question, limit=_SEARCH_LIMIT)
             # Format parallel search results grouped by memory type for LLM context
             from engram.recall.fusion_formatter import format_for_llm
-            episodic_context = format_for_llm(search_results) or "\n".join(
+            episodic_context = format_for_llm(search_results, max_chars=6000) or "\n".join(
                 f"[{r.source}] (score={r.score:.2f}) {r.content}" for r in search_results
             )
             # Use SearchResult list as episodic_results proxy for downstream synthesis
             episodic_results = search_results
             _use_parallel = True
         else:
-            episodic_results = await self._episodic.search(question, limit=5)
+            episodic_results = await self._episodic.search(question, limit=_SEARCH_LIMIT)
             episodic_context = None
             _use_parallel = False
 
         # 2. Find entity hints in question by matching against known nodes
         entity_hints = await self._extract_entity_hints(question)
+
+        # 2b. Entity-boosted search: pull more episodic memories mentioning entities
+        if entity_hints and self._episodic:
+            entity_memories = await self._search_by_entities(entity_hints, limit=10)
+            if _use_parallel:
+                # Merge into parallel results (dedup by content hash)
+                existing_contents = {r.content for r in episodic_results}
+                from engram.models import SearchResult
+                for mem in entity_memories:
+                    if mem.content not in existing_contents:
+                        episodic_results.append(SearchResult(
+                            id=mem.id,
+                            content=mem.content,
+                            score=0.55,  # Entity-boosted score
+                            source="entity_boost",
+                            memory_type=mem.memory_type.value if hasattr(mem.memory_type, "value") else str(mem.memory_type),
+                            importance=mem.priority,
+                            timestamp=mem.timestamp,
+                            metadata=mem.metadata,
+                        ))
+                        existing_contents.add(mem.content)
+                # Re-format with merged results
+                episodic_context = format_for_llm(episodic_results, max_chars=6000) or episodic_context
+            else:
+                existing_ids = {m.id for m in episodic_results}
+                for mem in entity_memories:
+                    if mem.id not in existing_ids:
+                        episodic_results.append(mem)
+                        existing_ids.add(mem.id)
 
         # 3. Graph traversal for those entities
         semantic_results: dict[str, Any] = {}
@@ -245,6 +276,28 @@ class ReasoningEngine:
                     break
 
         return found
+
+    async def _search_by_entities(
+        self, entity_names: list[str], limit: int = 10,
+    ) -> list[EpisodicMemory]:
+        """Search episodic memories by entity name via vector similarity.
+
+        For each entity, runs a focused vector search to find memories
+        mentioning that entity. Complements the main query search which
+        may miss entity-related details when the question is abstract.
+        """
+        results: list[EpisodicMemory] = []
+        seen_ids: set[str] = set()
+        for name in entity_names[:3]:  # cap to avoid excessive queries
+            try:
+                hits = await self._episodic.search(name, limit=limit)
+                for mem in hits:
+                    if mem.id not in seen_ids:
+                        results.append(mem)
+                        seen_ids.add(mem.id)
+            except Exception as e:
+                logger.debug("Entity search failed for %s: %s", name, e)
+        return results[:limit]
 
     def _format_raw_results(
         self,

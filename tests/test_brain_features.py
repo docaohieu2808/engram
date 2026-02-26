@@ -481,9 +481,10 @@ class TestConstitutionIntegration:
             # Verify the prompt sent to LLM contains constitution
             call_args = mock_litellm.acompletion.call_args
             messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
-            prompt_content = messages[0]["content"]
-            assert "CONSTITUTION" in prompt_content
-            assert "namespace" in prompt_content.lower()
+            # Constitution is in user message (index 1); index 0 is system message
+            user_content = messages[1]["content"]
+            assert "CONSTITUTION" in user_content
+            assert "namespace" in user_content.lower()
 
 
 # === Integration: Resource-aware reasoning ===
