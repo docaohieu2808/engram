@@ -7,6 +7,35 @@ on:
     branches: [main]
 
 jobs:
+  security:
+    name: Security Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-security-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-security-
+
+      - name: Install security tools
+        run: pip install pip-audit bandit
+
+      - name: Run pip-audit (dependency vulnerabilities)
+        run: pip-audit
+
+      - name: Run bandit (SAST)
+        run: bandit -r src/engram/ -c pyproject.toml || true
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
