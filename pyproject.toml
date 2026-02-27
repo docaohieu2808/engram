@@ -57,9 +57,9 @@ engram = "engram.cli:app"
 engram-mcp = "engram.mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/docaohieu2808/engram"
-Repository = "https://github.com/docaohieu2808/engram"
-Issues = "https://github.com/docaohieu2808/engram/issues"
+Homepage = "https://github.com/docaohieu2808/Engram-Mem"
+Repository = "https://github.com/docaohieu2808/Engram-Mem"
+Issues = "https://github.com/docaohieu2808/Engram-Mem/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engram"]
