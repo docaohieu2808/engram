@@ -6,13 +6,21 @@ const NODE_TYPE_COLORS = {
   'Technology':   { background: '#5794f2', border: '#4477cc', font: '#fff' },
   'Project':      { background: '#ff9830', border: '#cc7a26', font: '#000' },
   'Service':      { background: '#b877d9', border: '#9360ae', font: '#fff' },
-  'Organization': { background: '#f2495c', border: '#c23a4a', font: '#fff' },
+  'Server':       { background: '#f2495c', border: '#c23a4a', font: '#fff' },
+  'Environment':  { background: '#36a2eb', border: '#2b82bc', font: '#fff' },
+  'Script':       { background: '#ffcd56', border: '#ccaa45', font: '#000' },
+  'Organization': { background: '#ff6384', border: '#cc4f6a', font: '#fff' },
   'Location':     { background: '#ffb357', border: '#cc8f46', font: '#000' },
   'default':      { background: '#6e6e6e', border: '#555555', font: '#fff' },
 };
 
 function getNodeColor(type) {
-  return NODE_TYPE_COLORS[type] || NODE_TYPE_COLORS.default;
+  if (NODE_TYPE_COLORS[type]) return NODE_TYPE_COLORS[type];
+  // Auto-generate a stable color for unknown types based on hash
+  let h = 0;
+  for (let i = 0; i < (type || '').length; i++) h = ((h << 5) - h + type.charCodeAt(i)) | 0;
+  const hue = ((h >>> 0) % 360);
+  return { background: `hsl(${hue}, 55%, 50%)`, border: `hsl(${hue}, 55%, 40%)`, font: '#fff' };
 }
 
 function renderLegend(nodeTypes) {
