@@ -575,8 +575,6 @@ select { cursor: pointer; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
-  line-height: 1.7;
-  white-space: pre-wrap;
   color: var(--text-primary);
   font-size: 14px;
 }
