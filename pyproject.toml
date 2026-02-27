@@ -37,6 +37,7 @@ dependencies = [
     "redis>=5.0.0",
     "aiohttp>=3.9.0",
     "watchdog>=4.0.0",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
@@ -55,6 +56,12 @@ tui = ["textual>=0.50.0"]
 [project.scripts]
 engram = "engram.cli:app"
 engram-mcp = "engram.mcp.server:main"
+
+[project.entry-points."engram.providers"]
+rest = "engram.providers.rest_adapter:RestAdapter"
+file = "engram.providers.file_adapter:FileAdapter"
+postgres = "engram.providers.postgres_adapter:PostgresAdapter"
+mcp = "engram.providers.mcp_adapter:McpAdapter"
 
 [project.urls]
 Homepage = "https://github.com/docaohieu2808/Engram-Mem"

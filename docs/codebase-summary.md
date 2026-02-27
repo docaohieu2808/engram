@@ -1,9 +1,9 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.4.0 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, automated maintenance, interactive graph visualization, real-time WebSocket API, and embedding key rotation. Combines episodic (vector) and semantic (NetworkX MultiDiGraph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, background scheduler, temporal/pronoun resolution, feedback loop, fusion formatting, bidirectional WebSocket push, and performance benchmarking. ~5000+ LoC, 894+ tests, Python 3.11+.
+Engram v0.4.1 is a production-ready dual-memory AI agent system featuring modularized architecture (backend protocols, mixins, routers), pluggable episodic backends (embedded+HTTP ChromaDB), semantic graph lazy loading, distributed event bus (Redis), HTTP client SDK, plugin entry points, and intelligent recall pipeline. Combines episodic (vector) and semantic (NetworkX MultiDiGraph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, background scheduler, temporal/pronoun resolution, feedback loop, fusion formatting, bidirectional WebSocket push, and performance benchmarking. ~6000+ LoC across 50+ modules, 894+ tests, Python 3.11+.
 
-**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `episodic/embeddings.py` (key rotation), `config.py` (configuration), `constitution.py` (LLM governance), `resource_tier.py` (degradation), `scheduler.py` (background tasks), `audit.py` (mutation log), `recall/temporal_resolver.py` (date resolution), `recall/pronoun_resolver.py` (entity mapping), `recall/fusion_formatter.py` (result grouping), `feedback/auto_adjust.py` (confidence tracking), `ws/handler.py` (WebSocket), `tests/benchmark_performance.py` (perf benchmarks).
+**Architecture highlights:** Pluggable backends (backend protocol), 6 episodic mixins (CRUD/search/maintenance/batch/FTS), 4 HTTP router modules, 2 event bus implementations (in-process/Redis), lazy-loaded semantic graphs, plugin architecture, standalone HTTP client SDK, 17 HTTP endpoints, 7 WebSocket commands.
 
 ---
 
@@ -112,34 +112,66 @@ Health checks for liveness and readiness probes.
 
 ### `src/engram/episodic/` — Vector memory (ChromaDB)
 
-#### `store.py` (420 LOC)
-ChromaDB vector database wrapper.
-- **Collections:** One per namespace (tenant_id)
-- **Chunking:** Auto-splits long content (>1000 chars) into 800-char chunks with overlap
-- **Metadata:** memory_type, priority, tags, expires, created_at, updated_at, access_count, last_accessed, decay_rate, **topic_key, revision_count, session_id** (v0.3.0)
-- **Methods:** remember(), recall(), cleanup(), get(), count()
-- **Hooks:** Fires on_remember webhook after insert (fire-and-forget)
-- **Fallback embedding:** Gemini (default, 3072 dims) or all-MiniLM-L6-v2 (384 dims)
-- **New (v0.3.0):** Topic key upsert — same topic_key updates existing memory with revision_count
-- **New (v0.3.0):** Session_id auto-injection from active SessionStore
-- **New (v0.3.0):** Batch updates to access_count + last_accessed on recall()
-- **New (v0.3.2):** Audit trail wired into remember(), delete(), update_metadata(), _update_topic(), cleanup_expired()
+#### Backend Abstraction (Phase 4, v0.4.1) — **NEW**
 
-#### `embeddings.py` (93 LOC) — **NEW (v0.4.0)**
-Embedding helpers with multi-key rotation for Gemini API.
+**`backend.py`** (80 LOC)
+Abstract Protocol interface for pluggable episodic store backends.
+- **Protocol methods:** `create()`, `remember()`, `recall()`, `delete()`, `cleanup()`, `count()`, `collection()`
+- **Implementations:** embedded ChromaDB, HTTP ChromaDB, legacy collection API
+
+**`chromadb_backend.py`** (120 LOC) — **NEW (v0.4.1)**
+Local ChromaDB embedded implementation (default mode).
+
+**`chromadb_http_backend.py`** (130 LOC) — **NEW (v0.4.1)**
+HTTP client for remote ChromaDB server. Config: `episodic.mode=http`, `episodic.host`, `episodic.port`.
+
+**`_legacy_collection_backend.py`** (100 LOC) — **NEW (v0.4.1)**
+Backward-compatibility shim bridges old direct ChromaDB collection API.
+
+**`episodic_builder.py`** (50 LOC) — **NEW (v0.4.1)**
+Factory methods to instantiate correct backend based on config.
+
+#### Store Refactored (Phase 2, v0.4.1) — Modularized from 1,170 LOC to 111 LOC + 6 mixins
+
+**`store.py`** (111 LOC) — Shell coordinator
+- Delegates to backend protocol + mixins
+- Maintains public API surface
+
+**`episodic_crud.py`** (180 LOC) — **NEW (v0.4.1)** — _EpisodicCrudMixin
+- Create: remember(), _insert_chunked()
+- Read: get(), get_all()
+- Update: update_metadata(), _update_topic()
+- Delete: delete(), delete_by_ids()
+
+**`episodic_search.py`** (150 LOC) — **NEW (v0.4.1)** — _EpisodicSearchMixin
+- recall(), search_similar()
+- Tag/type filtering
+- Composite scoring logic
+
+**`episodic_maintenance.py`** (120 LOC) — **NEW (v0.4.1)** — _EpisodicMaintenanceMixin
+- cleanup(), cleanup_expired(), _delete_expired()
+- Decay-based removal
+
+**`batch_operations.py`** (100 LOC) — **NEW (v0.4.1)** — _BatchMixin
+- Batch inserts, deletes, updates
+- Transaction-like semantics
+
+**`fts_sync.py`** (80 LOC) — **NEW (v0.4.1)** — Async FTS helpers
+- Full-text search indexing
+- Background sync tasks via event bus
+
+#### Embeddings & Search
+
+**`embeddings.py`** (93 LOC)
+Multi-key rotation for Gemini API.
 - **Model:** `gemini-embedding-001` exclusively (3072 dimensions)
-- **Key sources:** `GEMINI_API_KEY` (primary) + `GEMINI_API_KEY_FALLBACK` (optional secondary)
-- **Strategies:** `failover` (default — primary first, fallback on auth error) or `round-robin` (rotate evenly)
-- **Config:** `embedding.key_strategy` in config.yaml or `GEMINI_KEY_STRATEGY` env var
-- **Error handling:** Tries each key in order; raises `RuntimeError` if all keys fail
-- **`EMBEDDING_DIM`:** Module-level constant = 3072
+- **Key sources:** `GEMINI_API_KEY` + `GEMINI_API_KEY_FALLBACK`
+- **Strategies:** failover (default) or round-robin
 
-#### `search.py` (180 LOC)
-Search utilities: embedding generation, similarity scoring, activation-based recall.
-- **search_similar():** Vector search with optional tag/type filters
-- **chunk_text():** Split text with configurable chunk size + overlap
-- **New (v0.3.0):** Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
-- **New (v0.3.0):** ScoringConfig with configurable weights
+**`search.py`** (180 LOC)
+Embedding + similarity scoring + activation-based recall.
+- Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
+- Tag/type filtering, chunk_text() helper
 
 ---
 
@@ -461,59 +493,79 @@ Interactive entity relationship explorer using vis-network library.
 
 ---
 
-### `src/engram/ws/` — WebSocket API (v0.4.1)
+### `src/engram/ws/` — WebSocket API (v0.4.1) & Event Bus (Phase 6)
 
-#### `protocol.py` (60 LOC) — **NEW (v0.4.1)**
-WebSocket message protocol definitions.
-- Command schema: {type, payload, request_id}
-- Event types: memory.created, memory.deleted, memory.updated, consolidation.completed, error
-- JSON serialization/deserialization helpers
+#### Event Bus (Phase 6, v0.4.1) — **NEW**
 
-#### `event_bus.py` (80 LOC) — **NEW (v0.4.1)**
-In-process pub/sub event bus for memory change propagation.
+**`event_bus.py`** (80 LOC) — In-process pub/sub
 - Per-tenant subscriber channels
 - Async broadcast to all connections in a namespace
-- Decouples episodic/semantic mutations from WebSocket delivery
+- Lifecycle: subscribe(), unsubscribe(), broadcast(), close()
 
-#### `connection_manager.py` (100 LOC) — **NEW (v0.4.1)**
-Active WebSocket connection lifecycle management.
-- Per-tenant connection registry
+**`redis_event_bus.py`** (150 LOC) — **NEW (v0.4.1)** — Distributed event bus
+- Multi-instance deployments via Redis Pub/Sub
+- Async FTS writes via event bus (non-blocking search index updates)
+- Config: `event_bus.enabled`, `event_bus.backend` (memory/redis), `event_bus.redis_url`
+- Decouples episodic mutations from WebSocket delivery
+
+#### WebSocket Components
+
+**`protocol.py`** (60 LOC) — Message schema
+- Command: {type, payload, request_id}
+- Events: memory.created, memory.deleted, memory.updated, consolidation.completed, error
+
+**`connection_manager.py`** (100 LOC) — Per-tenant connection registry
 - Connect/disconnect with cleanup on client drop
 - Broadcast helpers for targeted or all-tenant delivery
 
-#### `handler.py` (120 LOC) — **NEW (v0.4.1)**
-FastAPI WebSocket route handler.
+**`handler.py`** (120 LOC) — FastAPI WebSocket route handler
 - Route: `GET /ws?token=JWT`
-- Authenticates client via JWT on upgrade; rejects invalid/missing tokens
-- Dispatches 7 commands to existing memory operations
-- Subscribes connection to event_bus for push events
+- JWT authentication on upgrade
+- Dispatches 7 commands (remember, recall, think, query, ingest, feedback, status)
+- Event subscription to event_bus
 
 ---
 
 ### `src/engram/capture/` — External agent integration
 
-#### `server.py` (650 LOC) — HTTP API
-FastAPI endpoints for all operations. Multi-tenant, versioned, fully authenticated.
-- **Routes:**
+#### Server Refactored (Phase 3, v0.4.1) — Modularized from 1,099 LOC to modular router structure
+
+**`server.py`** (275 LOC) — **REFACTORED (v0.4.1)** — HTTP API factory
+- Factory pattern for app creation
+- Middleware registration (correlation ID, rate limiting)
+- Router mounting from submodules
+- Legacy endpoint redirects for backward compatibility
+
+**`middleware.py`** (80 LOC) — **NEW (v0.4.1)** — Request/response middleware
+- CorrelationIdMiddleware — X-Correlation-ID header propagation
+- RateLimitMiddleware — Per-tenant sliding-window limiting
+
+**`routers/`** (4 modules) — **NEW (v0.4.1)** — Modular endpoint organization
+- **`memory_routes.py`** (100 LOC) — POST /api/v1/remember, GET /api/v1/recall
+- **`memories_crud.py`** (120 LOC) — PUT/DELETE /api/v1/memories/{id}, GET /api/v1/memories
+- **`graph_routes.py`** (90 LOC) — GET /api/v1/query, GET /api/v1/graph/data, GET /graph (HTML)
+- **`admin_routes.py`** (100 LOC) — POST /api/v1/cleanup, POST /api/v1/summarize, POST /api/v1/feedback
+
+**`server_helpers.py`** (50 LOC) — **NEW (v0.4.1)** — Shared route validation + response builders
+
+**All Endpoints (17 total):**
   - `POST /api/v1/remember` — Store episodic memory
   - `GET /api/v1/recall` — Search episodic (with pagination)
+  - `GET /api/v1/memories/{id}` — Get single memory (NEW)
+  - `PUT /api/v1/memories/{id}` — Update memory metadata (NEW)
+  - `DELETE /api/v1/memories/{id}` — Delete memory (NEW)
   - `POST /api/v1/think` — LLM reasoning
   - `POST /api/v1/ingest` — Extract entities + store memories
   - `GET /api/v1/query` — Graph query
-  - `POST /api/v1/feedback` — Record positive/negative feedback (NEW v0.4.0)
+  - `GET /api/v1/graph/data` — Graph JSON (filtered)
+  - `GET /graph` — Interactive graph HTML
+  - `POST /api/v1/feedback` — Record memory feedback
   - `POST /api/v1/cleanup` — Delete expired
   - `POST /api/v1/summarize` — LLM synthesis
+  - `GET /api/v1/status` — Memory + graph counts
   - `POST /api/v1/auth/token` — Issue JWT
   - `GET /api/v1/health` — Liveness
-  - `GET /api/v1/graph/data` — Graph data JSON (NEW v0.4.0)
-  - `GET /graph` — Interactive graph HTML (NEW v0.4.0)
-  - `POST /api/v1/backup` — Snapshot memory
-  - `POST /api/v1/restore` — Load backup
-- **Middleware:** CorrelationIdMiddleware (X-Correlation-ID), RateLimitMiddleware (per-tenant sliding-window)
-- **Versioning:** /api/v1/ prefix; legacy /remember routes redirect
-- **Response format:** Structured ErrorResponse on failures
-- **Pagination:** offset + limit on /recall and /query
-- **NEW (v0.4.0):** Feedback endpoint accepts {memory_id, feedback_type} and returns {confidence, importance}
+  - `GET /api/v1/health/ready` — Readiness probe
 
 #### `extractor.py` (150 LOC)
 Entity extraction from unstructured text (LLM-powered).
@@ -536,6 +588,59 @@ Watchdog/inotify-based realtime watcher for OpenClaw session streams.
 - **Integration:** Runs parallel with inbox watcher in `engram watch --daemon`
 - **Config:** `capture.openclaw.enabled`, `capture.openclaw.sessions_dir`
 - **Systemd:** Auto-start service available for boot integration
+
+---
+
+### `src/engram/http_client.py` — HTTP Client SDK (Phase 7, v0.4.1) — **NEW**
+
+Standalone Python SDK for external applications to connect to Engram HTTP API.
+
+**Features:**
+- Async HTTP client (httpx) with JWT token management
+- All major operations: remember, recall, think, query, feedback
+- Built-in request retry logic + error handling
+- Type hints + Pydantic response models
+- Multi-tenant support (tenant_id in constructor)
+- Context manager support for clean resource cleanup
+
+**Usage:**
+```python
+from engram import EngramHttpClient
+
+async with EngramHttpClient("http://localhost:8765", tenant_id="acme") as client:
+    # Store a memory
+    memory_id = await client.remember("My context", memory_type="fact")
+
+    # Search memories
+    results = await client.recall("What happened yesterday?", limit=5)
+
+    # Reason about memories
+    answer = await client.think("Summarize our progress")
+
+    # Record feedback
+    await client.feedback(memory_id, feedback_type="positive")
+```
+
+**Configuration:** API base URL, API key or JWT, custom headers, timeout, retry strategy, connection pooling.
+
+### Plugin Entry Points (Phase 7, v0.4.1) — **NEW**
+
+**`pyproject.toml`** — Extensible plugin architecture via Python entry points.
+
+**Entry point groups:**
+- `engram.episodic_backends` — Custom episodic store implementations
+- `engram.semantic_backends` — Custom semantic graph backends
+- `engram.providers` — External memory provider adapters
+- `engram.cli_commands` — Third-party CLI commands
+- `engram.mcp_tools` — Custom MCP tools
+
+**Plugin registration example:**
+```toml
+[project.entry-points."engram.providers"]
+my_provider = "my_package.providers:MyProviderAdapter"
+```
+
+**Discovery:** Auto-loaded via `importlib.metadata.entry_points()`, health checks + graceful failure on unavailable plugins, config-driven enable/disable per plugin.
 
 ---
 
@@ -667,10 +772,15 @@ HTTP server latency benchmark measuring p50/p95/p99 per endpoint.
 | Metric | Value |
 |--------|-------|
 | Python version | 3.11+ |
-| Total LOC | ~5000+ |
+| Total LOC | ~6000+ (expanded with modularization) |
 | Test count | 894+ |
-| Modules | 42+ |
-| Endpoints | 14 (HTTP) + 1 (WebSocket /ws) |
+| Modules | 50+ |
+| Episodic backends | 3 (embedded, HTTP, legacy) |
+| Episodic store mixins | 6 (CRUD, search, maintenance, batch, FTS) |
+| Capture router modules | 4 (memory, CRUD, graph, admin) |
+| HTTP endpoints | 17 (up from 14) |
+| WebSocket commands | 7 (remember, recall, think, feedback, query, ingest, status) |
+| Event bus implementations | 2 (in-process, Redis) |
 | CLI commands | 35+ |
 | MCP tools | 19 (see README) |
 | Config fields | 75+ |
@@ -678,97 +788,28 @@ HTTP server latency benchmark measuring p50/p95/p99 per endpoint.
 | Max tenants cached | 100 (graphs), 1000 (episodic) |
 | Provider adapter types | 4 (rest, file, postgres, mcp) |
 | Known auto-discoverable services | 5 (Cognee, Mem0, LightRAG, OpenClaw, Graphiti) |
+| Plugin entry point groups | 5 (episodic_backends, semantic_backends, providers, cli_commands, mcp_tools) |
 | TUI screens | 4 (Dashboard, Search, Recent, Sessions) |
 | Session storage | JSON files (~/.engram/sessions) |
 | Recall pipeline components | 8 (decision, resolver, search, feedback, auto-memory, guard, auto-trigger, audit) |
 | Embedding model | gemini-embedding-001 (3072d) only |
 | Key rotation strategies | 2 (failover, round-robin) |
-| WS commands | 7 (remember, recall, think, feedback, query, ingest, status) |
+| Semantic graph lazy loading | Indexed SQL queries skip full NetworkX load |
 | Benchmark operations | 4 (health, remember, recall, think) |
 
 ---
 
-## Dependencies
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| typer | 0.9.0+ | CLI framework |
-| rich | 13.0+ | Terminal output |
-| chromadb | 0.4.0+ | Vector DB (episodic) |
-| networkx | 3.0+ | Graph operations (in-memory) |
-| pydantic | 2.0+ | Config + request validation |
-| litellm | 1.0.0+ | LLM provider abstraction (Gemini) |
-| fastapi | 0.100.0+ | HTTP API framework |
-| uvicorn | 0.23.0+ | ASGI server |
-| pyjwt | 2.8.0+ | JWT encode/decode |
-| pyyaml | 6.0+ | Config file parsing |
-| mcp | 1.0.0+ | Model Context Protocol |
-| asyncpg | 0.29.0+ | PostgreSQL async driver (optional, Phase 2) |
-| redis | 5.0.0+ | Cache + rate limiting (optional, Phase 5) |
-| pytest | 7.0+ | Testing (dev) |
-| opentelemetry-* | 1.20+ | Observability (optional, Phase 7, via telemetry extra) |
+## Release Summary
 
----
+| Version | Phase | Highlights | Tests |
+|---------|-------|-----------|-------|
+| v0.4.1 | 7 Architecture | Backend protocols, modularized stores/servers, lazy graph loading, Redis event bus, HTTP client SDK, plugin entry points | 894+ |
+| v0.4.0 | 4 Intelligence | Temporal/pronoun resolution, result formatting, graph visualization, feedback integration | 615+ |
+| v0.3.2 | Brain | Audit trail, resource tiers, constitution, scheduler | 545+ |
+| v0.3.1 | Recall Pipeline | Query decision, entity resolution, parallel search, feedback loop, auto-memory, poison guard | 506+ |
+| v0.3.0 | Memory Ops | Ebbinghaus decay, weighted edges, activation scoring, consolidation, sessions, TUI | — |
+| v0.2.0 | Enterprise | Config system, PostgreSQL, auth/RBAC, multi-tenancy, caching, federation, security hardening | 345+ |
 
-## Features (v0.3.2 — Brain Features)
-
-**4 brain-only features (v0.3.2):**
-
-1. Memory Audit Trail — Traceable before/after log wired into all EpisodicStore mutations
-2. Resource-Aware Retrieval — 4-tier degradation with auto-recovery (ResourceMonitor)
-3. Data Constitution — SHA-256 governance with prompt injection (3 laws)
-4. Consolidation Scheduler — Asyncio overlap-safe background tasks with tier awareness
-
-**545+ tests:** 39 new tests for brain features.
-
----
-
-## Features (v0.3.1 — Recall Pipeline)
-
-**4-phase delivery (v0.3.1):**
-
-1. Core Recall Pipeline — Query decision, entity resolution, parallel search fusion
-2. Learning Pipeline — Feedback loop, auto-memory detection, poisoning guard
-3. Optimization — Auto-consolidation, retrieval audit log, benchmarking
-4. CLI — Enhanced recall command, feedback tracking, audit log viewer, benchmark runner
-
-**506+ tests:** 159 new tests for recall pipeline components.
-
----
-
-## Features (v0.3.0)
-
-**11-phase delivery (v0.3.0):**
-
-1. Ebbinghaus Decay — Retention scoring via access history
-2. Typed Relationships + Weight — SemanticEdge weights for path scoring
-3. Activation-Based Recall — Composite scoring (similarity/retention/recency/frequency)
-4. Memory Consolidation — Jaccard clustering + LLM summarization
-5. OpenClaw Watcher — Watchdog/inotify for JSONL sessions
-6. Privacy Tag Stripping — `<private>...</private>` → `[REDACTED]`
-7. Topic Key Upsert — Same topic_key updates existing memory with revision_count
-8. Progressive Disclosure — Compact recall, get_memory, timeline MCP tools
-9. Session Lifecycle — Session start/end/summary/context with auto session_id
-10. Git Sync — Compressed JSONL chunks to .engram/ with manifest tracking
-11. TUI — Interactive terminal interface (textual library)
-
----
-
-## Features (v0.2.0)
-
-**13-phase delivery (v0.2.0):**
-
-1. Configuration Foundation — YAML + env vars, structured logging
-2. PostgreSQL Backend — Pluggable semantic graph (SQLite default)
-3. Authentication — JWT + API keys, RBAC (disabled by default)
-4. Multi-Tenancy — Per-tenant stores, contextvar isolation
-5. Caching & Rate Limiting — Redis optional, sliding-window limits
-6. API Versioning — /api/v1/ with backward-compat redirects
-7. Observability — OpenTelemetry + JSONL audit logging
-8. Docker & CI/CD — GitHub Actions, automated testing + release
-9. Health Checks — Liveness + readiness probes, backup/restore
-10. Test Expansion — 270 → 345 tests
-11. Federation System — REST/File/Postgres/MCP adapters, auto-discovery, circuit breaker
-12. Security Hardening — SSRF, SQL injection, timing attack, RBAC normalization, JWT validation
-13. Bug Fixes (11) — federated think, UTC datetime, McpAdapter cleanup, graph O(V), node cache
+See [project-changelog.md](./project-changelog.md) for detailed change logs per release.
 

@@ -399,24 +399,52 @@ async def _do_ingest(file: Path, dry_run: bool, get_extractor, get_graph, get_ep
 
 
 async def _do_ingest_messages(messages: list[dict], get_extractor, get_graph, get_episodic) -> IngestResult:
-    """Ingest messages (called by watcher/server)."""
-    extractor = get_extractor()
-    graph = get_graph()
+    """Ingest messages (called by watcher/server).
+
+    Episodic storage runs first (no LLM needed).
+    Entity extraction runs separately — failures don't block memory capture.
+    """
     episodic = get_episodic()
-    result = await extractor.extract_entities(messages)
-    for node in result.nodes:
-        await graph.add_node(node)
-    for edge in result.edges:
-        await graph.add_edge(edge)
-    entity_names = [n.name for n in result.nodes]
-    for i, msg in enumerate(messages):
+
+    # Step 1: Store raw messages into episodic memory immediately (no LLM)
+    episodic_count = 0
+    for msg in messages:
         content = msg.get("content", "")
         if content:
-            ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
-            per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
-            await episodic.remember(content, entities=per_content)
+            await episodic.remember(content)
+            episodic_count += 1
+
+    # Step 2: Entity extraction + semantic graph (best-effort, LLM-dependent)
+    semantic_nodes = 0
+    semantic_edges = 0
+    try:
+        extractor = get_extractor()
+        graph = get_graph()
+        result = await extractor.extract_entities(messages)
+        for node in result.nodes:
+            await graph.add_node(node)
+        for edge in result.edges:
+            await graph.add_edge(edge)
+        semantic_nodes = len(result.nodes)
+        semantic_edges = len(result.edges)
+
+        # Enrich episodic memories with entity tags (backfill)
+        entity_names = [n.name for n in result.nodes]
+        if entity_names:
+            for i, msg in enumerate(messages):
+                content = msg.get("content", "")
+                if content:
+                    ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
+                    per_content = extractor.filter_entities_for_content(
+                        content, entity_names, context_messages=ctx,
+                    )
+                    if per_content:
+                        await episodic.remember(content, entities=per_content)
+    except Exception as e:
+        logger.warning("Entity extraction skipped (messages already stored): %s", e)
+
     return IngestResult(
-        episodic_count=len(messages),
-        semantic_nodes=len(result.nodes),
-        semantic_edges=len(result.edges),
+        episodic_count=episodic_count,
+        semantic_nodes=semantic_nodes,
+        semantic_edges=semantic_edges,
     )

@@ -47,6 +47,7 @@ class SqliteBackend:
             "weight REAL DEFAULT 1.0, attributes TEXT DEFAULT '{}')"
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_key ON nodes(key)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges(relation)")
         conn.commit()
         # Migrate existing tables: add weight + attributes columns if missing
@@ -129,6 +130,25 @@ class SqliteBackend:
         conn.execute("DELETE FROM edges WHERE key=?", (key,))
         conn.commit()
 
+    def _sync_query_nodes_by_name(self, pattern: str, limit: int, offset: int) -> list[dict]:
+        """SELECT nodes whose key LIKE pattern without loading the full graph."""
+        conn = self._connect()
+        rows = conn.execute(
+            "SELECT key, type, name, attributes FROM nodes WHERE key LIKE ? LIMIT ? OFFSET ?",
+            (pattern, limit, offset),
+        )
+        return [{"key": r[0], "type": r[1], "name": r[2], "attributes": r[3]} for r in rows]
+
+    def _sync_get_node_by_key(self, key: str) -> dict | None:
+        """Return a single node row by exact key."""
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT key, type, name, attributes FROM nodes WHERE key = ?", (key,)
+        ).fetchone()
+        if row is None:
+            return None
+        return {"key": row[0], "type": row[1], "name": row[2], "attributes": row[3]}
+
     def _sync_close(self) -> None:
         if self._conn is not None:
             self._conn.close()
@@ -190,6 +210,22 @@ class SqliteBackend:
         await asyncio.get_running_loop().run_in_executor(
             None, partial(self._sync_delete_edge, key)
         )
+
+    async def query_nodes_by_name(self, pattern: str, limit: int, offset: int) -> list[dict]:
+        """Return nodes whose key LIKE pattern (fast path, no full graph load)."""
+        return await asyncio.get_running_loop().run_in_executor(
+            None, partial(self._sync_query_nodes_by_name, pattern, limit, offset)
+        )
+
+    async def get_node_by_key(self, key: str) -> dict | None:
+        """Return a single node dict by exact key, or None."""
+        return await asyncio.get_running_loop().run_in_executor(
+            None, partial(self._sync_get_node_by_key, key)
+        )
+
+    async def get_related_nodes(self, node_key: str, depth: int) -> list[dict]:
+        """Stub — SQLite backend defers graph traversal to NetworkX (returns [])."""
+        return []
 
     async def close(self) -> None:
         """Close the SQLite connection."""

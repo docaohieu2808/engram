@@ -20,10 +20,8 @@ logger = logging.getLogger("engram")
 
 
 def _normalize_node_name(name: str) -> str:
-    s = (name or "").strip()
-    if not s:
-        return s
-    return s[0].upper() + s[1:]
+    """Normalize node name: trim whitespace only."""
+    return (name or "").strip()
 
 
 def _canonicalize_node_key(key: str) -> str:
@@ -45,6 +43,14 @@ class SemanticGraph:
         self._tenant_id = tenant_id  # M10: used in audit log calls
         self._max_nodes = max_nodes
         self._load_lock = asyncio.Lock()  # D-C1: guard concurrent loads
+
+    async def _ensure_initialized(self) -> None:
+        """Initialize backend schema if not already done (does NOT load the graph)."""
+        if not self._initialized:
+            async with self._load_lock:
+                if not self._initialized:
+                    await self._backend.initialize()
+                    self._initialized = True
 
     async def _ensure_loaded(self) -> None:
         """Initialize backend and load graph on first access (D-C1: lock-guarded)."""
@@ -239,15 +245,37 @@ class SemanticGraph:
                             resource_id=key)
         return True
 
-    async def query(self, keyword: str, type: str | None = None) -> list[SemanticNode]:
+    async def query(self, keyword: str, type: str | None = None,
+                    limit: int = 100, offset: int = 0,
+                    related_to: str | None = None) -> list[SemanticNode]:
         """Search nodes by keyword in name/attributes, optionally filter by type.
+
+        Fast path (no full graph load): used when related_to is None.
+        Delegates to backend.query_nodes_by_name() for indexed SQL lookup.
+
+        Full load path: used when related_to is provided (BFS from that node).
 
         Supports Vietnamese diacritics: query 'tram' matches 'Tram'.
         """
+        if related_to is None:
+            # Fast path: query backend directly without loading the full graph
+            await self._ensure_initialized()
+            pattern = f"%{keyword}%"
+            rows = await self._backend.query_nodes_by_name(pattern, limit, offset)
+            results: list[SemanticNode] = []
+            for row in rows:
+                attrs = json.loads(row.get("attributes") or "{}")
+                node = SemanticNode(type=row["type"], name=row["name"], attributes=attrs)
+                if type is not None and node.type != type:
+                    continue
+                results.append(node)
+            return results
+
+        # Full load path: needed for related_to context (BFS requires NetworkX graph)
         await self._ensure_loaded()
         kw = keyword.lower()
         kw_stripped = _strip_diacritics(kw)
-        results: list[SemanticNode] = []
+        full_results: list[SemanticNode] = []
         for _, data in self._graph.nodes(data=True):
             node: SemanticNode | None = data.get("data")
             if node is None:
@@ -259,12 +287,16 @@ class SemanticGraph:
             if (kw in name_lower or kw in attrs_lower
                     or kw_stripped in _strip_diacritics(name_lower)
                     or kw_stripped in _strip_diacritics(attrs_lower)):
-                results.append(node)
-        return results
+                full_results.append(node)
+        return full_results
 
-    async def get_related(self, entity_names: list[str], depth: int = 1) -> dict[str, Any]:
-        """BFS traversal from entities up to depth hops."""
+    async def get_related(self, entity_names: list[str], depth: int = 1, max_nodes: int | None = None) -> dict[str, Any]:
+        """BFS traversal from entities up to depth hops.
+
+        max_nodes: cap total nodes returned per entity (default: self._max_nodes).
+        """
         await self._ensure_loaded()
+        cap = max_nodes if max_nodes is not None else self._max_nodes
         result: dict[str, Any] = {}
         for name in entity_names:
             canonical_name = _normalize_node_name(name)
@@ -273,13 +305,16 @@ class SemanticGraph:
             edges: list[SemanticEdge] = []
             for start in matching:
                 visited = nx.single_source_shortest_path_length(self._graph, start, cutoff=depth)
-                for key in visited:
+                visited_keys = list(visited.keys())
+                if cap is not None and len(visited_keys) > cap:
+                    visited_keys = visited_keys[:cap]
+                for key in visited_keys:
                     node_data: SemanticNode | None = self._graph.nodes[key].get("data")
                     if node_data:
                         nodes.append(node_data)
                 # H5 fix: only scan edges of visited nodes, not all edges
                 seen_edges: set[tuple[str, str, str]] = set()
-                for node_key in visited:
+                for node_key in visited_keys:
                     for u, v, _, data in self._graph.edges(node_key, data=True, keys=True):
                         edge_data: SemanticEdge | None = data.get("data")
                         if edge_data:

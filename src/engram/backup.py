@@ -23,11 +23,11 @@ async def backup(episodic, graph, output_path: str) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
 
-        # --- Export episodic memories via ChromaDB ---
-        collection = episodic._ensure_collection()
-        count = collection.count()
+        # --- Export episodic memories via backend ---
+        await episodic._ensure_backend()
+        count = await episodic._backend.count()
         if count > 0:
-            data = collection.get(include=["documents", "metadatas"])
+            data = await episodic._backend.get_many(include=["documents", "metadatas"])
             (tmp_path / "episodic.json").write_text(json.dumps(data, default=str))
 
         # --- Export semantic graph ---
@@ -104,8 +104,13 @@ async def restore(episodic, graph, archive_path: str) -> dict:
             documents = data.get("documents", [])
             metadatas = data.get("metadatas", [])
             if ids:
-                collection = episodic._ensure_collection()
-                collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+                await episodic._ensure_backend()
+                # Call ChromaDB collection directly for restore (no embeddings in backup archive)
+                import asyncio
+                col = episodic._backend._col()
+                await asyncio.to_thread(
+                    col.upsert, ids=ids, documents=documents, metadatas=metadatas,
+                )
                 episodic_count = len(ids)
 
         # --- Restore semantic graph ---
