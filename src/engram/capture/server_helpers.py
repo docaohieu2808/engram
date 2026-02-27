@@ -83,5 +83,6 @@ def serialize_memory(m: Any) -> dict[str, Any]:
         "revision_count": getattr(m, "revision_count", 0),
         "consolidation_group": getattr(m, "consolidation_group", None),
         "consolidated_into": getattr(m, "consolidated_into", None),
+        "source": getattr(m, "source", "") or getattr(m, "metadata", {}).get("source", ""),
         "metadata": getattr(m, "metadata", {}),
     }

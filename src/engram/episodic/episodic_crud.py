@@ -46,6 +46,7 @@ class _EpisodicCrudMixin:
         expires_at: datetime | None = None,
         topic_key: str | None = None,
         timestamp: datetime | None = None,
+        source: str = "",
     ) -> str:
         """Store a memory and return its ID."""
         content = sanitize_content(content)
@@ -125,6 +126,8 @@ class _EpisodicCrudMixin:
             doc_metadata["revision_count"] = 0
         if expires_at is not None:
             doc_metadata["expires_at"] = expires_at.isoformat()
+        if source:
+            doc_metadata["source"] = source
         if metadata:
             doc_metadata.update(metadata)
 

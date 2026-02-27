@@ -342,8 +342,8 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
 
         cfg = get_config()
 
-        async def ingest_messages(messages):
-            return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic)
+        async def ingest_messages(messages, source: str = ""):
+            return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
 
         if daemon:
             daemonize()
@@ -567,8 +567,8 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         from engram.telemetry import setup_telemetry
         setup_telemetry(cfg)
 
-        async def ingest_messages(messages):
-            return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic)
+        async def ingest_messages(messages, source: str = ""):
+            return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
 
         run_server(_get_episodic(), _get_graph(), _get_engine(), cfg, ingest_messages)
 
@@ -614,7 +614,9 @@ async def _do_ingest(file: Path, dry_run: bool, get_extractor, get_graph, get_ep
     )
 
 
-async def _do_ingest_messages(messages: list[dict], get_extractor, get_graph, get_episodic) -> IngestResult:
+async def _do_ingest_messages(
+    messages: list[dict], get_extractor, get_graph, get_episodic, source: str = "",
+) -> IngestResult:
     """Ingest messages (called by watcher/server).
 
     Episodic storage runs first (no LLM needed).
@@ -627,7 +629,7 @@ async def _do_ingest_messages(messages: list[dict], get_extractor, get_graph, ge
     for msg in messages:
         content = msg.get("content", "")
         if content:
-            await episodic.remember(content)
+            await episodic.remember(content, source=source)
             episodic_count += 1
 
     # Step 2: Entity extraction + semantic graph (best-effort, LLM-dependent)
