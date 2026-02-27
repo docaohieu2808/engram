@@ -553,7 +553,7 @@ Exposes four interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP A
 pip install engram
 
 # Or from source with dev extras
-git clone https://github.com/docaohieu2808/engram.git
+git clone https://github.com/docaohieu2808/Engram-Mem.git
 cd engram
 pip install -e ".[dev]"
 
@@ -574,7 +574,7 @@ engram serve
 
 ## Support & Community
 
-- **GitHub:** https://github.com/docaohieu2808/engram
+- **GitHub:** https://github.com/docaohieu2808/Engram-Mem
 - **Issues:** Bug reports and feature requests
 - **Discussions:** Community support and ideas
 - **Documentation:** ./docs/ directory in repository

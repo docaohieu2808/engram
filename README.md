@@ -71,7 +71,7 @@ flowchart TD
 
 ```bash
 # Install from source
-git clone https://github.com/docaohieu2808/engram.git
+git clone https://github.com/docaohieu2808/Engram-Mem.git
 cd engram
 pip install -e .
 

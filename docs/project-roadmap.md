@@ -616,7 +616,7 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 
 ### Development Setup
 ```bash
-git clone https://github.com/docaohieu2808/engram.git
+git clone https://github.com/docaohieu2808/Engram-Mem.git
 cd engram
 pip install -e ".[dev]"
 pytest tests/ -v

@@ -9,7 +9,7 @@
 
 ### Installation
 ```bash
-git clone https://github.com/docaohieu2808/engram.git
+git clone https://github.com/docaohieu2808/Engram-Mem.git
 cd engram
 pip install -e ".[dev]"
 export GEMINI_API_KEY="your-key-here"
