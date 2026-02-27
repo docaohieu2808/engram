@@ -36,7 +36,7 @@ async def query_related(
 
     edges: list[SemanticEdge] = []
     seen_keys: set[str] = set()
-    for u, v, data in g.edges(data=True):
+    for u, v, _, data in g.edges(data=True, keys=True):
         if u in visited or v in visited:
             edge_data: SemanticEdge | None = data.get("data")
             if edge_data and edge_data.key not in seen_keys:

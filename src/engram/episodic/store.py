@@ -22,7 +22,6 @@ from engram.audit import AuditLogger
 from engram.config import EmbeddingConfig, EpisodicConfig, ScoringConfig
 from engram.episodic.decay import compute_activation_score
 from engram.episodic.embeddings import (
-    _EMBEDDING_DIMS,
     _detect_embedding_dim_from_model,
     _get_embeddings,
 )

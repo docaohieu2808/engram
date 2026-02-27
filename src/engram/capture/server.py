@@ -208,6 +208,11 @@ def create_app(
     _cfg: Config = config if config is not None else load_config()
 
     app = FastAPI(title="engram", description="Memory traces for AI agents")
+    if not _cfg.auth.enabled:
+        logger.warning(
+            "AUTH DISABLED — all requests treated as admin. "
+            "Set auth.enabled=true in config for production."
+        )
     v1 = APIRouter(prefix="/api/v1")
 
     # Starlette middleware order: last added = outermost (first to run)
@@ -1040,6 +1045,7 @@ async def _build_cache_and_limiter(config: Config) -> tuple[EngramCache | None, 
             config.rate_limit.redis_url,
             requests_per_minute=config.rate_limit.requests_per_minute,
             burst=config.rate_limit.burst,
+            fail_open=config.rate_limit.fail_open,
         )
         await app_limiter.connect()
 

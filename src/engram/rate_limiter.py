@@ -23,11 +23,13 @@ class RateLimiter:
     rate limit bypass during Redis outages.
     """
 
-    def __init__(self, redis_url: str, requests_per_minute: int = 60, burst: int = 10) -> None:
+    def __init__(self, redis_url: str, requests_per_minute: int = 60, burst: int = 10, fail_open: bool = False) -> None:
         self._redis: Any = None
         self._url = redis_url
         self.requests_per_minute = requests_per_minute
         self.burst = burst
+        # When True, allow requests when Redis is down (less secure, more available)
+        self._fail_open = fail_open
         # Window size in seconds
         self._window = 60
 
@@ -49,7 +51,9 @@ class RateLimiter:
             S-H4: When Redis is down, returns (False, 0, 0) — fail closed to prevent bypass.
         """
         if not self._redis:
-            # S-H4: fail closed — deny when rate limiter is unavailable
+            if self._fail_open:
+                logger.warning("rate_limiter: Redis unavailable, allowing request (fail_open=true) for tenant %s", tenant_id)
+                return True, 0, 0
             logger.warning("rate_limiter: Redis unavailable, denying request for tenant %s", tenant_id)
             return False, 0, 0
 
@@ -79,6 +83,8 @@ class RateLimiter:
             return True, remaining, reset_at
 
         except Exception:
-            # S-H4: Redis pipeline error → fail closed (deny) to prevent rate limit bypass
+            if self._fail_open:
+                logger.warning("rate_limiter: Redis pipeline error, allowing request (fail_open=true) for tenant %s", tenant_id)
+                return True, 0, 0
             logger.warning("rate_limiter: Redis pipeline error, denying request for tenant %s", tenant_id)
             return False, 0, 0

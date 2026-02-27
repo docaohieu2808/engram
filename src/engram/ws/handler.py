@@ -16,7 +16,11 @@ from engram.semantic.graph import SemanticGraph
 from engram.tenant import StoreFactory, TenantContext
 from engram.ws.connection_manager import manager
 from engram.ws.event_bus import event_bus
-from engram.ws.protocol import WSCommand, WSError, WSEvent, WSResponse
+from engram.ws.protocol import (
+    WSCommand, WSError, WSEvent, WSResponse,
+    RememberPayload, RecallPayload, ThinkPayload,
+    FeedbackPayload, QueryPayload, IngestPayload,
+)
 
 logger = logging.getLogger("engram.ws")
 
@@ -102,10 +106,19 @@ def register_ws_routes(
                         message="Reader role cannot perform write operations",
                     ).model_dump())
                     continue
+                # Validate payload
+                try:
+                    typed_payload = cmd.validate_payload()
+                except (ValueError, Exception) as ve:
+                    await ws.send_json(WSError(
+                        id=cmd.id, code="INVALID_PAYLOAD",
+                        message=str(ve),
+                    ).model_dump())
+                    continue
                 # Dispatch
                 try:
                     result = await _dispatch(
-                        cmd, auth, sub, _resolve_ep, _resolve_gr, _resolve_eng, ingest_fn,
+                        cmd, typed_payload, auth, sub, _resolve_ep, _resolve_gr, _resolve_eng, ingest_fn,
                     )
                     await ws.send_json(WSResponse(id=cmd.id, data=result).model_dump())
                 except Exception as exc:
@@ -133,6 +146,7 @@ def _authenticate(token: str, config: Config) -> tuple[AuthContext | None, str]:
 
 async def _dispatch(
     cmd: WSCommand,
+    p: Any,
     auth: AuthContext,
     sub: str,
     resolve_ep: Any,
@@ -141,53 +155,57 @@ async def _dispatch(
     ingest_fn: Any,
 ) -> dict[str, Any]:
     """Route command to appropriate store operation and return result dict."""
-    p = cmd.payload
-
     if cmd.type == "remember":
+        rp: RememberPayload = p
         ep = resolve_ep(auth)
         mem_id = await ep.remember(
-            p["content"],
-            memory_type=p.get("memory_type", "fact"),
-            priority=p.get("priority", 5),
-            entities=p.get("entities", []),
-            tags=p.get("tags", []),
+            rp.content,
+            memory_type=rp.memory_type,
+            priority=rp.priority,
+            entities=rp.entities,
+            tags=rp.tags,
         )
         await event_bus.emit(auth.tenant_id, "memory_created", {
-            "id": mem_id, "content": p["content"], "_sender": sub,
+            "id": mem_id, "content": rp.content, "_sender": sub,
         })
         return {"id": mem_id}
 
     if cmd.type == "recall":
+        rp: RecallPayload = p
         ep = resolve_ep(auth)
-        results = await ep.search(p.get("query", ""), limit=min(p.get("limit", 5), 100))
+        results = await ep.search(rp.query, limit=min(rp.limit, 100))
         return {"results": [_safe_dump(r) for r in results]}
 
     if cmd.type == "think":
+        tp: ThinkPayload = p
         ep = resolve_ep(auth)
         gr = await resolve_gr(auth)
         eng = resolve_eng(auth, ep, gr)
-        result = await eng.think(p["question"])
+        result = await eng.think(tp.question)
         return {"answer": result.get("answer", ""), "degraded": result.get("degraded", False)}
 
     if cmd.type == "feedback":
         from engram.feedback.auto_adjust import adjust_memory
+        fp: FeedbackPayload = p
         ep = resolve_ep(auth)
-        result = await adjust_memory(ep, p["memory_id"], p["feedback"])
+        result = await adjust_memory(ep, fp.memory_id, fp.feedback)
         await event_bus.emit(auth.tenant_id, "feedback_recorded", {
             **result, "_sender": sub,
         })
         return result
 
     if cmd.type == "query":
+        qp: QueryPayload = p
         gr = await resolve_gr(auth)
-        nodes = await gr.query(p.get("keyword", ""))
+        nodes = await gr.query(qp.keyword)
         items = nodes if isinstance(nodes, list) else [nodes]
         return {"results": [_safe_dump(n) for n in items[:50]]}
 
     if cmd.type == "ingest":
+        ip: IngestPayload = p
         if ingest_fn is None:
             raise RuntimeError("Ingest not configured")
-        result = await ingest_fn(p["messages"])
+        result = await ingest_fn(ip.messages)
         return {"result": _safe_dump(result)}
 
     if cmd.type == "status":
