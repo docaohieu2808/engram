@@ -606,6 +606,55 @@ async def remember_v2(...) -> MemoryResponseV2:
 
 ---
 
+---
+
+## Embedding Model Policy
+
+### Supported Model
+
+Only `gemini-embedding-001` (3072 dimensions) is supported. Do NOT use other embedding models.
+
+```python
+# Good — use the module constant
+from engram.episodic.embeddings import EMBEDDING_DIM  # = 3072
+
+# Bad — hardcode dimension
+embedding_dim = 768  # Wrong model assumed
+```
+
+Rationale: ChromaDB collections lock to a fixed embedding dimension at creation time. Mixing models corrupts collections and requires full re-indexing.
+
+### Fallback Behaviour
+
+When `GEMINI_API_KEY` is not set, ChromaDB falls back to `all-MiniLM-L6-v2` (384 dims). This fallback exists for offline/testing scenarios only. Never configure production with mismatched dimensions.
+
+### Key Rotation Configuration
+
+Use `src/engram/episodic/embeddings.py` — never call `litellm.embedding()` directly from other modules.
+
+```yaml
+# config.yaml — key rotation settings
+embedding:
+  provider: gemini
+  model: gemini-embedding-001
+  key_strategy: failover   # or round-robin
+```
+
+```bash
+# Environment variables for key rotation
+export GEMINI_API_KEY="primary-key"
+export GEMINI_API_KEY_FALLBACK="secondary-key"
+export GEMINI_KEY_STRATEGY="round-robin"   # overrides config.yaml
+```
+
+**Strategies:**
+- `failover` (default): always try primary key first; use fallback only on `AuthenticationError`
+- `round-robin`: rotate keys evenly using a process-level counter; use to spread quota
+
+**When to use round-robin:** high-throughput scenarios where a single API key would hit rate limits under sustained embedding load.
+
+---
+
 ## Review Checklist
 
 Before commit, verify:
@@ -619,4 +668,6 @@ Before commit, verify:
 - [ ] Pydantic validation at boundaries
 - [ ] Line length <100 chars (ruff check)
 - [ ] Imports organized (stdlib, third-party, local)
+- [ ] Embedding calls go through `embeddings.py`, not direct litellm calls
+- [ ] Embedding model is `gemini-embedding-001` only
 

@@ -11,7 +11,7 @@ Engram is a dual-memory AI agent system that thinks like humans. It combines:
 
 Exposes four interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP API** (FastAPI), **WebSocket API** (real-time bidirectional).
 
-**Version:** 0.4.1 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline + Brain Features + Intelligence Layer + WebSocket API | **Tests:** 893+ | **License:** MIT
+**Version:** 0.4.0 | **Status:** Enterprise-ready + Advanced Recall + Consolidation + TUI + Recall Pipeline + Brain Features + Intelligence Layer + WebSocket API + Benchmark Suite | **Tests:** 894+ | **License:** MIT
 
 ---
 
@@ -62,6 +62,18 @@ Exposes four interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP A
 - **Resource-Aware Retrieval:** ResourceMonitor with sliding window tracks LLM call success/failure; 4 tiers (FULL, STANDARD, BASIC, READONLY); BASIC returns raw results without synthesis; auto-recovery after 60s cooldown
 - **Data Constitution:** 3 laws (namespace isolation, no fabrication, audit rights); auto-creates ~/.engram/constitution.md on first load; SHA-256 tamper detection; compact prefix injected into every LLM prompt
 - **Consolidation Scheduler:** Asyncio recursive setTimeout pattern (overlap-safe); 3 default tasks (cleanup_expired daily, consolidate_memories 6h, decay_report daily); respects resource tier; state persisted to ~/.engram/scheduler_state.json; starts automatically with `engram watch`
+
+### Embedding & Key Rotation
+- **Model:** `gemini-embedding-001` exclusively (3072 dimensions)
+- **Key Rotation:** `GEMINI_API_KEY` + `GEMINI_API_KEY_FALLBACK` with configurable strategy
+- **Strategies:** `failover` (default — use primary, switch on failure) or `round-robin` (rotate evenly to spread quota)
+- **Config:** `embedding.key_strategy` in config.yaml or `GEMINI_KEY_STRATEGY` env var
+
+### Benchmark Suite
+- **Runner:** `tests/benchmark_performance.py` — measures p50/p95/p99 latency per endpoint
+- **Operations:** health, remember, recall, think across configurable concurrency levels
+- **Usage:** `python tests/benchmark_performance.py [--quick] [--concurrency N] [--host H] [--port P]`
+- **Sample results:** health 0.8ms p50, remember 415ms p50 (embedding API bound), recall 1.3ms p50, think 5.6s p50 (LLM bound)
 
 ### Extensibility
 - **Pluggable semantic backend:** SQLite (default) or PostgreSQL
@@ -452,11 +464,20 @@ Exposes four interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP A
 - ✓ Auto-discovery for 5 known services
 - ✓ Security hardening (SSRF, SQL injection, timing, RBAC, JWT)
 
+### For v0.4.0 (Current)
+- ✓ Temporal Resolution: 28 Vietnamese+English patterns
+- ✓ Pronoun Resolution: LLM-based entity mapping
+- ✓ Fusion Formatter: group results by type [preference]/[fact]/[lesson]
+- ✓ Graph Visualization: interactive vis-network explorer at /graph
+- ✓ Feedback Loop + Auto-delete wired end-to-end
+- ✓ Embedding key rotation (failover + round-robin)
+- ✓ Performance benchmark suite (p50/p95/p99)
+- ✓ WebSocket API: 7 commands + push events, per-tenant isolation
+
 ### For Future Releases
 - Distributed semantic graph (cluster mode)
 - Streaming LLM responses for large reasoning tasks
 - Graph migrations (SQLite → PostgreSQL)
-- Custom embedding models
 - Advanced RBAC (resource-level permissions)
 - Observability dashboard UI
 
@@ -500,6 +521,11 @@ Exposes four interfaces: **CLI** (Typer), **MCP** (Claude integration), **HTTP A
 | feedback.auto_delete_threshold | 3 | int | Negatives before auto-delete |
 | resolution.temporal_enabled | true | bool | Temporal entity resolution |
 | resolution.pronoun_enabled | true | bool | Pronoun resolution via LLM |
+| embedding.model | gemini-embedding-001 | str | Embedding model (only gemini-embedding-001 supported) |
+| embedding.key_strategy | failover | str | Key rotation strategy: `failover` or `round-robin` |
+| fusion.formatter_enabled | true | bool | Group recall results by type |
+| graph.visualization_enabled | true | bool | Enable interactive graph UI at /graph |
+| rate_limit.fail_open | true | bool | Allow requests through on Redis failure |
 
 ---
 
@@ -566,24 +592,21 @@ engram serve
 
 ## Change Log
 
-**v0.4.1** (2026-02-27) — WebSocket API + Real-Time Push
-- WebSocket API: bidirectional `/ws?token=JWT`; 7 commands + push events (memory.created/deleted/updated, consolidation.completed, error)
-- Per-tenant isolation via connection_manager + event_bus; JWT auth on upgrade
-- New package: `src/engram/ws/` (protocol.py, event_bus.py, connection_manager.py, handler.py)
-- 71 WebSocket tests + 33 P0 gap tests = 104 new; 893 total
-
-**v0.4.0** (2026-02-25) — Intelligence Layer + Graph Visualization
+**v0.4.0** (2026-02-27) — Intelligence Layer + Graph Visualization + Benchmark Suite
 - Temporal Resolution: 28 Vietnamese+English patterns resolve "hôm nay/yesterday" → ISO dates before storing
 - Pronoun Resolution: "anh ấy/he/she" → named entity from graph context, LLM-based fallback
 - Feedback Loop + Auto-adjust: confidence ±0.15/0.2, importance ±1, auto-delete on 3× negative
 - Fusion Formatter: group recall results by type [preference]/[fact]/[lesson] for LLM context
 - Graph Visualization: interactive entity relationship explorer at /graph, vis-network dark theme, search, click-to-inspect
+- WebSocket API: bidirectional `/ws?token=JWT`; 7 commands + push events; per-tenant isolation via event_bus
+- Embedding key rotation: failover/round-robin strategy, GEMINI_API_KEY_FALLBACK support
+- Performance benchmark suite: p50/p95/p99 (tests/benchmark_performance.py)
 - 7 orphaned modules wired: guard, decision, telemetry, temporal search, parallel search, auto memory, auto consolidation
-- 3 critical bug fixes: FTS5 thread safety, OOM pagination, rate limiter race condition
+- 3 critical bug fixes: FTS5 thread safety, OOM pagination, rate limiter race condition (fail_open added)
 - New CLI: `engram graph`
-- New MCP tool: `engram_get_graph_data`, `engram_feedback` enhanced
-- New API: POST /api/v1/feedback, GET /api/v1/graph/data, GET /graph
-- 726+ tests (181 new)
+- New MCP tools: `engram_get_graph_data`, enhanced `engram_feedback`
+- New API: POST /api/v1/feedback, GET /api/v1/graph/data, GET /graph, GET /ws
+- 894+ tests
 
 **v0.3.2** (2026-02-25) — Brain Features
 - Memory Audit Trail: traceable before/after log for every episodic mutation
