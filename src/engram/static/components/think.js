@@ -113,9 +113,13 @@ const Think = {
   _esc(s) { return (s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
   _md(s) {
     if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
-      const html = marked.parse(s || '', { gfm: true, breaks: false });
-      // Remove <p> wrappers inside <li> to avoid double spacing
-      return DOMPurify.sanitize(html.replace(/<li><p>([\s\S]*?)<\/p>\s*<\/li>/g, '<li>$1</li>'));
+      // Collapse 3+ newlines to 2 before parsing to avoid empty <p> tags
+      const clean = (s || '').replace(/\n{3,}/g, '\n\n');
+      const html = marked.parse(clean, { gfm: true, breaks: false });
+      return DOMPurify.sanitize(
+        html.replace(/<li><p>([\s\S]*?)<\/p>\s*<\/li>/g, '<li>$1</li>')
+            .replace(/<p>\s*<\/p>/g, '')
+      );
     }
     return this._esc(s);
   },
