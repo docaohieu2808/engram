@@ -64,15 +64,15 @@ const Memories = {
       this._renderTable(el);
       this._renderPagination();
     } catch (e) {
-      el.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+      el.innerHTML = `<span style="color:var(--error)">${e.message}</span>`;
     }
   },
 
   _renderTable(el) {
     if (!this._memories.length) { el.innerHTML = '<div style="padding:20px;color:var(--text-muted);text-align:center">No memories found</div>'; return; }
     el.innerHTML = `<table><thead><tr>
-      <th><input type="checkbox" onchange="Memories.toggleAll(this.checked)"></th>
-      <th>ID</th><th>Content</th><th>Type</th><th>Priority</th><th>Confidence</th><th>Tags</th><th>Entities</th><th>Access</th><th>Created</th><th>Actions</th>
+      <th style="width:32px"><input type="checkbox" onchange="Memories.toggleAll(this.checked)"></th>
+      <th style="width:70px">ID</th><th>Content</th><th style="width:80px">Type</th><th style="width:100px">Priority</th><th style="width:100px">Confidence</th><th style="width:120px">Created</th><th style="width:140px">Actions</th>
     </tr></thead><tbody>${this._memories.map(m => this._row(m)).join('')}</tbody></table>`;
   },
 
@@ -81,15 +81,12 @@ const Memories = {
     const shortId = m.id.slice(0, 8);
     return `<tr>
       <td><input type="checkbox" ${checked} onchange="Memories.toggleSelect('${m.id}',this.checked)"></td>
-      <td><span class="truncate" style="max-width:70px;cursor:pointer" title="${m.id}" onclick="navigator.clipboard.writeText('${m.id}');App.toast('ID copied','info')">${shortId}</span></td>
-      <td><span class="truncate truncate-wide" title="${this._esc(m.content)}">${App.truncate(m.content, 150)}</span></td>
+      <td><span class="truncate" style="max-width:60px;cursor:pointer;font-family:var(--mono);font-size:11px" title="${m.id}" onclick="navigator.clipboard.writeText('${m.id}');App.toast('ID copied','info')">${shortId}</span></td>
+      <td><span class="truncate" style="max-width:400px" title="${this._esc(m.content)}">${App.truncate(m.content, 120)}</span></td>
       <td>${App.typeBadge(m.memory_type)}</td>
       <td>${App.priorityBar(m.priority)}</td>
       <td>${App.confidenceBar(m.confidence)}</td>
-      <td>${App.pills(m.tags)}</td>
-      <td>${App.pills(m.entities)}</td>
-      <td style="text-align:center">${m.access_count}</td>
-      <td style="white-space:nowrap">${App.formatDate(m.timestamp)}</td>
+      <td style="white-space:nowrap;font-size:12px">${App.formatDate(m.timestamp)}</td>
       <td style="white-space:nowrap">
         <button class="btn-icon" title="View" onclick="Memories.showDetail('${m.id}')">${Icons.eye}</button>
         <button class="btn-icon" title="Edit" onclick="Memories.showEdit('${m.id}')">${Icons.edit}</button>

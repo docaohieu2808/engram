@@ -44,7 +44,7 @@ const Audit = {
           <td><span class="truncate" style="max-width:100px" title="${e.resource_id || ''}">${(e.resource_id || '').slice(0, 8)}</span></td>
           <td style="font-size:11px">${this._formatChange(e)}</td>
         </tr>`).join('') + '</tbody></table></div>';
-    } catch (e) { el.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`; }
+    } catch (e) { el.innerHTML = `<span style="color:var(--error)">${e.message}</span>`; }
   },
 
   _formatChange(e) {
@@ -66,7 +66,7 @@ const Audit = {
       el.innerHTML = `<div class="table-wrap" style="max-height:400px;overflow-y:auto"><table><thead><tr><th>Time</th><th>Operation</th><th>Resource</th><th>Details</th></tr></thead><tbody>` +
         entries.slice(0, 50).map(e => `<tr>
           <td style="white-space:nowrap;font-size:11px">${App.formatDate(e.timestamp)}</td>
-          <td><span class="badge" style="background:var(--bg-tertiary)">${e.operation || e.mod_type || '?'}</span></td>
+          <td><span class="badge" style="background:var(--bg-secondary)">${e.operation || e.mod_type || '?'}</span></td>
           <td><span class="truncate" style="max-width:100px" title="${e.resource_id || ''}">${(e.resource_id || '').slice(0, 12)}</span></td>
           <td style="font-size:11px;cursor:pointer" onclick="this.querySelector('.json-view')?.classList.toggle('hidden')" title="Click to expand">
             ${App.truncate(JSON.stringify(e.details || e.description || ''), 60)}
@@ -80,7 +80,7 @@ const Audit = {
           if (jv) jv.style.display = jv.style.display === 'none' ? 'block' : 'none';
         });
       });
-    } catch (e) { el.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`; }
+    } catch (e) { el.innerHTML = `<span style="color:var(--error)">${e.message}</span>`; }
   },
 
   async runBenchmark() {
@@ -105,10 +105,10 @@ const Audit = {
           <td>${App.truncate(r.question, 80)}</td>
           <td style="font-size:11px">${App.truncate(r.expected, 60)}</td>
           <td style="font-size:11px">${App.truncate(r.actual, 60)}</td>
-          <td>${r.correct ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--danger)">✗</span>'}</td>
+          <td>${r.correct ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--error)">✗</span>'}</td>
           <td>${r.latency_ms}ms</td>
         </tr>`).join('') + '</tbody></table></div>';
-    } catch (e) { results.innerHTML = `<span style="color:var(--danger)">${e.message}</span>`; }
+    } catch (e) { results.innerHTML = `<span style="color:var(--error)">${e.message}</span>`; }
     finally { btn.disabled = false; btn.textContent = 'Run Benchmark'; }
   },
 };

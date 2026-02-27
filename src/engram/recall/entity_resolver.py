@@ -68,7 +68,7 @@ def _format_context(context: list[dict], max_messages: int = 10) -> str:
 async def resolve_pronouns(
     text: str,
     context: list[dict],
-    model: str = "gemini/gemini-2.0-flash",
+    model: str = "gemini/gemini-2.5-flash",
 ) -> ResolvedText:
     """Use LLM to resolve pronouns given conversation context.
 
@@ -97,6 +97,7 @@ async def resolve_pronouns(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=256,
+            thinking={"type": "disabled"},
         )
         raw = response.choices[0].message.content.strip()
         # Strip markdown code fences if present
@@ -142,7 +143,7 @@ async def resolve(
     text: str,
     context: list[dict] | None = None,
     reference_date: datetime | None = None,
-    model: str = "gemini/gemini-2.0-flash",
+    model: str = "gemini/gemini-2.5-flash",
     resolve_temporal_refs: bool = True,
     resolve_pronoun_refs: bool = True,
 ) -> ResolvedText:

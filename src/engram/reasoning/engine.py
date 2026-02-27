@@ -139,6 +139,7 @@ class ReasoningEngine:
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
+                thinking={"type": "disabled"},
             )
             monitor.record_success()
             summary = response.choices[0].message.content
@@ -425,6 +426,7 @@ class ReasoningEngine:
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.0,
+                    thinking={"type": "disabled"},
                 )
                 monitor.record_success()
                 return {"answer": response.choices[0].message.content, "degraded": False}

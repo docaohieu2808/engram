@@ -18,9 +18,10 @@ from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 def _normalize_entity_name(name: str) -> str:
-    """Normalize entity name: trim whitespace only.
+    """Normalize entity name: trim whitespace, preserve original casing.
 
-    Preserves original casing to avoid breaking key lookups.
+    Casing is preserved to avoid breaking proper nouns (HAProxy, RabbitMQ, etc.).
+    Deduplication happens at the graph store level via case-insensitive lookup.
     """
     return (name or "").strip()
 
