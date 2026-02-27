@@ -26,6 +26,7 @@ class BulkDeleteRequest(BaseModel):
 async def list_memories(
     search: Optional[str] = None,
     memory_type: Optional[str] = None,
+    source: Optional[str] = None,
     priority_min: int = 1,
     priority_max: int = 10,
     confidence_min: float = 0.0,
@@ -54,6 +55,10 @@ async def list_memories(
         mt_val = m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type)
         if mt_filter and mt_val not in mt_filter:
             continue
+        if source:
+            m_source = getattr(m, "source", "") or ""
+            if m_source != source:
+                continue
         if not (priority_min <= m.priority <= priority_max):
             continue
         if not (confidence_min <= m.confidence <= confidence_max):

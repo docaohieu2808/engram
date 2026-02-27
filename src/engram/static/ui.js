@@ -39,7 +39,8 @@ const App = {
     this._bindKeyboard();
     this._injectThemeIcon();
     this._restoreSidebarState();
-    this.switchTab('dashboard');
+    const savedTab = location.hash.replace('#', '') || 'dashboard';
+    this.switchTab(savedTab);
   },
 
   isAuthenticated() {
@@ -178,6 +179,7 @@ const App = {
 
   switchTab(tab) {
     this.currentTab = tab;
+    location.hash = tab;
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('#sidebar-nav .nav-item').forEach(b => b.classList.remove('active'));
     const panel = document.getElementById('tab-' + tab);

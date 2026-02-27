@@ -371,6 +371,49 @@ tr:hover td {
 .type-context { background: rgba(139,141,147,.12); color: var(--text-secondary); }
 .type-workflow { background: rgba(59,130,246,.12); color: var(--info); }
 
+/* Source tabs (Chrome-style) */
+.source-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+.source-tab {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all .15s ease;
+  border-radius: 6px 6px 0 0;
+}
+.source-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.source-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: rgba(255,140,50,.06);
+}
+
+/* Source badges */
+.source-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  color: var(--src-color, var(--text-muted));
+  background: color-mix(in srgb, var(--src-color, var(--text-muted)) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--src-color, var(--text-muted)) 20%, transparent);
+}
+
 /* Tier badges */
 .tier-full { color: var(--success); }
 .tier-standard { color: #a3e635; }
@@ -556,6 +599,7 @@ select { cursor: pointer; }
 
 /* ===== Spinner ===== */
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+.btn .spinner, .btn-primary .spinner { border-color: rgba(255,255,255,.3); border-top-color: #fff; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-overlay { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 48px; color: var(--text-secondary); }
 

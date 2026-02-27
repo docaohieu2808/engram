@@ -4,6 +4,7 @@ GET /query, POST /feedback, POST /cleanup, POST /cleanup/dedup, POST /summarize,
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -35,6 +36,7 @@ class RememberRequest(BaseModel):
     priority: int = Field(default=5, ge=1, le=10)
     entities: list[str] = []
     tags: list[str] = []
+    source: str = ""
 
 
 class ThinkRequest(BaseModel):
@@ -70,7 +72,7 @@ async def remember(req: RememberRequest, request: Request, auth: AuthContext = D
     ep = resolve_episodic(state, auth)
     mem_id = await ep.remember(
         req.content, memory_type=req.memory_type, priority=req.priority,
-        entities=req.entities, tags=req.tags,
+        entities=req.entities, tags=req.tags, source=req.source,
     )
     cache: EngramCache | None = getattr(state, "cache", None)
     if cache is not None:
@@ -97,11 +99,22 @@ async def think(req: ThinkRequest, request: Request, auth: AuthContext = Depends
         if cached is not None:
             return cached
         think_result = await eng.think(req.question)
+        try:
+            qa_content = f"Q: {req.question}\nA: {think_result['answer']}"
+            await ep.remember(qa_content, memory_type="context", source="think")
+        except Exception as exc:
+            logging.getLogger("engram").warning("Failed to save think Q&A: %s", exc)
         result = {"status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"]}
         await cache.set(auth.tenant_id, "think", {"q": req.question}, result, ttl=cfg.cache.think_ttl)
         return result
 
     think_result = await eng.think(req.question)
+    # Save think Q&A as episodic memory for future recall
+    try:
+        qa_content = f"Q: {req.question}\nA: {think_result['answer']}"
+        await ep.remember(qa_content, memory_type="context", source="think")
+    except Exception as exc:
+        logging.getLogger("engram").warning("Failed to save think Q&A: %s", exc)
     return {"status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"]}
 
 

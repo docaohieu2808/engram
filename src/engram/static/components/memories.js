@@ -19,6 +19,14 @@ const Memories = {
 
   _shell() {
     return `
+      <div class="source-tabs" id="mem-source-tabs">
+        <button class="source-tab active" data-source="" onclick="Memories._switchSource(this)">All</button>
+        <button class="source-tab" data-source="ClaudeCode" onclick="Memories._switchSource(this)">Claude Code</button>
+        <button class="source-tab" data-source="OpenClaw" onclick="Memories._switchSource(this)">OpenClaw</button>
+        <button class="source-tab" data-source="api" onclick="Memories._switchSource(this)">API</button>
+        <button class="source-tab" data-source="think" onclick="Memories._switchSource(this)">Think</button>
+        <button class="source-tab" data-source="manual" onclick="Memories._switchSource(this)">Manual</button>
+      </div>
       <div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;align-items:end">
         <div class="form-group" style="flex:1;min-width:200px;margin:0"><label>Search</label><input id="mem-search" placeholder="Search content..." onkeydown="if(event.key==='Enter')Memories.search()"></div>
         <div class="form-group" style="margin:0"><label>Type</label>
@@ -39,6 +47,15 @@ const Memories = {
       <div class="pagination" id="mem-pagination"></div>`;
   },
 
+  _activeSource: '',
+
+  _switchSource(btn) {
+    document.querySelectorAll('#mem-source-tabs .source-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    this._activeSource = btn.dataset.source;
+    this.search();
+  },
+
   async search() {
     this._page = 0;
     this._selected.clear();
@@ -55,6 +72,7 @@ const Memories = {
       if (q) params.search = q;
       const type = document.getElementById('mem-type')?.value;
       if (type) params.memory_type = type;
+      if (this._activeSource) params.source = this._activeSource;
       const pri = document.getElementById('mem-priority')?.value;
       if (pri) { const [min, max] = pri.split('-'); params.priority_min = min; params.priority_max = max; }
 
@@ -72,7 +90,7 @@ const Memories = {
     if (!this._memories.length) { el.innerHTML = '<div style="padding:20px;color:var(--text-muted);text-align:center">No memories found</div>'; return; }
     el.innerHTML = `<table><thead><tr>
       <th style="width:32px"><input type="checkbox" onchange="Memories.toggleAll(this.checked)"></th>
-      <th style="width:70px">ID</th><th>Content</th><th style="width:80px">Type</th><th style="width:100px">Priority</th><th style="width:100px">Confidence</th><th style="width:120px">Created</th><th style="width:140px">Actions</th>
+      <th style="width:70px">ID</th><th>Content</th><th style="width:80px">Type</th><th style="width:80px">Source</th><th style="width:100px">Priority</th><th style="width:100px">Confidence</th><th style="width:120px">Created</th><th style="width:140px">Actions</th>
     </tr></thead><tbody>${this._memories.map(m => this._row(m)).join('')}</tbody></table>`;
   },
 
@@ -84,6 +102,7 @@ const Memories = {
       <td><span class="truncate" style="max-width:60px;cursor:pointer;font-family:var(--mono);font-size:11px" title="${m.id}" onclick="navigator.clipboard.writeText('${m.id}');App.toast('ID copied','info')">${shortId}</span></td>
       <td><span class="truncate" style="max-width:400px" title="${this._esc(m.content)}">${App.truncate(m.content, 120)}</span></td>
       <td>${App.typeBadge(m.memory_type)}</td>
+      <td>${Memories._sourceBadge(m.source)}</td>
       <td>${App.priorityBar(m.priority)}</td>
       <td>${App.confidenceBar(m.confidence)}</td>
       <td style="white-space:nowrap;font-size:12px">${App.formatDate(m.timestamp)}</td>
@@ -95,6 +114,14 @@ const Memories = {
         <button class="btn-icon" title="Delete" onclick="Memories.confirmDelete('${m.id}')">${Icons.trash}</button>
       </td>
     </tr>`;
+  },
+
+  _sourceBadge(s) {
+    const labels = { ClaudeCode: 'Claude', OpenClaw: 'OpenClaw', api: 'API', manual: 'Manual', think: 'Think' };
+    const colors = { ClaudeCode: 'var(--accent)', OpenClaw: '#e67e22', api: 'var(--info)', manual: 'var(--success)', think: '#a855f7' };
+    const label = labels[s] || (s || 'Unknown');
+    const color = colors[s] || 'var(--text-muted)';
+    return `<span class="source-badge" style="--src-color:${color}">${label}</span>`;
   },
 
   _esc(s) { return (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); },
@@ -144,8 +171,9 @@ const Memories = {
       App.showModal(`<h2>Memory Detail</h2><div class="memory-detail">
         <div class="field"><div class="field-label">ID</div><div class="field-value" style="font-family:var(--mono);font-size:12px">${m.id}</div></div>
         <div class="field"><div class="field-label">Content</div><div class="field-value markdown-body" style="line-height:1.6">${typeof DOMPurify !== 'undefined' && typeof marked !== 'undefined' ? DOMPurify.sanitize(marked.parse(m.content || '')) : this._esc(m.content)}</div></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px">
           <div class="field"><div class="field-label">Type</div><div class="field-value">${App.typeBadge(m.memory_type)}</div></div>
+          <div class="field"><div class="field-label">Source</div><div class="field-value">${Memories._sourceBadge(m.source)}</div></div>
           <div class="field"><div class="field-label">Priority</div><div class="field-value">${App.priorityBar(m.priority)}</div></div>
           <div class="field"><div class="field-label">Confidence</div><div class="field-value">${App.confidenceBar(m.confidence)}</div></div>
         </div>
