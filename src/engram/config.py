@@ -330,6 +330,9 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "RATE_LIMIT_REDIS_URL": ("rate_limit", "redis_url"),
     "RATE_LIMIT_REQUESTS_PER_MINUTE": ("rate_limit", "requests_per_minute"),
     "RATE_LIMIT_BURST": ("rate_limit", "burst"),
+    "CAPTURE_ENABLED": ("capture", "enabled"),
+    "CAPTURE_INBOX": ("capture", "inbox"),
+    "CAPTURE_POLL_INTERVAL": ("capture", "poll_interval"),
     "CAPTURE_OPENCLAW_ENABLED": ("capture.openclaw", "enabled"),
     "CAPTURE_OPENCLAW_SESSIONS_DIR": ("capture.openclaw", "sessions_dir"),
     "EPISODIC_DECAY_RATE": ("episodic", "decay_rate"),
@@ -367,7 +370,10 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
 }
 
 def _get_section_models() -> dict[str, type[BaseModel]]:
-    """Lazily build section model map after all classes are defined."""
+    """Lazily build section model map after all classes are defined.
+
+    Keys may be dotted paths (e.g. "capture.openclaw") for nested sections.
+    """
     return {
         "serve": ServeConfig,
         "llm": LLMConfig,
@@ -377,6 +383,7 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "logging": LoggingConfig,
         "security": SecurityConfig,
         "capture": CaptureConfig,
+        "capture.openclaw": OpenClawCaptureConfig,
         "hooks": HooksConfig,
         "auth": AuthConfig,
         "telemetry": TelemetryConfig,
@@ -431,10 +438,14 @@ def _apply_env_overlay(data: dict[str, Any]) -> dict[str, Any]:
         except (ValueError, TypeError):
             typed_val = raw_val  # fall back to string; Pydantic will validate
 
-        # Merge into data dict
-        if section not in data or not isinstance(data[section], dict):
-            data[section] = {}
-        data[section][field] = typed_val
+        # Merge into data dict — support dotted section paths (e.g. "capture.openclaw")
+        parts = section.split(".")
+        node = data
+        for part in parts:
+            if part not in node or not isinstance(node[part], dict):
+                node[part] = {}
+            node = node[part]
+        node[field] = typed_val
 
     return data
 

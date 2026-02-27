@@ -83,6 +83,28 @@ async def test_check_no_redis_denies():
     assert reset_at == 0
 
 
+@pytest.mark.asyncio
+async def test_fail_open_allows_when_redis_unavailable():
+    """fail_open=True: when Redis unavailable, allow the request."""
+    rl = RateLimiter("redis://localhost:6379", fail_open=True)
+    rl._redis = None
+    allowed, remaining, reset_at = await rl.check("tenant-1")
+    assert allowed is True
+    assert remaining == 0
+    assert reset_at == 0
+
+
+@pytest.mark.asyncio
+async def test_fail_closed_denies_when_redis_unavailable():
+    """fail_open=False (default): when Redis unavailable, deny the request."""
+    rl = RateLimiter("redis://localhost:6379", fail_open=False)
+    rl._redis = None
+    allowed, remaining, reset_at = await rl.check("tenant-1")
+    assert allowed is False
+    assert remaining == 0
+    assert reset_at == 0
+
+
 # --- Tests: check — allowed ---
 
 @pytest.mark.asyncio

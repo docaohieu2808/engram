@@ -75,3 +75,7 @@ markers = [
     "integration: end-to-end integration tests",
     "load: load and stress tests (excluded from CI)",
 ]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B101"]

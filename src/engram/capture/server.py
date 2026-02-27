@@ -213,6 +213,13 @@ def create_app(
             "AUTH DISABLED — all requests treated as admin. "
             "Set auth.enabled=true in config for production."
         )
+        if _cfg.serve.host == "0.0.0.0":
+            import os
+            if os.environ.get("ENGRAM_ALLOW_INSECURE") != "1":
+                raise RuntimeError(
+                    "Refusing to start: auth disabled on 0.0.0.0 (network-exposed). "
+                    "Set auth.enabled=true or ENGRAM_ALLOW_INSECURE=1 to override."
+                )
     v1 = APIRouter(prefix="/api/v1")
 
     # Starlette middleware order: last added = outermost (first to run)
