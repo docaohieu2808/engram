@@ -29,6 +29,9 @@ class EpisodicConfig(BaseModel):
 class EmbeddingConfig(BaseModel):
     provider: str = "gemini"
     model: str = "gemini-embedding-001"
+    # Key rotation strategy: "failover" (primary first, fallback on error)
+    # or "round-robin" (rotate evenly across keys to spread quota)
+    key_strategy: str = "failover"
 
 
 class SemanticConfig(BaseModel):
@@ -123,6 +126,8 @@ class RateLimitConfig(BaseModel):
     redis_url: str = "redis://localhost:6379/0"
     requests_per_minute: int = 60
     burst: int = 10
+    # fail_open: when Redis is down, allow requests (less secure, more available)
+    fail_open: bool = False
 
 
 class ScoringConfig(BaseModel):
@@ -296,6 +301,7 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "EPISODIC_PROVIDER": ("episodic", "provider"),
     "EMBEDDING_MODEL": ("embedding", "model"),
     "EMBEDDING_PROVIDER": ("embedding", "provider"),
+    "EMBEDDING_KEY_STRATEGY": ("embedding", "key_strategy"),
     "SEMANTIC_PATH": ("semantic", "path"),
     "SEMANTIC_PROVIDER": ("semantic", "provider"),
     "SEMANTIC_DSN": ("semantic", "dsn"),

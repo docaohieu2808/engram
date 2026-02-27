@@ -37,7 +37,7 @@ class SemanticGraph:
     """NetworkX in-memory graph with pluggable storage backend (SQLite or PostgreSQL)."""
 
     def __init__(self, backend: GraphBackend, audit: "AuditLogger | None" = None, tenant_id: str = "default", max_nodes: int = 50_000) -> None:
-        self._graph: nx.DiGraph = nx.DiGraph()
+        self._graph: nx.MultiDiGraph = nx.MultiDiGraph()
         self._backend = backend
         self._loaded: bool = False  # deferred loading flag
         self._initialized: bool = False  # backend.initialize() called flag
@@ -133,7 +133,7 @@ class SemanticGraph:
             weight=edge.weight,
             attributes=edge.attributes,
         )
-        is_new = not self._graph.has_edge(from_key, to_key)
+        is_new = not self._graph.has_edge(from_key, to_key, key=normalized_edge.key)
         await self._backend.save_edge(
             normalized_edge.key, from_key, to_key, normalized_edge.relation,
             normalized_edge.weight, json.dumps(normalized_edge.attributes),
@@ -195,7 +195,7 @@ class SemanticGraph:
         await self._ensure_loaded()
         all_edges = [
             data["data"]
-            for _, _, data in self._graph.edges(data=True)
+            for _, _, _, data in self._graph.edges(data=True, keys=True)
             if "data" in data
         ]
         if node_key is not None:
@@ -225,15 +225,15 @@ class SemanticGraph:
         """Remove edge from both stores by edge key."""
         await self._ensure_loaded()
         to_remove = [
-            (u, v)
-            for u, v, data in self._graph.edges(data=True)
-            if data.get("key") == key
+            (u, v, k)
+            for u, v, k, data in self._graph.edges(data=True, keys=True)
+            if k == key
         ]
         if not to_remove:
             return False
         await self._backend.delete_edge(key)
-        for u, v in to_remove:
-            self._graph.remove_edge(u, v)
+        for u, v, k in to_remove:
+            self._graph.remove_edge(u, v, key=k)
         if self._audit:
             self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.remove_edge",
                             resource_id=key)
@@ -280,7 +280,7 @@ class SemanticGraph:
                 # H5 fix: only scan edges of visited nodes, not all edges
                 seen_edges: set[tuple[str, str, str]] = set()
                 for node_key in visited:
-                    for u, v, data in self._graph.edges(node_key, data=True):
+                    for u, v, _, data in self._graph.edges(node_key, data=True, keys=True):
                         edge_data: SemanticEdge | None = data.get("data")
                         if edge_data:
                             edge_id = (edge_data.from_node, edge_data.relation, edge_data.to_node)
