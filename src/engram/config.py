@@ -75,7 +75,7 @@ class CaptureConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     provider: str = "gemini"
-    model: str = "gemini/gemini-2.0-flash"
+    model: str = "gemini/gemini-2.5-flash"
     api_key: str = "${GEMINI_API_KEY}"
 
 
@@ -157,7 +157,7 @@ class ConsolidationConfig(BaseModel):
     min_cluster_size: int = 3
     similarity_threshold: float = 0.3
     auto_trigger_threshold: int = 20  # messages before auto-consolidation
-    llm_model: str = "gemini/gemini-2.0-flash"
+    llm_model: str = "gemini/gemini-2.5-flash"
 
 
 class RetrievalAuditConfig(BaseModel):
@@ -172,7 +172,7 @@ class ResolutionConfig(BaseModel):
     resolve_pronouns: bool = True
     resolve_temporal: bool = True
     context_window: int = 10  # messages to look back for pronoun resolution
-    llm_model: str = "gemini/gemini-2.0-flash"
+    llm_model: str = "gemini/gemini-2.5-flash"
 
 
 class RecallPipelineConfig(BaseModel):

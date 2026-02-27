@@ -22,12 +22,15 @@ EXTRACTION_PROMPT = """You are an entity extraction system. Extract entities and
 {schema}
 
 ## Instructions
-- Extract ONLY entities and relationships that match the schema above
+- Extract entities and relationships that match the schema above
 - Return valid JSON with "nodes" and "edges" arrays
 - Each node: {{"type": "NodeType", "name": "EntityName", "attributes": {{}}}}
 - Each edge: {{"from_node": "Type:Name", "to_node": "Type:Name", "relation": "relation_name"}}
 - Be precise - only extract clearly stated facts
-- Deduplicate entities by name
+- Deduplicate entities by name (case-insensitive: "Docker compose" = "Docker Compose")
+- Use proper casing for entity names: preserve acronyms (API, HTTP, SQL), camelCase (GitHub, OpenClaw), technical names (HAProxy, RabbitMQ, PostgreSQL)
+- **CRITICAL**: Every node MUST have at least one edge connecting it to another node. Never create orphan nodes. If you cannot find a relationship for an entity, do NOT include it.
+- Common relation types: uses, runs_on, part_of, located_at, works_with, knows, manages, depends_on, created_by, connects_to
 
 ## Conversation
 {messages}
@@ -46,15 +49,20 @@ class EntityExtractor:
 
     async def extract_entities(self, messages: list[dict[str, Any]]) -> ExtractionResult:
         """Extract entities from a list of chat messages."""
-        all_nodes: dict[str, SemanticNode] = {}
+        all_nodes: dict[str, SemanticNode] = {}  # case-insensitive key → node
         all_edges: dict[str, SemanticEdge] = {}
 
         for chunk in self._chunk_messages(messages, chunk_size=50):
             result = await self._extract_chunk(chunk)
             for node in result.nodes:
-                all_nodes[node.key] = node
+                # Case-insensitive dedup: keep first occurrence's casing
+                ci_key = node.key.lower()
+                if ci_key not in all_nodes:
+                    all_nodes[ci_key] = node
             for edge in result.edges:
-                all_edges[edge.key] = edge
+                ci_key = edge.key.lower()
+                if ci_key not in all_edges:
+                    all_edges[ci_key] = edge
 
         return ExtractionResult(
             nodes=list(all_nodes.values()),
@@ -142,6 +150,7 @@ class EntityExtractor:
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.1,
                     response_format={"type": "json_object"},
+                    thinking={"type": "disabled"},
                 )
                 content = response.choices[0].message.content
                 return self._parse_response(content)

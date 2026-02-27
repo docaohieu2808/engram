@@ -33,8 +33,8 @@ const Settings = {
         <h3>Scheduler Tasks</h3>
         ${scheduler.length ? this._schedulerTable(scheduler) : '<span style="color:var(--text-muted)">No tasks registered (scheduler may not be running)</span>'}
       </div>
-      <div class="card" style="border-color:var(--danger)">
-        <h3 style="color:var(--danger)">Danger Zone</h3>
+      <div class="card" style="border-color:var(--error)">
+        <h3 style="color:var(--error)">Danger Zone</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-danger" onclick="Settings.cleanup()">Cleanup Expired</button>
           <button class="btn btn-danger" onclick="Settings.clearAll()">Clear All Memories</button>
@@ -59,7 +59,7 @@ const Settings = {
         <td>${t.run_count}</td>
         <td>${this._formatInterval(t.next_run_in)}</td>
         <td>${t.requires_llm ? '<span style="color:var(--warning)">Yes</span>' : 'No'}</td>
-        <td style="color:var(--danger);font-size:11px">${t.last_error || '—'}</td>
+        <td style="color:var(--error);font-size:11px">${t.last_error || '—'}</td>
         <td><button class="btn btn-sm" onclick="Settings.forceRun('${t.name}')">Run</button></td>
       </tr>`).join('') + '</tbody></table></div>';
   },
@@ -87,7 +87,7 @@ const Settings = {
   },
 
   clearAll() {
-    App.showModal(`<h2 style="color:var(--danger)">Clear All Memories</h2>
+    App.showModal(`<h2 style="color:var(--error)">Clear All Memories</h2>
       <p>This will permanently delete ALL episodic memories. This cannot be undone.</p>
       <p>Type <strong>DELETE</strong> to confirm:</p>
       <div class="form-group"><input id="confirm-delete" placeholder="Type DELETE"></div>

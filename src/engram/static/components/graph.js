@@ -122,7 +122,7 @@ const Graph = {
       this._renderGraph();
       this._renderStats();
     } catch (e) {
-      document.getElementById('graph-vis').innerHTML = `<div style="padding:20px;color:var(--danger)">${e.message}</div>`;
+      document.getElementById('graph-vis').innerHTML = `<div style="padding:20px;color:var(--error)">${e.message}</div>`;
     }
   },
 
@@ -154,19 +154,8 @@ const Graph = {
 
     this._edgesDS = new vis.DataSet(this._edges.map(e => ({
       ...e,
-      // Giữ edge để tương tác + label, nhưng ẩn hoàn toàn nét mặc định của vis
-      font: { color: mutedColor, size: 12, align: 'middle', strokeWidth: 0 },
-      color: {
-        color: 'rgba(0,0,0,0)',
-        hover: 'rgba(0,0,0,0)',
-        highlight: 'rgba(0,0,0,0)',
-        inherit: false,
-      },
-      smooth: { type: 'dynamic', roundness: 0.15 },
-      width: 1,
-      hoverWidth: 0,
-      selectionWidth: 0,
-      chosen: false,
+      font: { color: mutedColor, size: 0, align: 'middle', strokeWidth: 0 },
+      smooth: { type: 'continuous', roundness: 0.15 },
     })));
 
     // Build vis-network groups config from our color map so group coloring matches legend
@@ -184,26 +173,28 @@ const Graph = {
       groups: visGroups,
       physics: { enabled: true, forceAtlas2Based: { gravitationalConstant: -50, springLength: 120 }, solver: 'forceAtlas2Based', stabilization: { iterations: 150 } },
       interaction: { hover: true, tooltipDelay: 200 },
-      nodes: { shape: 'dot', size: 18 },
+      nodes: { shape: 'dot', size: 28, borderWidth: 2 },
       edges: {
-        arrows: { to: { enabled: false } },
-        width: 1,
+        arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+        width: 1.2,
         color: {
-          color: 'rgba(0,0,0,0)',
-          hover: 'rgba(0,0,0,0)',
-          highlight: 'rgba(0,0,0,0)',
+          color: 'rgba(150,150,150,0.45)',
+          hover: 'rgba(255,152,48,0.8)',
+          highlight: 'rgba(255,152,48,1)',
           inherit: false,
         },
-        hoverWidth: 0,
-        selectionWidth: 0,
+        hoverWidth: 2,
+        selectionWidth: 3,
+        smooth: { type: 'continuous', roundness: 0.2 },
+        font: { size: 0 },
       },
       background: { color: bgColor },
     });
 
-    // Custom thread-like renderer (vẽ trước node để ra cảm giác dây chỉ mềm)
-    if (this._threadRenderer) this._network.off('beforeDrawing', this._threadRenderer);
-    this._threadRenderer = (ctx) => this._drawThreadEdges(ctx, accentColor);
-    this._network.on('beforeDrawing', this._threadRenderer);
+    // Custom thread renderer disabled — vis-network handles edge rendering
+    // if (this._threadRenderer) this._network.off('beforeDrawing', this._threadRenderer);
+    // this._threadRenderer = (ctx) => this._drawThreadEdges(ctx, accentColor);
+    // this._network.on('beforeDrawing', this._threadRenderer);
 
     this._network.on('click', params => {
       if (params.nodes.length > 0) this._showNodeDetail(params.nodes[0]);
@@ -216,8 +207,8 @@ const Graph = {
     if (!this._network || !this._edges || !this._edges.length) return;
 
     const fanCounter = new Map();
-    const baseColor = toRgbaHexOrRgb(accentColor, 0.62);
-    const glowColor = toRgbaHexOrRgb(accentColor, 0.32);
+    const baseColor = toRgbaHexOrRgb(accentColor, 0.12);
+    const glowColor = toRgbaHexOrRgb(accentColor, 0.05);
 
     for (const e of this._edges) {
       const p1 = this._network.getPosition(e.from);
@@ -263,9 +254,9 @@ const Graph = {
       ctx.bezierCurveTo(c1x, c1y, c2x, c2y, ex, ey);
       ctx.lineCap = 'round';
       ctx.strokeStyle = baseColor;
-      ctx.lineWidth = 1.05 + Math.min(1.3, (e.weight || 1) * 0.26);
+      ctx.lineWidth = 0.5;
       ctx.shadowColor = glowColor;
-      ctx.shadowBlur = 3.2;
+      ctx.shadowBlur = 0;
       ctx.stroke();
       ctx.restore();
     }
@@ -288,7 +279,7 @@ const Graph = {
         const dir = e.from === nodeId ? '→' : '←';
         const otherId = e.from === nodeId ? e.to : e.from;
         const other = this._nodes.find(n => n.id === otherId);
-        html += `<div style="font-size:11px;padding:2px 0;border-bottom:1px solid var(--border-light)">${dir} ${e.label} ${other ? other.label : otherId}</div>`;
+        html += `<div style="font-size:11px;padding:2px 0;border-bottom:1px solid var(--border)">${dir} ${e.label} ${other ? other.label : otherId}</div>`;
       });
     }
     html += `<div style="margin-top:10px;display:flex;gap:6px">

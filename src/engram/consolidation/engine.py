@@ -159,5 +159,6 @@ class ConsolidationEngine:
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=300,
+            thinking={"type": "disabled"},
         )
         return response.choices[0].message.content.strip()

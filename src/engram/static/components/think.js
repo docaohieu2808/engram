@@ -55,7 +55,7 @@ const Think = {
       if (mode === 'think') {
         const res = await API.think(q);
         results.innerHTML = `<div class="card"><h3>Answer</h3>
-          <div class="think-answer">${this._esc(res.answer || 'No answer')}</div>
+          <div class="think-answer markdown-body">${this._md(res.answer || 'No answer')}</div>
           <div style="margin-top:8px"><button class="btn btn-sm" onclick="navigator.clipboard.writeText(document.querySelector('.think-answer').textContent);App.toast('Copied','info')">Copy</button></div>
         </div>`;
       } else {
@@ -72,13 +72,13 @@ const Think = {
             items.map(r => {
               const mt = r.memory_type || r.metadata?.memory_type || 'fact';
               const score = r.score !== undefined ? (r.score * 100).toFixed(0) + '%' : '—';
-              return `<tr><td style="white-space:pre-wrap;max-width:500px">${this._esc(r.content || r.document || '')}</td><td>${score}</td><td>${App.typeBadge(mt)}</td></tr>`;
+              return `<tr><td class="markdown-body" style="max-width:500px">${this._md(r.content || r.document || '')}</td><td>${score}</td><td>${App.typeBadge(mt)}</td></tr>`;
             }).join('') + '</tbody></table></div>';
         }
         // Show graph results if present
         if (res.graph_results?.length) {
           results.innerHTML += `<div class="card" style="margin-top:8px"><h3>Related Entities</h3>` +
-            res.graph_results.map(g => `<div style="margin-bottom:6px"><strong>${g.node?.name || '?'}</strong> <span class="badge" style="background:var(--bg-tertiary)">${g.node?.type || ''}</span></div>`).join('') + '</div>';
+            res.graph_results.map(g => `<div style="margin-bottom:6px"><strong>${g.node?.name || '?'}</strong> <span class="badge" style="background:var(--bg-secondary)">${g.node?.type || ''}</span></div>`).join('') + '</div>';
         }
       }
       // Add to history
@@ -86,7 +86,7 @@ const Think = {
       if (this._history.length > 10) this._history.pop();
       this._renderHistory();
     } catch (e) {
-      results.innerHTML = `<div class="card" style="color:var(--danger)">${e.message}</div>`;
+      results.innerHTML = `<div class="card" style="color:var(--error)">${e.message}</div>`;
     } finally {
       btn.disabled = false; btn.textContent = 'Go';
     }
@@ -111,6 +111,14 @@ const Think = {
   },
 
   _esc(s) { return (s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
+  _md(s) {
+    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+      const html = marked.parse(s || '', { gfm: true, breaks: false });
+      // Remove <p> wrappers inside <li> to avoid double spacing
+      return DOMPurify.sanitize(html.replace(/<li><p>([\s\S]*?)<\/p>\s*<\/li>/g, '<li>$1</li>'));
+    }
+    return this._esc(s);
+  },
 };
 
 // Character count

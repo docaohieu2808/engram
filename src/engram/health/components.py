@@ -92,12 +92,13 @@ async def check_llm(model: str = "") -> ComponentHealth:
     try:
         import litellm
         litellm.completion(
-            model=model or "gemini/gemini-2.0-flash",
+            model=model or "gemini/gemini-2.5-flash",
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=1,
+            thinking={"type": "disabled"},
         )
         ms = (time.monotonic() - start) * 1000
-        return ComponentHealth("llm", "healthy", ms, {"model": model or "gemini-2.0-flash"})
+        return ComponentHealth("llm", "healthy", ms, {"model": model or "gemini-2.5-flash"})
     except Exception as exc:
         ms = (time.monotonic() - start) * 1000
         return ComponentHealth("llm", "unhealthy", ms, error=str(exc))

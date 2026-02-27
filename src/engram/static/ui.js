@@ -1,5 +1,5 @@
 /**
- * Engram WebUI — SVG Icons, auth, routing, toast, modal, state.
+ * Engram WebUI — SVG Icons, auth, routing, toast, modal, state, sidebar nav.
  */
 const Icons = {
   logout: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
@@ -15,12 +15,18 @@ const Icons = {
   eye: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
   loader: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spinner-icon"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>`,
   circle: (color) => `<svg width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="${color}"/></svg>`,
-  sun: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`,
-  moon: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
+  sun: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`,
+  moon: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`,
+  /* Stat card icons */
+  statBrain: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4.5a2.5 2.5 0 0 0-4.96-.46 2.5 2.5 0 0 0-1.98 3 2.5 2.5 0 0 0 .47 4.89 2.5 2.5 0 0 0 3 3.45A2.5 2.5 0 0 0 12 19.5"/><path d="M12 4.5a2.5 2.5 0 0 1 4.96-.46 2.5 2.5 0 0 1 1.98 3 2.5 2.5 0 0 1-.47 4.89 2.5 2.5 0 0 1-3 3.45A2.5 2.5 0 0 1 12 19.5"/><path d="M12 4.5v15"/></svg>`,
+  statNodes: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>`,
+  statEdges: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+  statHealth: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`,
 };
 
 const App = {
   currentTab: 'dashboard',
+  sidebarCollapsed: false,
 
   async init() {
     this._applyTheme();
@@ -28,11 +34,11 @@ const App = {
       this.showLoginPage();
       return;
     }
-    this._bindTabs();
+    this._bindSidebarNav();
     this._bindSearch();
     this._bindKeyboard();
-    this._injectLogoutIcon();
     this._injectThemeIcon();
+    this._restoreSidebarState();
     this.switchTab('dashboard');
   },
 
@@ -90,18 +96,13 @@ const App = {
     document.documentElement.setAttribute('data-theme', theme);
   },
 
-  _injectLogoutIcon() {
-    const btn = document.querySelector('.btn-logout');
-    if (btn) btn.innerHTML = Icons.logout;
-  },
-
   _injectThemeIcon() {
-    const btn = document.querySelector('.btn-theme');
-    if (btn) {
-      const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-      btn.innerHTML = theme === 'dark' ? Icons.sun : Icons.moon;
-      btn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-    }
+    const iconEl = document.getElementById('theme-icon');
+    const labelEl = document.getElementById('theme-label');
+    if (!iconEl) return;
+    const theme = document.documentElement.getAttribute('data-theme') || 'dark';
+    iconEl.innerHTML = theme === 'dark' ? Icons.sun : Icons.moon;
+    if (labelEl) labelEl.textContent = theme === 'dark' ? 'Light mode' : 'Dark mode';
   },
 
   toggleTheme() {
@@ -112,14 +113,47 @@ const App = {
     this._injectThemeIcon();
   },
 
-  _bindTabs() {
-    document.querySelectorAll('#tabs button').forEach(btn => {
+  /* Sidebar navigation */
+  _bindSidebarNav() {
+    document.querySelectorAll('#sidebar-nav .nav-item').forEach(btn => {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
     });
   },
 
+  _restoreSidebarState() {
+    const collapsed = localStorage.getItem('engram_sidebar') === 'collapsed';
+    if (collapsed) {
+      this.sidebarCollapsed = true;
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) sidebar.classList.add('collapsed');
+    }
+  },
+
+  toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    this.sidebarCollapsed = !this.sidebarCollapsed;
+    sidebar.classList.toggle('collapsed', this.sidebarCollapsed);
+    localStorage.setItem('engram_sidebar', this.sidebarCollapsed ? 'collapsed' : 'expanded');
+  },
+
+  /* Mobile menu */
+  openMobileMenu() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('mobile-overlay');
+    if (sidebar) sidebar.classList.add('mobile-open');
+    if (overlay) overlay.classList.add('active');
+  },
+  closeMobileMenu() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('mobile-overlay');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (overlay) overlay.classList.remove('active');
+  },
+
   _bindSearch() {
     const input = document.getElementById('search-global');
+    if (!input) return;
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         this.switchTab('memories');
@@ -136,7 +170,8 @@ const App = {
       if (e.key === 'Escape') this.closeModal();
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        document.getElementById('search-global').focus();
+        const el = document.getElementById('search-global');
+        if (el) el.focus();
       }
     });
   },
@@ -144,13 +179,15 @@ const App = {
   switchTab(tab) {
     this.currentTab = tab;
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('#sidebar-nav .nav-item').forEach(b => b.classList.remove('active'));
     const panel = document.getElementById('tab-' + tab);
-    const btn = document.querySelector(`#tabs button[data-tab="${tab}"]`);
+    const btn = document.querySelector(`#sidebar-nav .nav-item[data-tab="${tab}"]`);
     if (panel) panel.classList.add('active');
     if (btn) btn.classList.add('active');
     const loaders = { dashboard: Dashboard, memories: Memories, graph: Graph, think: Think, audit: Audit, settings: Settings };
     if (loaders[tab] && loaders[tab].load) loaders[tab].load();
+    /* Auto-close mobile menu on tab switch */
+    this.closeMobileMenu();
   },
 
   toast(msg, type = 'info') {

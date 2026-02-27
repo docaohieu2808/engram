@@ -19,7 +19,7 @@ litellm.suppress_debug_info = True
 logger = logging.getLogger("engram")
 
 # Default extraction model — cheap, fast, good at JSON extraction
-_DEFAULT_EXTRACT_MODEL = "gemini/gemini-2.0-flash"
+_DEFAULT_EXTRACT_MODEL = "gemini/gemini-2.5-flash"
 
 EXTRACTION_PROMPT = """Extract important items from this conversation to remember long-term.
 Return a JSON array of objects with fields: content, type, priority.
@@ -80,6 +80,7 @@ class MemoryExtractor:
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
+                thinking={"type": "disabled"},
             )
             content = response.choices[0].message.content
             return self._parse(content)

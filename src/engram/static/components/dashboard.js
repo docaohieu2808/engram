@@ -1,5 +1,5 @@
 /**
- * Dashboard tab — stats cards, recent memories with pagination, quick actions.
+ * Dashboard tab — stats cards with icons/gradients, recent memories with pagination, quick actions.
  */
 const Dashboard = {
   _loaded: false,
@@ -16,7 +16,7 @@ const Dashboard = {
       const [statusRes, healthRes] = await Promise.all([API.status(), API.health()]);
       this._render(el, statusRes, healthRes);
     } catch (e) {
-      el.innerHTML = `<div class="card" style="color:var(--danger)">Failed to load dashboard: ${e.message}</div>`;
+      el.innerHTML = `<div class="card" style="color:var(--error)">Failed to load dashboard: ${e.message}</div>`;
     }
   },
 
@@ -25,16 +25,34 @@ const Dashboard = {
   _render(el, status, health) {
     const ep = status.episodic || {};
     const sem = status.semantic || {};
+    const healthStatus = (health.status || '?').toUpperCase();
+    const healthColor = healthStatus === 'OK' || healthStatus === 'HEALTHY' ? 'var(--success)' : 'var(--warning)';
     el.innerHTML = `
       <div class="stats-grid">
-        <div class="card stat-card"><div class="value">${ep.count || 0}</div><div class="label">Episodic Memories</div></div>
-        <div class="card stat-card"><div class="value">${sem.node_count || 0}</div><div class="label">Semantic Nodes</div></div>
-        <div class="card stat-card"><div class="value">${sem.edge_count || 0}</div><div class="label">Semantic Edges</div></div>
-        <div class="card stat-card"><div class="value" style="font-size:32px;color:var(--success)">${(health.status || '?').toUpperCase()}</div><div class="label">Health</div></div>
+        <div class="card stat-card stat-card--memories">
+          <div class="stat-icon">${Icons.statBrain}</div>
+          <div class="value">${ep.count || 0}</div>
+          <div class="label">Episodic Memories</div>
+        </div>
+        <div class="card stat-card stat-card--nodes">
+          <div class="stat-icon">${Icons.statNodes}</div>
+          <div class="value">${sem.node_count || 0}</div>
+          <div class="label">Semantic Nodes</div>
+        </div>
+        <div class="card stat-card stat-card--edges">
+          <div class="stat-icon">${Icons.statEdges}</div>
+          <div class="value">${sem.edge_count || 0}</div>
+          <div class="label">Semantic Edges</div>
+        </div>
+        <div class="card stat-card stat-card--health">
+          <div class="stat-icon">${Icons.statHealth}</div>
+          <div class="value" style="font-size:32px;color:${healthColor}">${healthStatus}</div>
+          <div class="label">Health</div>
+        </div>
       </div>
       ${sem.node_types ? this._nodeTypesHtml(sem.node_types) : ''}
-      <div style="display:flex;gap:12px;margin-bottom:16px">
-        <button class="btn btn-primary" onclick="Dashboard.showRememberModal()">+ New Memory</button>
+      <div class="dash-actions">
+        <button class="btn btn-primary" onclick="Dashboard.showRememberModal()">${Icons.plus} New Memory</button>
         <button class="btn" onclick="Dashboard.showThinkModal()">Think</button>
       </div>
       <div class="card">
@@ -47,7 +65,7 @@ const Dashboard = {
 
   _nodeTypesHtml(types) {
     const items = Object.entries(types).map(([t, c]) => `<span class="pill">${t}: ${c}</span>`).join(' ');
-    return `<div class="card" style="margin-bottom:16px"><h3>Node Types</h3>${items}</div>`;
+    return `<div class="card" style="margin-bottom:20px"><h3>Node Types</h3>${items}</div>`;
   },
 
   async _loadRecent() {
@@ -166,7 +184,7 @@ const Dashboard = {
       const res = await API.think(q);
       document.getElementById('think-result').innerHTML = `<div class="think-answer">${(res.answer || '').replace(/</g, '&lt;')}</div>`;
     } catch (e) {
-      document.getElementById('think-result').innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+      document.getElementById('think-result').innerHTML = `<span style="color:var(--error)">${e.message}</span>`;
     } finally { btn.disabled = false; btn.textContent = 'Think'; }
   },
 };
