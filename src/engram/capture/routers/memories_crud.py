@@ -40,8 +40,8 @@ async def list_memories(
     state = request.app.state
     ep = resolve_episodic(state, auth)
     limit = min(limit, 100)
-    offset = min(offset, 500)
-    fetch_limit = min((offset + limit) * 3, 1000)
+    # Fetch enough to cover offset+limit after filtering
+    fetch_limit = min((offset + limit) * 3, 5000)
     if search:
         raw = await ep.search(search, limit=fetch_limit)
     else:
@@ -62,11 +62,16 @@ async def list_memories(
             continue
         filtered.append(m)
 
-    paginated = filtered[offset:offset + limit]
+    total = len(filtered)
+    # Clamp offset: return empty if beyond total
+    if offset >= total:
+        paginated = []
+    else:
+        paginated = filtered[offset:offset + limit]
     return {
         "status": "ok",
         "memories": [serialize_memory(m) for m in paginated],
-        "total": len(filtered),
+        "total": total,
         "offset": offset,
         "limit": limit,
     }
