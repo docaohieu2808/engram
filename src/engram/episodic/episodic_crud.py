@@ -45,6 +45,7 @@ class _EpisodicCrudMixin:
         tags: list[str] | None = None,
         expires_at: datetime | None = None,
         topic_key: str | None = None,
+        timestamp: datetime | None = None,
     ) -> str:
         """Store a memory and return its ID."""
         content = sanitize_content(content)
@@ -105,14 +106,15 @@ class _EpisodicCrudMixin:
                 return dedup_result
 
         memory_id = str(uuid.uuid4())
-        timestamp = datetime.now(timezone.utc).isoformat()
+        ts = timestamp or datetime.now(timezone.utc)
+        timestamp_str = ts.isoformat() if isinstance(ts, datetime) else str(ts)
         entities = _canonicalize_entities(entities)
         tags = tags or []
 
         doc_metadata: dict[str, Any] = {
             "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
             "priority": priority,
-            "timestamp": timestamp,
+            "timestamp": timestamp_str,
             "entities": json.dumps(entities),
             "tags": json.dumps(tags),
             "access_count": 0,
@@ -145,7 +147,21 @@ class _EpisodicCrudMixin:
                 content=content,
                 metadata=doc_metadata,
             )
+        except ValueError:
+            # Re-raise validation errors (dimension mismatch, etc.) — not retriable
+            raise
         except Exception as e:
+            # Embedding or backend failure — enqueue for retry instead of dropping
+            logger.warning("Embedding failed, queued for retry: %s", content[:50])
+            try:
+                from engram.episodic.pending_queue import get_pending_queue
+                get_pending_queue().enqueue(
+                    content=content,
+                    timestamp=doc_metadata.get("timestamp"),
+                    metadata={k: v for k, v in doc_metadata.items() if k != "timestamp"},
+                )
+            except Exception as qe:
+                logger.error("PendingQueue enqueue also failed: %s", qe)
             raise RuntimeError(f"Failed to store memory: {e}") from e
 
         # Sync to FTS5 index (fire-and-forget; non-blocking on failure)

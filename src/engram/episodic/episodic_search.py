@@ -165,12 +165,15 @@ class _EpisodicSearchMixin:
             count = await self._backend.count()
             if count == 0:
                 return []
-            # Fetch enough to cover recent items: cap at min(n*5, count, 2000)
-            # This trades a slightly larger fetch for correctness at scale.
+            # Fetch from the tail of the collection (most recent insertions).
+            # ChromaDB get() returns items in insertion order, so we offset
+            # to skip older entries and only fetch the newest window.
             fetch_limit = min(n * 5, count, 2000)
+            tail_offset = max(0, count - fetch_limit)
             result = await self._backend.get_many(
                 include=["documents", "metadatas"],
                 limit=fetch_limit,
+                offset=tail_offset,
             )
         except Exception as e:
             raise RuntimeError(f"get_recent failed: {e}") from e
