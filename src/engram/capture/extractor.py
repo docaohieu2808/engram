@@ -10,6 +10,7 @@ from typing import Any
 
 import litellm
 
+from engram.capture.extraction_filters import should_extract
 from engram.models import ExtractionResult, SchemaDefinition, SemanticEdge, SemanticNode
 from engram.schema.loader import schema_to_prompt
 
@@ -31,6 +32,14 @@ EXTRACTION_PROMPT = """You are an entity extraction system. Extract entities and
 - Use proper casing for entity names: preserve acronyms (API, HTTP, SQL), camelCase (GitHub, OpenClaw), technical names (HAProxy, RabbitMQ, PostgreSQL)
 - **CRITICAL**: Every node MUST have at least one edge connecting it to another node. Never create orphan nodes. If you cannot find a relationship for an entity, do NOT include it.
 - Common relation types: uses, runs_on, part_of, located_at, works_with, knows, manages, depends_on, created_by, connects_to
+
+## What NOT to extract
+- Do NOT extract AI agent names (Claude Code, OpenClaw, Fullstack-developer, assistant) as Person — they are Service/Tool nodes if relevant at all
+- Do NOT extract email addresses as Person nodes
+- Do NOT extract every technology mentioned — only extract tools/services the USER actually uses or manages
+- Do NOT extract file paths, command names, or code identifiers as entities
+- Do NOT extract usernames, handles, or account names as Person nodes (e.g. Docaohieu2808 is a username, Admin@docaohieu.com is an email — NOT separate people)
+- Merge user aliases into one canonical name: Hiếu = Hieudc = Docaohieu2808 = "Ông Hiếu" = Admin@docaohieu.com → always use "Hiếu"
 
 ## Conversation
 {messages}
@@ -137,6 +146,12 @@ class EntityExtractor:
 
     async def _extract_chunk(self, messages: list[dict]) -> ExtractionResult:
         """Run LLM extraction on a chunk of messages, with up to 2 retries on transient errors."""
+        # Skip chunk entirely if ALL messages are junk content
+        extractable = [m for m in messages if should_extract(m.get("content", ""))]
+        if not extractable:
+            logger.debug("Skipping extraction chunk — all %d messages filtered as junk", len(messages))
+            return ExtractionResult()
+
         formatted = "\n".join(
             f"[{m.get('role', 'user')}]: {m.get('content', '')}" for m in messages
         )
