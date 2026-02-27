@@ -201,6 +201,9 @@ class MemoryScheduler:
             pass
 
 
+SCHEDULE_QUEUE_DRAIN = 60  # Every 60 seconds
+
+
 def create_default_scheduler(
     episodic_store: Any,
     consolidation_engine: Any | None = None,
@@ -212,6 +215,22 @@ def create_default_scheduler(
         consolidation_engine: ConsolidationEngine instance (optional, for consolidation task)
     """
     scheduler = MemoryScheduler()
+
+    # Task: drain pending queue (retry failed embeddings)
+    async def drain_pending_queue() -> dict[str, Any]:
+        from engram.episodic.pending_queue import get_pending_queue
+        queue = get_pending_queue()
+        if queue.count() == 0:
+            return {"skipped": True}
+        success, failed = await queue.drain(episodic_store)
+        logger.info("Drained %d from pending queue (%d still pending)", success, failed)
+        return {"success": success, "failed": failed}
+
+    scheduler.register(
+        "drain_pending_queue", drain_pending_queue,
+        interval_seconds=SCHEDULE_QUEUE_DRAIN,
+        requires_llm=False,
+    )
 
     # Task: cleanup expired memories (no LLM needed)
     async def cleanup_expired() -> dict[str, Any]:
