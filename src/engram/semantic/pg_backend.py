@@ -72,6 +72,7 @@ _MIGRATE_FK = [
 _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name)",
     "CREATE INDEX IF NOT EXISTS idx_nodes_type ON nodes(type)",
+    "CREATE INDEX IF NOT EXISTS idx_nodes_key ON nodes(key)",
     "CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges(relation)",
     "CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_key)",
     "CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_key)",
@@ -236,6 +237,34 @@ class PostgresBackend:
         pool = self._pool_or_raise()
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM edges WHERE key=$1", key)
+
+    async def query_nodes_by_name(self, pattern: str, limit: int, offset: int) -> list[dict]:
+        """Return nodes whose key LIKE pattern (fast path, no full graph load)."""
+        pool = self._pool_or_raise()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT key, type, name, attributes::text FROM nodes "
+                "WHERE key LIKE $1 LIMIT $2 OFFSET $3",
+                pattern, limit, offset,
+            )
+        return [{"key": r["key"], "type": r["type"], "name": r["name"],
+                 "attributes": r["attributes"]} for r in rows]
+
+    async def get_node_by_key(self, key: str) -> dict | None:
+        """Return a single node dict by exact key, or None."""
+        pool = self._pool_or_raise()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT key, type, name, attributes::text FROM nodes WHERE key = $1", key
+            )
+        if row is None:
+            return None
+        return {"key": row["key"], "type": row["type"], "name": row["name"],
+                "attributes": row["attributes"]}
+
+    async def get_related_nodes(self, node_key: str, depth: int) -> list[dict]:
+        """Stub — PostgreSQL backend defers graph traversal to NetworkX (returns [])."""
+        return []
 
     async def close(self) -> None:
         """Close the connection pool."""

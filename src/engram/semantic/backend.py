@@ -50,6 +50,24 @@ class GraphBackend(Protocol):
         """Delete an edge by key."""
         ...
 
+    async def query_nodes_by_name(self, pattern: str, limit: int, offset: int) -> list[dict]:
+        """Return nodes whose key matches pattern (SQL LIKE) without loading full graph.
+
+        Each dict has keys: key, type, name, attributes (JSON string).
+        """
+        ...
+
+    async def get_node_by_key(self, key: str) -> dict | None:
+        """Return a single node dict by exact key, or None if not found."""
+        ...
+
+    async def get_related_nodes(self, node_key: str, depth: int) -> list[dict]:
+        """Return nodes related to node_key up to depth hops.
+
+        Stub implementations may return [] — full graph traversal falls back to NetworkX.
+        """
+        ...
+
     async def close(self) -> None:
         """Release resources (connections, pools)."""
         ...

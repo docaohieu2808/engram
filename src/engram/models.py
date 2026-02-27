@@ -18,17 +18,11 @@ from pydantic import BaseModel, Field, computed_field, field_validator
 
 
 def _normalize_entity_name(name: str) -> str:
-    """Normalize entity display name: trim spaces and capitalize first letter.
+    """Normalize entity name: trim whitespace only.
 
-    Examples:
-      - "engram" -> "Engram"
-      - "  gitpocket" -> "Gitpocket"
-      - "API" -> "API" (keeps rest as-is)
+    Preserves original casing to avoid breaking key lookups.
     """
-    s = (name or "").strip()
-    if not s:
-        return s
-    return s[0].upper() + s[1:]
+    return (name or "").strip()
 
 
 # --- Enums ---

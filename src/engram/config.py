@@ -24,6 +24,12 @@ class EpisodicConfig(BaseModel):
     decay_enabled: bool = True
     dedup_enabled: bool = True
     dedup_threshold: float = 0.85  # cosine similarity; 1.0 = identical
+    # Backend transport: "embedded" (local PersistentClient) or "http" (remote HttpClient)
+    mode: str = "embedded"
+    host: str = "localhost"
+    port: int = 8000
+    fts_db_path: str = "~/.engram/fts_index.db"
+    fts_enabled: bool = True
 
 
 class EmbeddingConfig(BaseModel):
@@ -185,6 +191,13 @@ class IngestionConfig(BaseModel):
     auto_memory: bool = True
 
 
+class EventBusConfig(BaseModel):
+    """Event bus configuration. Disabled by default (in-process memory bus)."""
+    enabled: bool = False
+    backend: str = "memory"  # "memory" | "redis"
+    redis_url: str = "redis://localhost:6379/0"
+
+
 class ProviderEntry(BaseModel):
     """Configuration for a single external memory provider."""
     name: str
@@ -254,6 +267,7 @@ class Config(BaseModel):
     providers: list[ProviderEntry] = Field(default_factory=list)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
+    event_bus: EventBusConfig = Field(default_factory=EventBusConfig)
 
 
 # --- Helpers ---
@@ -339,6 +353,11 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "EPISODIC_DECAY_ENABLED": ("episodic", "decay_enabled"),
     "EPISODIC_DEDUP_ENABLED": ("episodic", "dedup_enabled"),
     "EPISODIC_DEDUP_THRESHOLD": ("episodic", "dedup_threshold"),
+    "EPISODIC_MODE": ("episodic", "mode"),
+    "EPISODIC_HOST": ("episodic", "host"),
+    "EPISODIC_PORT": ("episodic", "port"),
+    "EPISODIC_FTS_DB_PATH": ("episodic", "fts_db_path"),
+    "EPISODIC_FTS_ENABLED": ("episodic", "fts_enabled"),
     "SCORING_SIMILARITY_WEIGHT": ("scoring", "similarity_weight"),
     "SCORING_RETENTION_WEIGHT": ("scoring", "retention_weight"),
     "SCORING_RECENCY_WEIGHT": ("scoring", "recency_weight"),
@@ -367,6 +386,9 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "CONSOLIDATION_LLM_MODEL": ("consolidation", "llm_model"),
     "RETRIEVAL_AUDIT_ENABLED": ("retrieval_audit", "enabled"),
     "RETRIEVAL_AUDIT_PATH": ("retrieval_audit", "path"),
+    "EVENT_BUS_ENABLED": ("event_bus", "enabled"),
+    "EVENT_BUS_BACKEND": ("event_bus", "backend"),
+    "EVENT_BUS_REDIS_URL": ("event_bus", "redis_url"),
 }
 
 def _get_section_models() -> dict[str, type[BaseModel]]:
@@ -398,6 +420,7 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "ingestion": IngestionConfig,
         "retrieval_audit": RetrievalAuditConfig,
         "session": SessionConfig,
+        "event_bus": EventBusConfig,
     }
 
 

@@ -13,6 +13,12 @@ from engram.tenant import TenantContext, StoreFactory, validate_tenant_id
 # --- TenantContext ---
 
 class TestTenantContext:
+    @pytest.fixture(autouse=True)
+    def _reset_tenant(self):
+        TenantContext.set("default")
+        yield
+        TenantContext.set("default")
+
     def test_default_is_default(self):
         assert TenantContext.get() == "default"
 

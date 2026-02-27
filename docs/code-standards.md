@@ -655,6 +655,66 @@ export GEMINI_KEY_STRATEGY="round-robin"   # overrides config.yaml
 
 ---
 
+## Architectural Patterns
+
+### 1. Backend Protocol Pattern (v0.4.1)
+
+Use when supporting multiple implementations of a service (e.g., ChromaDB embedded vs. HTTP).
+
+**Structure:**
+```python
+# backend.py — Protocol interface
+from typing import Protocol
+
+class EpisodicBackend(Protocol):
+    async def remember(self, content: str, **kwargs) -> str: ...
+    async def recall(self, query: str, limit: int) -> list: ...
+
+# chromadb_backend.py — Concrete implementation
+class ChromaDBBackend:
+    async def remember(self, content: str, **kwargs) -> str:
+        # Local implementation
+        ...
+
+# chromadb_http_backend.py — Alternative implementation
+class ChromaDBHTTPBackend:
+    async def remember(self, content: str, **kwargs) -> str:
+        # HTTP client implementation
+        ...
+```
+
+**Benefits:** Pluggable backends, testable (mock implementations), config-driven selection.
+
+### 2. Mixin Pattern for Large Classes (v0.4.1)
+
+When a class grows beyond 200 LOC, split functionality into mixins instead of separate modules.
+
+**Structure:**
+```python
+# store.py (shell, ~100 LOC)
+class EpisodicStore(_EpisodicCrudMixin, _EpisodicSearchMixin, _EpisodicMaintenanceMixin):
+    def __init__(self, backend: EpisodicBackend, ...):
+        self.backend = backend
+
+# episodic_crud.py (mixin, ~150 LOC)
+class _EpisodicCrudMixin:
+    def remember(self, content: str, ...) -> str:
+        # CRUD operations
+        ...
+
+# episodic_search.py (mixin, ~150 LOC)
+class _EpisodicSearchMixin:
+    def recall(self, query: str, ...) -> list:
+        # Search operations
+        ...
+```
+
+**Benefits:** Logical separation, clearer responsibilities, easier testing per mixin, maintains cohesion.
+
+**Rule:** All shared state via `self` (shell instance); no mixin-to-mixin dependencies.
+
+---
+
 ## Review Checklist
 
 Before commit, verify:

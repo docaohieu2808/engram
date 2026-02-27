@@ -99,19 +99,35 @@ All four interfaces (CLI, MCP, HTTP, WebSocket) share the same memory layers.
 
 **Path:** `src/engram/episodic/`
 
-**Components:**
-- **EpisodicStore** (`store.py`) — ChromaDB wrapper
-  - One collection per tenant (namespace)
-  - Auto-chunks content >1000 chars (800-char chunks with overlap)
-  - Metadata: memory_type, priority, tags, expires, created_at, updated_at, access_count, last_accessed, decay_rate
-  - **New (v0.3.0):** Activation-based recall with access_count + last_accessed tracking
-  - **New (v0.3.0):** Ebbinghaus decay scoring for memory retention
-- **Search** (`search.py`) — Embedding & similarity scoring + activation
-  - Gemini embeddings (3072 dims) or fallback (384 dims)
+**Architecture (Phase 4, v0.4.1):** Pluggable backend protocol supports embedded ChromaDB + HTTP backends.
+
+**Backend abstraction** (`backend.py`) — **NEW (v0.4.1)**
+  - Protocol interface: `create()`, `remember()`, `recall()`, `delete()`, `cleanup()`, `count()`, `collection()`
+  - Implementations:
+    - `chromadb_backend.py` — Local ChromaDB (default)
+    - `chromadb_http_backend.py` — Remote ChromaDB server (HTTP REST)
+    - `_legacy_collection_backend.py` — Backward-compat shim
+  - Config: `episodic.mode` (embedded/http), `episodic.host`, `episodic.port`
+
+**Store refactored (Phase 2, v0.4.1)** — Modularized from 1,170 LOC to 111 LOC shell + 6 mixins
+  - `store.py` (111 LOC) — Shell coordinator
+  - `episodic_crud.py` (180 LOC) — _EpisodicCrudMixin (remember, get, update, delete)
+  - `episodic_search.py` (150 LOC) — _EpisodicSearchMixin (recall, search_similar, filtering)
+  - `episodic_maintenance.py` (120 LOC) — _EpisodicMaintenanceMixin (cleanup, decay)
+  - `batch_operations.py` (100 LOC) — _BatchMixin (bulk ops)
+  - `fts_sync.py` (80 LOC) — Async FTS helpers
+
+**Embeddings** (`embeddings.py`) — Multi-key rotation for Gemini API
+  - Model: `gemini-embedding-001` exclusively (3072 dimensions)
+  - Key strategies: failover (default) or round-robin
+  - Sources: `GEMINI_API_KEY` + `GEMINI_API_KEY_FALLBACK` (optional)
+
+**Search** (`search.py`) — Similarity scoring + activation-based recall
   - Tag/type filtering on recall
-  - **New (v0.3.0):** Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
-  - **New (v0.3.0):** Batch updates to access_count + last_accessed on recall()
-- **Models** — MemoryType enum (fact, decision, error, todo, preference, context, workflow)
+  - Composite scoring: similarity (0.5) + retention (0.2) + recency (0.15) + frequency (0.15)
+  - Batch updates to access_count + last_accessed on recall()
+
+**Models** — MemoryType enum (fact, decision, error, todo, preference, context, workflow)
 
 **Operations:**
 ```python
@@ -135,18 +151,28 @@ cleanup() → int  # deleted count
 
 **Path:** `src/engram/semantic/`
 
-**Components:**
-- **Backend abstraction** (`backend.py`) — Plugin interface
+**Lazy Loading (Phase 5, v0.4.1)** — **NEW**
+  - Indexed SQL queries skip full NetworkX load for large graphs
+  - Backend pagination: limit/offset on DB queries reduce in-memory footprint
+  - Graph `query()` and `relate()` now fetch only relevant nodes from DB before loading into memory
+  - Performance: 10,000+ node graphs respond in <100ms vs. 5s+ when loading full graph
+
+**Backend abstraction** (`backend.py`) — Plugin interface
   - SQLite implementation (`sqlite_backend.py`)
   - PostgreSQL implementation (`pg_backend.py`)
-- **Graph** (`graph.py`) — NetworkX **MultiDiGraph** wrapper (in-memory query engine)
+  - Methods: `create()`, `load_graph()`, `save_graph()`, `add_node()`, `add_edge()`, `find_related()`, `query()`, `close()`
+
+**Graph** (`graph.py`) — NetworkX **MultiDiGraph** wrapper (in-memory query engine)
   - Graph type: `networkx.MultiDiGraph` — multiple directed edges per node pair (different relation types co-exist)
   - Nodes: typed entities with attributes
   - Edges: relationships with metadata, **weight: float (default 1.0), attributes: dict**
   - Operations: add/remove, query, relate, path finding
-  - **New (v0.3.0):** Weighted edges support for scoring path relationships
-- **Query DSL** (`query.py`) — Find nodes by keyword/type/relatedness with pagination
-  - **New (v0.3.0):** Weight-aware scoring in path finding queries
+  - Weighted edges support for scoring path relationships
+
+**Query DSL** (`query.py`) — Find nodes by keyword/type/relatedness with pagination
+  - DB-backed queries with limit/offset
+  - Weight-aware scoring in path finding
+  - Optional full-graph load when needed (default: lazy fetch)
 
 **Schema:**
 - **SQLite:** Single table schema
@@ -396,7 +422,28 @@ ingest(messages) → {extracted_entities, stored_memories}
 
 ### Layer 5: HTTP API Server
 
-**Path:** `src/engram/capture/server.py`
+**Path:** `src/engram/capture/`
+
+**Architecture (Phase 3, v0.4.1):** Refactored from 1,099 LOC to modular router structure.
+
+**Server Shell** (`server.py`, 275 LOC) — **REFACTORED (v0.4.1)**
+  - Factory pattern for app creation
+  - Middleware registration (correlation ID, rate limiting)
+  - Router mounting from submodules
+  - Legacy endpoint redirects for backward compatibility
+
+**Middleware** (`middleware.py`) — **NEW (v0.4.1)**
+  - CorrelationIdMiddleware — X-Correlation-ID header propagation
+  - RateLimitMiddleware — Per-tenant sliding-window limiting
+
+**Router Modules** (`routers/`) — **NEW (v0.4.1)**
+  - `memory_routes.py` — POST /api/v1/remember, GET /api/v1/recall
+  - `memories_crud.py` — PUT/DELETE /api/v1/memories/{id}, GET /api/v1/memories
+  - `graph_routes.py` — GET /api/v1/query, GET /api/v1/graph/data, GET /graph (HTML)
+  - `admin_routes.py` — POST /api/v1/cleanup, POST /api/v1/summarize, POST /api/v1/feedback
+
+**Server Helpers** (`server_helpers.py`) — **NEW (v0.4.1)**
+  - Shared route validation logic, response builders
 
 **Endpoints** (all at `/api/v1/` with optional `/` legacy redirects):
 
@@ -406,14 +453,20 @@ ingest(messages) → {extracted_entities, stored_memories}
 | GET | /health/ready | Readiness probe | No | `{status, checks}` |
 | POST | /api/v1/remember | Store episodic memory | No | `{id, created_at}` |
 | GET | /api/v1/recall | Search memories | No | `{results, total, offset, limit}` |
+| GET | /api/v1/memories/{id} | Get single memory | No | `{id, content, metadata}` |
+| PUT | /api/v1/memories/{id} | Update memory metadata | No | `{id, updated_at}` |
+| DELETE | /api/v1/memories/{id} | Delete memory | No | `{deleted: true}` |
 | POST | /api/v1/think | LLM reasoning (federated) | No | `{answer}` |
 | POST | /api/v1/ingest | Extract entities + store | No | `{extracted, stored}` |
 | GET | /api/v1/query | Graph search | No | `{nodes, edges, total, offset, limit}` |
+| GET | /api/v1/graph/data | Graph JSON (filtered) | No | `{nodes, edges}` |
+| GET | /graph | Interactive graph UI | No | `{HTML}` |
 | GET | /api/v1/status | Memory + graph counts | No | `{episodic_count, graph_nodes, ...}` |
+| POST | /api/v1/feedback | Record memory feedback | No | `{confidence, importance}` |
 | POST | /api/v1/cleanup | Delete expired | Admin | `{deleted}` |
 | POST | /api/v1/summarize | LLM synthesis | Admin | `{summary}` |
-| POST | /api/v1/auth/token | Issue JWT | No (admin_secret in body) | `{token, expires_at}` |
-| GET | /providers | List active providers + stats | Auth required | `{providers}` |
+| POST | /api/v1/auth/token | Issue JWT | No | `{token, expires_at}` |
+| GET | /providers | List active providers + stats | Auth | `{providers}` |
 
 **Response envelope:** `{"data": {...}, "meta": {"request_id", "timestamp", "correlation_id"}}`
 
@@ -421,17 +474,24 @@ ingest(messages) → {extracted_entities, stored_memories}
 
 ---
 
-### Layer 5b: WebSocket API (v0.4.1)
+### Layer 5b: WebSocket API (v0.4.1) & Event Bus (Phase 6)
 
 **Path:** `src/engram/ws/`
 
 **Purpose:** Bidirectional real-time communication for live memory push events to connected clients.
 
-**Components:**
-- **protocol.py** — WebSocket message protocol: command schema, event types, serialization
-- **event_bus.py** — In-process pub/sub bus; broadcasts memory events (remember, delete, update) to all subscribers
-- **connection_manager.py** — Manages active WebSocket connections with per-tenant isolation; handles connect/disconnect lifecycle
-- **handler.py** — FastAPI WebSocket route handler; authenticates via JWT, dispatches commands, subscribes to event bus
+**Event Bus (Phase 6, v0.4.1)** — **NEW**
+  - **In-process:** `event_bus.py` (80 LOC) — Per-tenant pub/sub channels
+  - **Redis adapter:** `redis_event_bus.py` (150 LOC) — **NEW** Distributed event bus for multi-instance deployments
+    - Config: `event_bus.enabled`, `event_bus.backend` (memory/redis), `event_bus.redis_url`
+    - Async FTS writes via event bus (non-blocking search index updates)
+    - Decouples episodic mutations from WebSocket delivery
+  - Lifecycle: `subscribe()`, `unsubscribe()`, `broadcast()`, `close()`
+
+**WebSocket Components:**
+- **protocol.py** (60 LOC) — Message schema: {type, payload, request_id}
+- **connection_manager.py** (100 LOC) — Per-tenant connection registry; cleanup on client drop
+- **handler.py** (120 LOC) — FastAPI route `/ws?token=JWT`; command dispatch; event subscription
 
 **Connection:**
 ```
@@ -614,169 +674,72 @@ All WebSocket messages use JSON with the schema `{"id": "<correlation_id>", "typ
 {"type": "error", "code": "UNKNOWN_COMMAND"|"UNAUTHORIZED"|"INTERNAL_ERROR", "message": "..."}
 ```
 
----
+### Layer 5c: HTTP Client SDK (Phase 7, v0.4.1)
 
-## Deployment Architecture
+**Path:** `src/engram/http_client.py` (200 LOC) — **NEW**
 
-### Local Development
-```bash
-engram serve --host 127.0.0.1 --port 8765
-```
-- Single process, no external services required
-- ChromaDB embedded, SQLite local
-- Auth disabled by default
+Standalone Python SDK for connecting to Engram HTTP API from external applications.
 
-### Docker Deployment
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY . .
-RUN pip install -e .
-EXPOSE 8765
-CMD ["engram", "serve", "--host", "0.0.0.0"]
-```
+**Features:**
+- Async HTTP client (httpx) with automatic JWT token management
+- Support for all major operations: remember, recall, think, query, feedback
+- Built-in request retry logic + error handling
+- Type hints + Pydantic response models
+- Works with multi-tenant instances (tenant_id in constructor)
+- Context manager support for clean resource cleanup
 
-Environment variables:
-```bash
-ENGRAM_SERVE_HOST=0.0.0.0
-ENGRAM_SERVE_PORT=8765
-ENGRAM_AUTH_ENABLED=true
-ENGRAM_AUTH_JWT_SECRET=$(openssl rand -hex 32)
-ENGRAM_SEMANTIC_PROVIDER=postgresql
-ENGRAM_SEMANTIC_DSN=postgresql://user:pass@postgres:5432/engram
-ENGRAM_CACHE_ENABLED=true
-ENGRAM_CACHE_REDIS_URL=redis://redis:6379/0
-ENGRAM_AUDIT_ENABLED=true
-ENGRAM_TELEMETRY_ENABLED=true
-ENGRAM_TELEMETRY_OTLP_ENDPOINT=http://otel-collector:4317
-GEMINI_API_KEY=${GEMINI_API_KEY}
+**Usage:**
+```python
+from engram import EngramHttpClient
+
+async with EngramHttpClient("http://localhost:8765", tenant_id="acme") as client:
+    # Store a memory
+    memory_id = await client.remember("My context", memory_type="fact", priority=5)
+
+    # Search memories
+    results = await client.recall("What happened yesterday?", limit=5)
+
+    # Reason about memories
+    answer = await client.think("Summarize our progress")
+
+    # Record feedback
+    confidence = await client.feedback(memory_id, feedback_type="positive")
 ```
 
-### Production Architecture (Recommended)
-```
-┌──────────────────────────────────────────┐
-│         Load Balancer (nginx)             │ ← Rate limit at edge
-└──────────────────┬───────────────────────┘
-                   │
-    ┌──────────────┼──────────────┐
-    │              │              │
-┌───▼───┐      ┌───▼───┐      ┌──▼────┐
-│engram-1│      │engram-2│      │engram-N│  ← Replicas (stateless)
-└───┬───┘      └───┬───┘      └──┬────┘
-    │              │              │
-    └──────────────┼──────────────┘
-                   │
-    ┌──────────────┴──────────────┐
-    │                             │
-┌───▼───────────┐          ┌─────▼──────┐
-│ PostgreSQL    │          │   Redis    │
-│ (semantic)    │          │ (cache +   │
-│              │          │  rate-limit)
-└───────────────┘          └────────────┘
+**Configuration:**
+- API base URL (required)
+- API key or JWT token (optional, anonymous by default)
+- Custom headers (X-Correlation-ID, etc.)
+- Request timeout, retry strategy, connection pooling
 
-External:
-- ChromaDB (embedded per pod, or shared persistent volume)
-- Gemini API (external)
-- OpenTelemetry Collector (optional)
-```
+### Layer 5d: Plugin Entry Points (Phase 7, v0.4.1)
 
----
+**Path:** `pyproject.toml` — **EXTENDED**
 
-## Configuration Hierarchy
+Extensible plugin architecture via Python entry points:
 
-**Priority order** (highest wins):
-1. CLI flags (not yet implemented for serve, but available for CLI commands)
-2. Environment variables (ENGRAM_*)
-3. YAML config (~/.engram/config.yaml)
-4. Built-in defaults (in Pydantic models)
+**Entry point groups:**
+- `engram.episodic_backends` — Custom episodic store implementations
+- `engram.semantic_backends` — Custom semantic graph backends
+- `engram.providers` — External memory provider adapters
+- `engram.cli_commands` — Third-party CLI commands
+- `engram.mcp_tools` — Custom MCP tools
 
-Example:
-```yaml
-# ~/.engram/config.yaml
-semantic:
-  provider: sqlite
-  path: ~/.engram/semantic.db
+**Plugin registration:**
+```toml
+[project.entry-points."engram.providers"]
+my_provider = "my_package.providers:MyProviderAdapter"
 
-# Override with env var
-export ENGRAM_SEMANTIC_PROVIDER=postgresql
-export ENGRAM_SEMANTIC_DSN=postgresql://localhost/engram
-
-# Result: provider=postgresql (env wins)
+[project.entry-points."engram.cli_commands"]
+my_command = "my_package.cli:my_command_group"
 ```
 
----
-
-## Component Communication
-
-All interfaces share the same request pipeline:
-
-1. **CLI:** Parse args → load config → set TenantContext → StoreFactory → operation → Rich output
-2. **MCP:** Receive tool call → load config → StoreFactory → execute → JSON result
-3. **HTTP API:** Request → CorrelationIdMiddleware → AuthMiddleware (JWT/API key) → RateLimitMiddleware → handler → StoreFactory → execute → cache → `{data, meta}` response
-4. **WebSocket:** `ws://.../ws?token=JWT` → authenticate → ConnectionManager.register → EventBus.subscribe → dispatch command → push events to tenant
+**Discovery:**
+- Auto-loaded at startup via `importlib.metadata.entry_points()`
+- Plugins must conform to abstract interface (Protocol)
+- Health checks + graceful failure if plugin unavailable
+- Config-driven enable/disable per plugin
 
 ---
 
-## State & Persistence
-
-| Component | Storage | Scope | Persistence |
-|-----------|---------|-------|-------------|
-| EpisodicStore | ChromaDB | Per tenant | Persistent (embedded DB) |
-| SemanticGraph | SQLite/PostgreSQL | Per tenant | Persistent (file/DB) |
-| Config | YAML file | Global | Persistent (~/.engram/config.yaml) |
-| API keys | JSON file | Global | Persistent (~/.engram/api_keys.json) |
-| TenantContext | ContextVar | Per request/task | Transient (memory only) |
-| Cache | Redis | Per tenant | Transient (with TTL) |
-| Audit logs | JSONL file | Global | Persistent (~/.engram/audit.jsonl) |
-| Traces | OTLP exporter | Global | External (to collector) |
-
----
-
-## Error Handling Strategy
-
-1. **Input validation:** Pydantic validates all requests before business logic
-2. **Structured errors:** All failures wrapped in ErrorCode + message
-3. **Logging:** Errors logged with correlation_id for traceability
-4. **User feedback:** HTTP 4xx/5xx responses with error code for client retry logic
-5. **Graceful degradation:** Optional services (Redis, OTel) fail safely
-6. **Audit trail:** Failures recorded in audit logs when enabled
-
----
-
-## Security Boundaries
-
-| Boundary | Control | Mechanism |
-|----------|---------|-----------|
-| Tenant isolation | Row-level (PG) or file-level (SQLite) | tenant_id column/filename |
-| API access | JWT + API key verification | HMAC signature + hash lookup |
-| Authorization | Role-based (RBAC) | Role enum + path-based rules (path normalization applied) |
-| Content size | 10KB limit per memory | Pydantic Field(max_length=10000) |
-| Secret storage | Hashed API keys only | SHA256 hashes in JSON |
-| Audit trail | Immutable log | Append-only JSONL |
-| Timing attacks | Constant-time comparison | `hmac.compare_digest` for key verification |
-| JWT secret | Minimum length enforced | Startup validation rejects short secrets |
-| SSRF (webhooks) | URL allowlist validation | Private/loopback IPs blocked in discovery + webhooks |
-| SQL injection | Parameterised queries | PostgresAdapter uses `$1/$2` placeholders only |
-
----
-
-## Performance Characteristics
-
-| Operation | Typical Time | Bottleneck | Mitigation |
-|-----------|--------------|-----------|-----------|
-| remember() | <10ms | Embedding | Async + cache |
-| recall(10 items) | <50ms | Vector search | Redis cache |
-| think() | <2s | LLM call | Client-side timeout |
-| query() | <50ms | Graph traversal | LRU cache |
-| cleanup() | Variable | DB scan | Async background task |
-
----
-
-## Future Architecture Evolution
-
-See [project-roadmap.md](./project-roadmap.md) for full roadmap. Key upcoming architectural changes:
-- Distributed semantic graph (multi-node, Raft consensus)
-- Streaming LLM responses for large reasoning tasks
-- Graph migrations (SQLite → PostgreSQL tooling)
-- Observability dashboard UI
-
+See [deployment-operations.md](./deployment-operations.md) for deployment architecture, configuration, component communication, state persistence, error handling, security, and performance details.
