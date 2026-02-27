@@ -177,12 +177,24 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             tasks.append(asyncio.create_task(inbox.start()))
             console.print("[dim]Inbox watcher started[/dim]")
 
-            # OpenClaw watcher (if enabled)
+            # Session watchers (OpenClaw + Claude Code)
+            from engram.capture.session_watcher import SessionWatcher
+
             if cfg.capture.openclaw.enabled:
-                from engram.capture import openclaw_watcher as ocw
-                oc = ocw.OpenClawWatcher(cfg.capture.openclaw.sessions_dir, ingest_messages)
+                oc = SessionWatcher(
+                    cfg.capture.openclaw.sessions_dir, ingest_messages,
+                    label="OpenClaw", recursive=False,
+                )
                 tasks.append(asyncio.create_task(oc.start()))
                 console.print("[dim]OpenClaw watcher started[/dim]")
+
+            if cfg.capture.claude_code.enabled:
+                cc = SessionWatcher(
+                    cfg.capture.claude_code.sessions_dir, ingest_messages,
+                    label="ClaudeCode", recursive=True,
+                )
+                tasks.append(asyncio.create_task(cc.start()))
+                console.print("[dim]Claude Code watcher started[/dim]")
 
             # Memory scheduler (consolidation + cleanup + decay report)
             from engram.scheduler import create_default_scheduler
