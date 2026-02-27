@@ -5,11 +5,13 @@
 Engram is a dual-memory AI system that enables agents to reason like humans by combining:
 
 1. **Episodic Memory** — Vector embeddings for semantic search (ChromaDB)
-2. **Semantic Memory** — Knowledge graphs for entity relationships (PostgreSQL/SQLite + NetworkX)
+2. **Semantic Memory** — Knowledge graphs for entity relationships (PostgreSQL/SQLite + NetworkX MultiDiGraph)
 3. **Reasoning Engine** — LLM synthesis connecting both stores (Gemini via litellm)
 4. **Federation Layer** — External memory providers (REST, File, Postgres, MCP) via smart query router
 
 All four interfaces (CLI, MCP, HTTP, WebSocket) share the same memory layers.
+
+**Version:** 0.4.0 | **Tests:** 894+ | **LOC:** ~5000+
 
 ---
 
@@ -137,7 +139,8 @@ cleanup() → int  # deleted count
 - **Backend abstraction** (`backend.py`) — Plugin interface
   - SQLite implementation (`sqlite_backend.py`)
   - PostgreSQL implementation (`pg_backend.py`)
-- **Graph** (`graph.py`) — NetworkX wrapper (in-memory query engine)
+- **Graph** (`graph.py`) — NetworkX **MultiDiGraph** wrapper (in-memory query engine)
+  - Graph type: `networkx.MultiDiGraph` — multiple directed edges per node pair (different relation types co-exist)
   - Nodes: typed entities with attributes
   - Edges: relationships with metadata, **weight: float (default 1.0), attributes: dict**
   - Operations: add/remove, query, relate, path finding
@@ -209,124 +212,19 @@ relate(entity_key) → [related_entities]
   - SSRF protection: remote hosts validated against routable IPs only
   - MCP config scan: `~/.claude/settings.json`, `~/.cursor/settings.json`
 
-**Config** (`~/.engram/config.yaml`):
-```yaml
-providers:
-  - name: openclaw
-    type: file
-    path: ~/.openclaw/workspace/memory/
-    pattern: "*.md"
-    enabled: true
-
-  - name: mem0
-    type: rest
-    url: http://localhost:8080
-    search_endpoint: /v1/memories/search
-    search_method: POST
-    search_body: '{"query": "{query}", "limit": {limit}}'
-    result_path: results[].memory
-    enabled: true
-
-discovery:
-  local: true          # scan localhost ports on startup
-  hosts: []            # additional remote hosts
-  endpoints: []        # direct endpoint URLs to probe
-```
+**Config** (`~/.engram/config.yaml`): See [project-overview-pdr.md](./project-overview-pdr.md) for full provider config examples.
 
 ---
 
-### Layer 3b: Memory Consolidation (v0.3.0)
+### Layers 3b–3f: Utility Layers (v0.3.0)
 
-**Path:** `src/engram/consolidation/`
-
-**Purpose:** Automatically cluster and summarize related episodic memories via LLM synthesis, reducing redundancy and improving recall efficiency.
-
-**Components:**
-- **ConsolidationEngine** (`engine.py`) — Jaccard-based clustering + LLM summarization
-  - `consolidate(limit, similarity_threshold)` → clusters + summaries stored as CONTEXT memory
-  - Tracks consolidation_group, consolidated_into fields on EpisodicMemory
-  - LLM summarizes semantically similar memory clusters
-- **Config:** ConsolidationConfig (enabled, min_cluster_size, similarity_threshold)
-
-**Storage:** Consolidated memories stored as CONTEXT type in episodic store with metadata linking to cluster members.
-
----
-
-### Layer 3c: Privacy & Sanitization (v0.3.0)
-
-**Path:** `src/engram/sanitize.py`
-
-**Purpose:** Strip sensitive content before storage to prevent accidental exposure of secrets.
-
-**Components:**
-- **sanitize_content()** — Regex-based removal of `<private>...</private>` tags → `[REDACTED]`
-- **Config:** `sanitize.enabled` (boolean, default true)
-- **Applied in:** episodic_tools.py, CLI episodic.py, before ChromaDB insert
-- **Use case:** Blocks passwords, API keys, personal info from being stored
-
----
-
-### Layer 3d: Topic Key Upsert (v0.3.0)
-
-**Path:** `src/engram/episodic/store.py` (extended)
-
-**Purpose:** Enable memory updates by topic key, allowing same-subject memories to be updated rather than duplicated.
-
-**Components:**
-- **topic_key** optional parameter on `remember()`
-- **revision_count** metadata field tracking update count
-- **Lookup:** ChromaDB where filter for existing topic_key before insert
-- **Fallback:** New insert if topic_key not found
-- **Use case:** Update "deployment status" memory without creating duplicates
-
----
-
-### Layer 3e: Session Lifecycle (v0.3.0)
-
-**Path:** `src/engram/session/store.py`
-
-**Purpose:** Track conversation sessions and auto-tag memories with session context for coherent recall.
-
-**Components:**
-- **SessionStore** — JSON-file backed session management
-  - `start_session()` → returns session_id (UUID)
-  - `end_session()` → saves summary + metadata
-  - `get_active()` → returns current active session
-  - `get_summary(session_id)` → returns session summary
-- **Session model:** {id, start_time, end_time, summary, tags, metadata}
-- **Integration:** Auto-injects session_id into memory.metadata during active session
-- **Storage:** ~/.engram/sessions/ (JSON files)
-- **MCP Tools:** engram_session_start, engram_session_end, engram_session_summary, engram_session_context
-- **CLI:** engram session-start, engram session-end
-
-**Data Flow:**
-```
-1. engram_session_start → SessionStore.start_session() → session_id
-2. remember(...) → auto-injects session_id in metadata
-3. engram_session_end → SessionStore.end_session() + LLM summary
-4. engram_session_context(session_id) → recall memories tagged with that session_id
-```
-
----
-
-### Layer 3f: Git Sync (v0.3.0)
-
-**Path:** `src/engram/sync/git_sync.py`
-
-**Purpose:** Export memories as compressed JSONL chunks to `.engram/` directory in git repo for version control + backup.
-
-**Components:**
-- **GitSync** — Incremental memory export/import
-  - `export()` → Exports memories to .engram/ as compressed 10KB chunks
-  - `import()` → Re-imports memories from chunks
-  - `get_status()` → Shows export progress + manifest state
-- **Manifest tracking:** `.engram/manifest.json` tracks exported IDs + timestamps
-- **Deduplication:** Manifest prevents re-exporting same memories
-- **Compression:** JSONL format with gzip compression
-- **CLI:** engram sync, engram sync --import, engram sync --status
-- **Integration:** Background task or manual trigger
-
-**Use case:** Version control archive of memories, backup to shared repo, audit trail.
+| Layer | Path | Purpose |
+|-------|------|---------|
+| 3b Consolidation | `consolidation/engine.py` | Jaccard clustering + LLM summarization → CONTEXT memories |
+| 3c Privacy | `sanitize.py` | Strip `<private>...</private>` → `[REDACTED]` before ChromaDB insert |
+| 3d Topic Upsert | `episodic/store.py` | `topic_key` param upserts existing memory by key; `revision_count` tracks updates |
+| 3e Session | `session/store.py` | JSON-file session store; auto-injects `session_id` into memory metadata |
+| 3f Git Sync | `sync/git_sync.py` | Compressed JSONL chunks to `.engram/`; manifest-based dedup; incremental export |
 
 ---
 
@@ -458,44 +356,15 @@ CLI commands added: `engram resource-status`, `engram constitution-status`, `eng
 
 ---
 
-### Layer 3p: Terminal UI (v0.3.0)
+### Layers 3p–3q: TUI + MCP Progressive Disclosure (v0.3.0)
 
-**Path:** `src/engram/tui/`
+**TUI** (`src/engram/tui/`) — Interactive terminal interface via textual library.
+- 4 screens: Dashboard, Search (live, <500ms), Recent, Sessions; vim navigation; `engram tui`; optional dep `engram[tui]`
 
-**Purpose:** Interactive terminal interface for exploring memories, searching, and managing sessions.
-
-**Components:**
-- **TUI App** (textual library) — 4 screens: Dashboard (stats), Search (live query, <500ms), Recent (timeline), Sessions (active/archived + drill-down)
-- **Navigation:** Vim keys (h/j/k/l), tab keys (d/s/r/e), row select → detail view (full content + metadata + related)
-- **CLI:** `engram tui`; optional dep: `pip install engram[tui]`; load time <1s
-
----
-
-### Layer 3q: Progressive Disclosure (MCP) (v0.3.0)
-
-**Path:** `src/engram/mcp/episodic_tools.py` (extended)
-
-**Purpose:** Reduce token usage in MCP by returning compact recall results, with detailed content on-demand.
-
-**Components:**
-- **engram_recall** enhanced:
-  - Returns compact format by default: `{id, date, type, snippet}`
-  - `compact: bool = True` parameter for backward compat
-  - ~200 chars per result (vs. full content)
-- **engram_get_memory(id)** — New tool
-  - Retrieve full content by ID or 8-char prefix
-  - Returns {id, content, metadata, created_at}
-- **engram_timeline(id, window_minutes)** — New tool
-  - Show chronological context around a memory
-  - Returns memories from ±window_minutes
-  - Useful for understanding conversation flow
-
-**Token Efficiency:**
-```
-Before: recall → 10 results × 500 tokens each = 5000 tokens
-After: recall (compact) → 10 results × 50 tokens each = 500 tokens
-Detail: get_memory(id) → only when needed
-```
+**MCP Progressive Disclosure** (`src/engram/mcp/episodic_tools.py`) — Reduces MCP token usage.
+- `engram_recall`: compact by default `{id, date, type, snippet}` (~50 tokens vs. 500)
+- `engram_get_memory(id)`: full content on demand
+- `engram_timeline(id, window_minutes)`: chronological context ±window
 
 ---
 
@@ -546,42 +415,9 @@ ingest(messages) → {extracted_entities, stored_memories}
 | POST | /api/v1/auth/token | Issue JWT | No (admin_secret in body) | `{token, expires_at}` |
 | GET | /providers | List active providers + stats | Auth required | `{providers}` |
 
-**Request/Response Structure:**
+**Response envelope:** `{"data": {...}, "meta": {"request_id", "timestamp", "correlation_id"}}`
 
-All responses follow this format:
-```json
-{
-  "data": {...},
-  "meta": {
-    "request_id": "uuid",
-    "timestamp": "2026-02-24T10:00:00Z",
-    "correlation_id": "from-header"
-  }
-}
-```
-
-Errors:
-```json
-{
-  "error": {
-    "code": "INVALID_REQUEST",
-    "message": "Content must be at least 1 character",
-    "details": {...}
-  },
-  "meta": {
-    "request_id": "uuid",
-    "correlation_id": "..."
-  }
-}
-```
-
-**Error Codes** (`src/engram/errors.py`):
-- INVALID_REQUEST — Validation failed
-- UNAUTHORIZED — Auth missing/invalid
-- FORBIDDEN — Auth valid but insufficient role
-- NOT_FOUND — Resource not found
-- RATE_LIMITED — Too many requests
-- INTERNAL_ERROR — Server error
+**Error envelope:** `{"error": {"code": "INVALID_REQUEST|UNAUTHORIZED|FORBIDDEN|NOT_FOUND|RATE_LIMITED|INTERNAL_ERROR", "message": "..."}, "meta": {...}}`
 
 ---
 
@@ -687,6 +523,7 @@ ws://localhost:8765/ws?token=<JWT>
 - Burst allowance: config.rate_limit.burst
 - Headers: X-RateLimit-Limit, -Remaining, -Reset; Retry-After
 - JWT-based identity (not spoofable X-Forwarded-For header)
+- **`fail_open`** option (default: true): if Redis is unavailable, requests are allowed through rather than rejected
 
 ---
 
@@ -710,6 +547,72 @@ ws://localhost:8765/ws?token=<JWT>
 - Traces: full request flow
 - Exporters: OTLP protocol to collector
 - Sample rate: config.telemetry.sample_rate (default 0.1 = 10%)
+
+---
+
+### Layer 10: Embedding Key Rotation
+
+**Path:** `src/engram/episodic/embeddings.py`
+
+**Purpose:** Distribute Gemini embedding API quota across multiple keys; failover on auth failure.
+
+**Model:** `gemini-embedding-001` exclusively (3072 dimensions). Dimensions must remain consistent within a ChromaDB collection.
+
+**Key Sources:**
+- `GEMINI_API_KEY` — primary key (required)
+- `GEMINI_API_KEY_FALLBACK` — secondary key (optional)
+
+**Strategies** (set via `embedding.key_strategy` in config.yaml or `GEMINI_KEY_STRATEGY` env var):
+
+| Strategy | Behavior |
+|----------|----------|
+| `failover` (default) | Use primary key; switch to fallback only on auth failure |
+| `round-robin` | Rotate keys evenly across calls to spread quota usage |
+
+**Error Handling:** If a key fails with `AuthenticationError`, the next key is tried. If all keys fail, a `RuntimeError` is raised.
+
+**Config:**
+```yaml
+embedding:
+  provider: gemini
+  model: gemini-embedding-001
+  key_strategy: failover  # or round-robin
+```
+
+---
+
+### Layer 11: WebSocket Typed Payloads
+
+**Path:** `src/engram/ws/protocol.py`
+
+All WebSocket messages use JSON with the schema `{"id": "<correlation_id>", "type": "<command>", "payload": {...}}`.
+
+**Command Payloads (client to server):**
+
+| Command | Payload Schema |
+|---------|----------------|
+| `remember` | `{"content": str, "memory_type"?: str, "priority"?: int, "tags"?: [str]}` |
+| `recall` | `{"query": str, "limit"?: int, "memory_type"?: str}` |
+| `think` | `{"question": str}` |
+| `feedback` | `{"memory_id": str, "feedback": "positive"\|"negative"}` |
+| `query` | `{"keyword"?: str, "node_type"?: str, "related_to"?: str}` |
+| `ingest` | `{"messages": [{"role": str, "content": str}]}` |
+| `status` | `{}` |
+
+**Response Schema (server to client):**
+```json
+{"id": "<correlation_id>", "type": "response", "status": "ok"|"error", "data": {...}}
+```
+
+**Push Event Schema (server to all agents in tenant):**
+```json
+{"type": "event", "event": "memory_created"|"memory_updated"|"memory_deleted"|"feedback_recorded", "tenant_id": "...", "data": {...}}
+```
+
+**Error Schema:**
+```json
+{"type": "error", "code": "UNKNOWN_COMMAND"|"UNAUTHORIZED"|"INTERNAL_ERROR", "message": "..."}
+```
 
 ---
 
@@ -805,60 +708,12 @@ export ENGRAM_SEMANTIC_DSN=postgresql://localhost/engram
 
 ## Component Communication
 
-### CLI → Memory
-```
-CLI (Typer)
-  ↓
-[Parse args]
-  ↓
-[Load config]
-  ↓
-[Set TenantContext from namespace]
-  ↓
-[Create or retrieve stores via StoreFactory]
-  ↓
-[Call remember/recall/add_node/think]
-  ↓
-[Print results via Rich]
-```
+All interfaces share the same request pipeline:
 
-### MCP → Memory
-```
-MCP Server (FastMCP/stdio)
-  ↓
-[Receive tool call]
-  ↓
-[Load config]
-  ↓
-[Create or retrieve stores]
-  ↓
-[Execute tool implementation]
-  ↓
-[Return JSON result]
-```
-
-### HTTP API → Memory
-```
-Request
-  ↓
-[CorrelationIdMiddleware - set X-Correlation-ID]
-  ↓
-[AuthMiddleware - verify JWT/API key, set TenantContext]
-  ↓
-[RateLimitMiddleware - check limits]
-  ↓
-[Route handler]
-  ↓
-[StoreFactory.get_episodic(tenant_id)]
-  ↓
-[StoreFactory.get_graph(tenant_id)]
-  ↓
-[Execute operation]
-  ↓
-[Cache result if enabled]
-  ↓
-[Return response + metadata]
-```
+1. **CLI:** Parse args → load config → set TenantContext → StoreFactory → operation → Rich output
+2. **MCP:** Receive tool call → load config → StoreFactory → execute → JSON result
+3. **HTTP API:** Request → CorrelationIdMiddleware → AuthMiddleware (JWT/API key) → RateLimitMiddleware → handler → StoreFactory → execute → cache → `{data, meta}` response
+4. **WebSocket:** `ws://.../ws?token=JWT` → authenticate → ConnectionManager.register → EventBus.subscribe → dispatch command → push events to tenant
 
 ---
 
@@ -919,8 +774,9 @@ Request
 
 ## Future Architecture Evolution
 
-- **v0.3:** Advanced query DSL (Cypher-like), GraphQL endpoint, streaming responses
-- **v0.4:** Distributed semantic graph, multi-node clustering, Raft consensus
-- **v0.5:** Observability dashboard UI, custom embedding models, advanced RBAC
-- **v1.0:** Production release, marketplace, enterprise SLA, compliance certifications
+See [project-roadmap.md](./project-roadmap.md) for full roadmap. Key upcoming architectural changes:
+- Distributed semantic graph (multi-node, Raft consensus)
+- Streaming LLM responses for large reasoning tasks
+- Graph migrations (SQLite → PostgreSQL tooling)
+- Observability dashboard UI
 

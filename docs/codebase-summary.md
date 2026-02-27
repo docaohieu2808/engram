@@ -1,9 +1,9 @@
 # Engram Codebase Summary
 
 ## Overview
-Engram v0.4.1 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, automated maintenance, interactive graph visualization, and real-time WebSocket API. Combines episodic (vector) and semantic (graph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, background scheduler, temporal/pronoun resolution, feedback loop, fusion formatting, and bidirectional WebSocket push. ~4600 LoC, 893+ tests, Python 3.11+.
+Engram v0.4.0 is a dual-memory AI agent system with intelligent recall pipeline, brain-level safety features, automated maintenance, interactive graph visualization, real-time WebSocket API, and embedding key rotation. Combines episodic (vector) and semantic (NetworkX MultiDiGraph) memory, LLM reasoning, activation/consolidation, session lifecycle, terminal UI, advanced query processing, audit trail, resource-aware degradation, data constitution, background scheduler, temporal/pronoun resolution, feedback loop, fusion formatting, bidirectional WebSocket push, and performance benchmarking. ~5000+ LoC, 894+ tests, Python 3.11+.
 
-**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `config.py` (configuration), `constitution.py` (LLM governance), `resource_tier.py` (degradation), `scheduler.py` (background tasks), `audit.py` (mutation log), `recall/temporal_resolver.py` (date resolution), `recall/pronoun_resolver.py` (entity mapping), `recall/fusion_formatter.py` (result grouping), `feedback/auto_adjust.py` (confidence tracking).
+**Top files:** `capture/server.py` (API), `episodic/store.py` (vector store), `episodic/embeddings.py` (key rotation), `config.py` (configuration), `constitution.py` (LLM governance), `resource_tier.py` (degradation), `scheduler.py` (background tasks), `audit.py` (mutation log), `recall/temporal_resolver.py` (date resolution), `recall/pronoun_resolver.py` (entity mapping), `recall/fusion_formatter.py` (result grouping), `feedback/auto_adjust.py` (confidence tracking), `ws/handler.py` (WebSocket), `tests/benchmark_performance.py` (perf benchmarks).
 
 ---
 
@@ -124,6 +124,15 @@ ChromaDB vector database wrapper.
 - **New (v0.3.0):** Session_id auto-injection from active SessionStore
 - **New (v0.3.0):** Batch updates to access_count + last_accessed on recall()
 - **New (v0.3.2):** Audit trail wired into remember(), delete(), update_metadata(), _update_topic(), cleanup_expired()
+
+#### `embeddings.py` (93 LOC) — **NEW (v0.4.0)**
+Embedding helpers with multi-key rotation for Gemini API.
+- **Model:** `gemini-embedding-001` exclusively (3072 dimensions)
+- **Key sources:** `GEMINI_API_KEY` (primary) + `GEMINI_API_KEY_FALLBACK` (optional secondary)
+- **Strategies:** `failover` (default — primary first, fallback on auth error) or `round-robin` (rotate evenly)
+- **Config:** `embedding.key_strategy` in config.yaml or `GEMINI_KEY_STRATEGY` env var
+- **Error handling:** Tries each key in order; raises `RuntimeError` if all keys fail
+- **`EMBEDDING_DIM`:** Module-level constant = 3072
 
 #### `search.py` (180 LOC)
 Search utilities: embedding generation, similarity scoring, activation-based recall.
@@ -622,7 +631,19 @@ Load and validate schemas; enforce type constraints on graph operations.
 
 ---
 
-### `tests/` — Comprehensive test suite (270+ tests)
+### `tests/benchmark_performance.py` — Performance Benchmark (v0.4.0)
+
+#### `benchmark_performance.py` (250 LOC) — **NEW (v0.4.0)**
+HTTP server latency benchmark measuring p50/p95/p99 per endpoint.
+- **Operations:** health, remember, recall, think
+- **Metrics:** p50/p95/p99/mean latency, error count, total requests
+- **Flags:** `--quick` (fast subset), `--concurrency N`, `--host`, `--port`
+- **Usage:** `python tests/benchmark_performance.py --host 127.0.0.1 --port 8765`
+- **Dependencies:** `aiohttp` (async HTTP client)
+
+---
+
+### `tests/` — Comprehensive test suite (894+ tests)
 
 #### `test_*.py`
 - `test_config.py` — Config loading, env var expansion, overlay
@@ -646,20 +667,24 @@ Load and validate schemas; enforce type constraints on graph operations.
 | Metric | Value |
 |--------|-------|
 | Python version | 3.11+ |
-| Total LOC | ~4600 |
-| Test count | 893+ |
-| Modules | 38+ |
-| Endpoints | 13 (HTTP) + 1 (WebSocket /ws) |
+| Total LOC | ~5000+ |
+| Test count | 894+ |
+| Modules | 42+ |
+| Endpoints | 14 (HTTP) + 1 (WebSocket /ws) |
 | CLI commands | 35+ |
-| MCP tools | 12 (8 original + 4 session) |
-| Config fields | 70+ |
+| MCP tools | 19 (see README) |
+| Config fields | 75+ |
 | Supported roles | 3 (ADMIN, AGENT, READER) |
 | Max tenants cached | 100 (graphs), 1000 (episodic) |
 | Provider adapter types | 4 (rest, file, postgres, mcp) |
 | Known auto-discoverable services | 5 (Cognee, Mem0, LightRAG, OpenClaw, Graphiti) |
 | TUI screens | 4 (Dashboard, Search, Recent, Sessions) |
-| Session storage | JSON files (~.engram/sessions) |
-| Recall pipeline components | 8 (decision, resolver, search, feedback, auto-memory, guard, auto-trigger, audit, benchmark) |
+| Session storage | JSON files (~/.engram/sessions) |
+| Recall pipeline components | 8 (decision, resolver, search, feedback, auto-memory, guard, auto-trigger, audit) |
+| Embedding model | gemini-embedding-001 (3072d) only |
+| Key rotation strategies | 2 (failover, round-robin) |
+| WS commands | 7 (remember, recall, think, feedback, query, ingest, status) |
+| Benchmark operations | 4 (health, remember, recall, think) |
 
 ---
 
