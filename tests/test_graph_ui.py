@@ -120,7 +120,7 @@ class TestGraphDataEndpoint:
             assert "id" in node
             assert "label" in node
             assert "group" in node
-            assert "color" in node
+            # color is handled client-side in graph.js
             assert "title" in node
 
     def test_graph_data_edge_has_required_fields(self, client_with_data):
@@ -149,24 +149,7 @@ class TestGraphDataEndpoint:
         assert "connects" in relations
         assert "depends_on" in relations
 
-    def test_graph_data_color_assigned_by_type(self, client_with_data):
-        resp = client_with_data.get("/api/v1/graph/data")
-        nodes = resp.json()["nodes"]
-        color_by_label = {n["label"]: n["color"] for n in nodes}
-        assert color_by_label["Alice"] == "#4CAF50"      # Person
-        assert color_by_label["Python"] == "#2196F3"     # Technology
-        assert color_by_label["Engram"] == "#FF9800"     # Project
-
-    def test_graph_data_unknown_type_gets_default_color(self, mock_episodic, mock_engine):
-        g = AsyncMock()
-        g.get_nodes = AsyncMock(return_value=[_make_node("X", "UnknownType")])
-        g.get_edges = AsyncMock(return_value=[])
-        g.stats = AsyncMock(return_value={"node_count": 1, "edge_count": 0})
-        app = create_app(mock_episodic, g, mock_engine)
-        client = TestClient(app, follow_redirects=False)
-        resp = client.get("/api/v1/graph/data")
-        nodes = resp.json()["nodes"]
-        assert nodes[0]["color"] == "#607D8B"
+    # Node colors are handled client-side in graph.js (NODE_TYPE_COLORS + auto-hash fallback)
 
 
 class TestGraphUIEndpoint:

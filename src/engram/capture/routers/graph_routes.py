@@ -78,12 +78,7 @@ async def graph_data(
         return _norm_key(t, n)
 
     nodes = await gr.get_nodes()
-    color_map = {
-        "Person": "#4CAF50",
-        "Technology": "#2196F3",
-        "Project": "#FF9800",
-        "Service": "#9C27B0",
-    }
+    # Colors are handled client-side in graph.js (NODE_TYPE_COLORS)
 
     # Merge case-variant nodes for graph visualization (e.g. engram/Engram)
     merged_nodes: dict[str, dict[str, Any]] = {}
@@ -106,7 +101,6 @@ async def graph_data(
                 "id": node_id,
                 "label": normalized_name,
                 "group": node.type,
-                "color": color_map.get(node.type, "#607D8B"),
                 "title": tooltip,
                 "attributes": attrs,
             }
