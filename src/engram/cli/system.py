@@ -16,6 +16,30 @@ from engram.utils import run_async
 console = Console()
 
 
+def _load_env_file() -> None:
+    """Load .env file from project root or ~/.engram/.env into os.environ.
+
+    Ensures daemon children inherit API keys (GEMINI_API_KEY etc.) after fork.
+    Existing env vars are NOT overwritten.
+    """
+    import os
+    candidates = [
+        Path.home() / ".engram" / ".env",
+        Path(__file__).resolve().parents[3] / ".env",  # project root
+    ]
+    for env_path in candidates:
+        if env_path.is_file():
+            with open(env_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, val = line.partition("=")
+                    key, val = key.strip(), val.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+
+
 def register(app: typer.Typer, get_config, get_namespace=None) -> None:
     """Register system commands on the main Typer app."""
 
@@ -123,6 +147,8 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         stop: bool = typer.Option(False, "--stop"),
     ):
         """Watch inbox for chat files and auto-ingest. Also watches OpenClaw sessions if enabled."""
+        # Load .env so daemon child inherits API keys after fork
+        _load_env_file()
         from engram.capture.watcher import InboxWatcher, daemonize, is_daemon_running, stop_daemon
 
         if stop:
