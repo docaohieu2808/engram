@@ -37,9 +37,14 @@ EXTRACTION_PROMPT = """You are an entity extraction system. Extract entities and
 - Do NOT extract AI agent names (Claude Code, OpenClaw, Fullstack-developer, assistant) as Person — they are Service/Tool nodes if relevant at all
 - Do NOT extract email addresses as Person nodes
 - Do NOT extract every technology mentioned — only extract tools/services the USER actually uses or manages
-- Do NOT extract file paths, command names, or code identifiers as entities
+- Do NOT extract file paths, command names, or code identifiers as entities (e.g. "scripts/batch.sh", "semantic.db", "ui.css", "uv.lock")
 - Do NOT extract usernames, handles, or account names as Person nodes (e.g. Docaohieu2808 is a username, Admin@docaohieu.com is an email — NOT separate people)
 - Merge user aliases into one canonical name: Hiếu = Hieudc = Docaohieu2808 = "Ông Hiếu" = Admin@docaohieu.com → always use "Hiếu"
+- Do NOT extract generic concept names as entities — every entity must be a SPECIFIC, NAMED thing, not a category (e.g. "Entity Extraction", "Memory System", "Backend", "Frontend", "Server", "Database", "API", "CLI", "UI", "Automation", "Microservices", "RBAC" are generic concepts, NOT entities)
+- Do NOT extract sub-features or internal implementation details as Project nodes — only extract actual project names the user runs or manages (e.g. "EpisodicMemory", "Multi-Agent Orchestration", "Entity Extraction", "Claude Code Backfill" are sub-features, not real projects)
+- Do NOT extract developer tools/linters as Technology nodes unless the user explicitly manages or configures them (e.g. "Bandit", "Gitleaks", "detect-secrets", "pip-audit", "Safety", "Twine", "Hatchling" are build toolchain noise)
+- Do NOT extract font names, icon sets, or UI library internals (e.g. "Inter", "JetBrains Mono", "MaterialIcons", "DOMPurify", "Metro")
+- Do NOT extract format/protocol names as standalone Technology entities unless the user has a specific relationship to them (e.g. "JSON", "YAML", "CSV", "LaTeX", "APK", "JWT" alone are too generic)
 
 ## Conversation
 {messages}
