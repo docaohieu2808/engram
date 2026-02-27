@@ -146,7 +146,7 @@ const Memories = {
            <span class="entities-toggle" onclick="document.getElementById('ent-list').classList.toggle('collapsed');this.textContent=this.textContent.includes('Show')?'Show less':'Show ${entList.length - entLimit} more'">Show ${entList.length - entLimit} more</span>`;
       App.showModal(`<h2>Memory Detail</h2><div class="memory-detail">
         <div class="field"><div class="field-label">ID</div><div class="field-value" style="font-family:var(--mono);font-size:12px">${m.id}</div></div>
-        <div class="field"><div class="field-label">Content</div><div class="field-value" style="white-space:pre-wrap;line-height:1.6">${this._esc(m.content)}</div></div>
+        <div class="field"><div class="field-label">Content</div><div class="field-value markdown-body" style="line-height:1.6">${typeof DOMPurify !== 'undefined' && typeof marked !== 'undefined' ? DOMPurify.sanitize(marked.parse(m.content || '')) : this._esc(m.content)}</div></div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
           <div class="field"><div class="field-label">Type</div><div class="field-value">${App.typeBadge(m.memory_type)}</div></div>
           <div class="field"><div class="field-label">Priority</div><div class="field-value">${App.priorityBar(m.priority)}</div></div>
