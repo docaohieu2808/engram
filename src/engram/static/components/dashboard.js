@@ -167,7 +167,7 @@ const Dashboard = {
         content,
         memory_type: document.getElementById('rm-type').value,
         priority: parseInt(document.getElementById('rm-priority').value) || 5,
-        tags, entities,
+        tags, entities, source: 'manual',
       });
       App.closeModal();
       App.toast('Memory saved', 'success');
