@@ -127,6 +127,17 @@ const Dashboard = {
   },
 
   _esc(s) { return (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); },
+  _md(s) {
+    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+      const clean = (s || '').replace(/\n{3,}/g, '\n\n');
+      const html = marked.parse(clean, { gfm: true, breaks: false });
+      return DOMPurify.sanitize(
+        html.replace(/<li><p>([\s\S]*?)<\/p>\s*<\/li>/g, '<li>$1</li>')
+            .replace(/<p>\s*<\/p>/g, '')
+      );
+    }
+    return this._esc(s);
+  },
 
   showRememberModal() {
     App.showModal(`
@@ -182,7 +193,7 @@ const Dashboard = {
     btn.disabled = true; btn.innerHTML = '<div class="spinner"></div>';
     try {
       const res = await API.think(q);
-      document.getElementById('think-result').innerHTML = `<div class="think-answer">${(res.answer || '').replace(/</g, '&lt;')}</div>`;
+      document.getElementById('think-result').innerHTML = `<div class="think-answer markdown-body">${this._md(res.answer || 'No answer')}</div>`;
     } catch (e) {
       document.getElementById('think-result').innerHTML = `<span style="color:var(--error)">${e.message}</span>`;
     } finally { btn.disabled = false; btn.textContent = 'Think'; }
