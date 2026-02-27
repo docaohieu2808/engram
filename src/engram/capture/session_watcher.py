@@ -56,8 +56,9 @@ def parse_session_line(line: str) -> dict[str, Any] | None:
     except (json.JSONDecodeError, TypeError):
         return None
 
-    # Both OpenClaw and Claude Code use type="message"
-    if data.get("type") != "message":
+    # OpenClaw uses type="message", Claude Code uses type="user"/"assistant"
+    line_type = data.get("type")
+    if line_type not in ("message", "user", "assistant"):
         return None
 
     msg = data.get("message", {})
