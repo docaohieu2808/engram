@@ -116,11 +116,24 @@ class SemanticGraph:
         await self._backend.close()
 
     async def add_node(self, node: SemanticNode) -> bool:
-        """Add to both stores. Return True if new, False if updated."""
+        """Add to both stores. Return True if new, False if updated.
+
+        Case-insensitive dedup: if a node with same key (ignoring case) exists,
+        reuse the existing key to avoid duplicates like Project:Engram vs Project:engram.
+        """
         await self._ensure_loaded()
-        is_new = node.key not in self._graph
-        await self._backend.save_node(node.key, node.type, node.name, json.dumps(node.attributes))
-        self._graph.add_node(node.key, data=node)
+        # Case-insensitive lookup: find existing node with same key
+        key = node.key
+        key_lower = key.lower()
+        for existing_key in self._graph.nodes:
+            if existing_key.lower() == key_lower and existing_key != key:
+                key = existing_key  # reuse existing casing
+                node = SemanticNode(type=node.type, name=existing_key.split(":", 1)[1],
+                                    attributes=node.attributes)
+                break
+        is_new = key not in self._graph
+        await self._backend.save_node(key, node.type, node.name, json.dumps(node.attributes))
+        self._graph.add_node(key, data=node)
         if self._audit:
             op = "semantic.add_node" if is_new else "semantic.update_node"
             self._audit.log(tenant_id=self._tenant_id, actor="system", operation=op,
@@ -152,11 +165,23 @@ class SemanticGraph:
         return is_new
 
     async def add_nodes_batch(self, nodes: list[SemanticNode]) -> None:
-        """Add multiple nodes in one backend transaction."""
+        """Add multiple nodes in one backend transaction (case-insensitive dedup)."""
         if not nodes:
             return
         await self._ensure_loaded()
-        rows = [(n.key, n.type, n.name, json.dumps(n.attributes)) for n in nodes]
+        # Build lowercase lookup of existing keys
+        existing_lower = {k.lower(): k for k in self._graph.nodes}
+        deduped = []
+        for n in nodes:
+            key_lower = n.key.lower()
+            if key_lower in existing_lower and existing_lower[key_lower] != n.key:
+                # Reuse existing key casing
+                existing_key = existing_lower[key_lower]
+                n = SemanticNode(type=n.type, name=existing_key.split(":", 1)[1],
+                                 attributes=n.attributes)
+            existing_lower[key_lower] = n.key  # track within batch too
+            deduped.append(n)
+        rows = [(n.key, n.type, n.name, json.dumps(n.attributes)) for n in deduped]
         await self._backend.save_nodes_batch(rows)
         for node in nodes:
             self._graph.add_node(node.key, data=node)
