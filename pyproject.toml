@@ -9,6 +9,18 @@ description = "Memory traces for AI agents - Think like human"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [{name = "Do Cao Hieu", email = "docaohieu2808@gmail.com"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
@@ -43,6 +55,11 @@ tui = ["textual>=0.50.0"]
 [project.scripts]
 engram = "engram.cli:app"
 engram-mcp = "engram.mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/docaohieu2808/engram"
+Repository = "https://github.com/docaohieu2808/engram"
+Issues = "https://github.com/docaohieu2808/engram/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engram"]
