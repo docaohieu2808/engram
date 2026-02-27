@@ -59,11 +59,18 @@ class OpenClawCaptureConfig(BaseModel):
     sessions_dir: str = "~/.openclaw/agents/main/sessions"
 
 
+class ClaudeCodeCaptureConfig(BaseModel):
+    """Claude Code session capture — watches ~/.claude/projects/ for JSONL sessions."""
+    enabled: bool = True
+    sessions_dir: str = "~/.claude/projects"
+
+
 class CaptureConfig(BaseModel):
     enabled: bool = True
     inbox: str = "~/.engram/inbox/"
     poll_interval: int = 5
     openclaw: OpenClawCaptureConfig = Field(default_factory=OpenClawCaptureConfig)
+    claude_code: ClaudeCodeCaptureConfig = Field(default_factory=ClaudeCodeCaptureConfig)
 
 
 class LLMConfig(BaseModel):
@@ -349,6 +356,8 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "CAPTURE_POLL_INTERVAL": ("capture", "poll_interval"),
     "CAPTURE_OPENCLAW_ENABLED": ("capture.openclaw", "enabled"),
     "CAPTURE_OPENCLAW_SESSIONS_DIR": ("capture.openclaw", "sessions_dir"),
+    "CAPTURE_CLAUDE_CODE_ENABLED": ("capture.claude_code", "enabled"),
+    "CAPTURE_CLAUDE_CODE_SESSIONS_DIR": ("capture.claude_code", "sessions_dir"),
     "EPISODIC_DECAY_RATE": ("episodic", "decay_rate"),
     "EPISODIC_DECAY_ENABLED": ("episodic", "decay_enabled"),
     "EPISODIC_DEDUP_ENABLED": ("episodic", "dedup_enabled"),
@@ -406,6 +415,7 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "security": SecurityConfig,
         "capture": CaptureConfig,
         "capture.openclaw": OpenClawCaptureConfig,
+        "capture.claude_code": ClaudeCodeCaptureConfig,
         "hooks": HooksConfig,
         "auth": AuthConfig,
         "telemetry": TelemetryConfig,
