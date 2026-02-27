@@ -466,6 +466,7 @@ tr:hover td {
   max-width: 620px;
   max-height: 82vh;
   overflow-y: auto;
+  padding-bottom: 20px;
   box-shadow: var(--shadow-lg);
   animation: modal-slide-up .25s cubic-bezier(.4,0,.2,1);
 }
