@@ -183,7 +183,7 @@ const Dashboard = {
         <button class="btn" onclick="App.closeModal()">Cancel</button>
         <button class="btn btn-primary" id="think-btn" onclick="Dashboard.doThink()">Think</button>
       </div>
-      <div id="think-result" style="margin-top:12px"></div>`);
+      <div id="think-result" style="margin-top:12px;padding-bottom:8px"></div>`);
   },
 
   async doThink() {
