@@ -170,7 +170,7 @@ class _SessionFileHandler(FileSystemEventHandler):
                     self._label, len(messages), Path(path).name,
                 )
                 fut = asyncio.run_coroutine_threadsafe(
-                    self._ingest_fn(messages), self._loop
+                    self._ingest_fn(messages, source=self._label), self._loop
                 )
                 def _done(f):
                     try:

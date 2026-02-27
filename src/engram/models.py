@@ -88,6 +88,8 @@ class EpisodicMemory(BaseModel):
     # Feedback loop fields
     confidence: float = 1.0  # 0.0 - 1.0, adjusted by user feedback
     negative_count: int = 0  # count of negative feedbacks received
+    # Source tracking (e.g. "OpenClaw", "ClaudeCode", "api", "cli")
+    source: str = ""
 
     @field_validator("priority")
     @classmethod

@@ -137,12 +137,14 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
     negative_count = int(metadata.get("negative_count", 0))
 
     # Exclude internal fields from extra metadata
+    source = metadata.get("source", "")
+
     _internal = {
         "memory_type", "priority", "timestamp", "entities", "tags", "expires_at",
         "access_count", "last_accessed", "decay_rate",
         "consolidation_group", "consolidated_into",
         "topic_key", "revision_count",
-        "confidence", "negative_count",
+        "confidence", "negative_count", "source",
     }
     extra = {k: v for k, v in metadata.items() if k not in _internal}
 
@@ -165,4 +167,5 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
         revision_count=revision_count,
         confidence=confidence,
         negative_count=negative_count,
+        source=source,
     )
