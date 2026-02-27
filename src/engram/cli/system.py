@@ -20,9 +20,11 @@ def _load_env_file() -> None:
     """Load .env file from project root or ~/.engram/.env into os.environ.
 
     Ensures daemon children inherit API keys (GEMINI_API_KEY etc.) after fork.
-    Existing env vars are NOT overwritten.
+    API keys are always overwritten (they rotate); other vars only set if missing.
     """
     import os
+    # Keys that should always be refreshed from .env (they expire/rotate)
+    _FORCE_OVERRIDE = {"GEMINI_API_KEY", "GEMINI_API_KEY_FALLBACK", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"}
     candidates = [
         Path.home() / ".engram" / ".env",
         Path(__file__).resolve().parents[3] / ".env",  # project root
@@ -36,7 +38,7 @@ def _load_env_file() -> None:
                         continue
                     key, _, val = line.partition("=")
                     key, val = key.strip(), val.strip().strip("'\"")
-                    if key and key not in os.environ:
+                    if key and (key in _FORCE_OVERRIDE or key not in os.environ):
                         os.environ[key] = val
 
 
