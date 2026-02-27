@@ -646,8 +646,20 @@ async def _do_ingest_messages(
         semantic_nodes = len(result.nodes)
         semantic_edges = len(result.edges)
 
-        # Enrich episodic memories with entity tags (backfill)
+        # Enrich episodic memories with entity tags
+        # Merge LLM-extracted names with ALL known graph entities for better coverage
         entity_names = [n.name for n in result.nodes]
+        try:
+            all_nodes = await graph.get_nodes()
+            known_names = [n.name for n in all_nodes]
+            # Deduplicate: LLM-extracted first, then known (case-insensitive)
+            seen = {n.casefold() for n in entity_names}
+            for kn in known_names:
+                if kn.casefold() not in seen:
+                    entity_names.append(kn)
+                    seen.add(kn.casefold())
+        except Exception:
+            pass  # Fall back to LLM-only names
         if entity_names:
             for i, msg in enumerate(messages):
                 content = msg.get("content", "")
