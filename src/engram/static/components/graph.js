@@ -169,7 +169,19 @@ const Graph = {
       chosen: false,
     })));
 
+    // Build vis-network groups config from our color map so group coloring matches legend
+    const allGroups = [...new Set(this._nodes.map(n => n.group))];
+    const visGroups = {};
+    for (const g of allGroups) {
+      const c = getNodeColor(g);
+      visGroups[g] = {
+        color: { background: c.background, border: c.border, highlight: { background: c.background, border: '#fff' }, hover: { background: c.background, border: '#fff' } },
+        font: { color: textColor },
+      };
+    }
+
     this._network = new vis.Network(container, { nodes: this._nodesDS, edges: this._edgesDS }, {
+      groups: visGroups,
       physics: { enabled: true, forceAtlas2Based: { gravitationalConstant: -50, springLength: 120 }, solver: 'forceAtlas2Based', stabilization: { iterations: 150 } },
       interaction: { hover: true, tooltipDelay: 200 },
       nodes: { shape: 'dot', size: 18 },
