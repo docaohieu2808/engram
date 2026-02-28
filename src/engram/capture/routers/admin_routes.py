@@ -307,8 +307,11 @@ async def list_models(
 async def test_model(request: Request, auth: AuthContext = Depends(get_auth_context)):
     """Lightweight model test — calls LLM directly without ChromaDB."""
     import litellm
+    from engram.config import apply_llm_api_key
 
     cfg: Config = request.app.state.cfg
+    # Refresh API key (Anthropic OAuth tokens expire frequently)
+    apply_llm_api_key(cfg)
     model = cfg.llm.model
     try:
         resp = await litellm.acompletion(

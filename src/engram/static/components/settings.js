@@ -186,11 +186,13 @@ const Settings = {
 
   _configEditor() {
     const groups = this._configGroups.map(g => {
+      const multiSection = g.sections.length > 1;
       const sectionHtml = g.sections.map(s => {
         const data = this._config[s];
         if (!data || typeof data !== 'object') return '';
         const needsRestart = this._restartSections.has(s);
-        return this._sectionFields(s, data, needsRestart);
+        const subLabel = multiSection ? `<div class="config-subsection-label">${s}</div>` : '';
+        return subLabel + this._sectionFields(s, data, needsRestart);
       }).join('');
       if (!sectionHtml) return '';
       return `<div class="config-group">
@@ -226,6 +228,76 @@ const Settings = {
       { value: 'embed-english-v3.0', label: 'Embed English v3.0' },
       { value: 'embed-multilingual-v3.0', label: 'Embed Multilingual v3.0' },
     ],
+  },
+
+  // Field hints — shown as ⓘ tooltip badge next to field label
+  _hints: {
+    // LLM
+    'llm.provider': 'AI provider for reasoning/think (anthropic, gemini, openai)',
+    'llm.model': 'Model ID used for Think engine and entity extraction',
+    'llm.api_key': 'API key or OAuth token. Anthropic OAuth auto-refreshes from Claude credentials',
+    'llm.disable_thinking': 'Disable extended thinking tokens (required for some models)',
+    // Embedding
+    'embedding.provider': 'Provider for vector embeddings (gemini recommended)',
+    'embedding.model': 'Embedding model. gemini-embedding-001 = 3072 dimensions',
+    'embedding.api_key': 'API key for embedding provider (e.g. Gemini API key)',
+    'embedding.key_strategy': 'failover = primary first, round-robin = rotate keys evenly',
+    // Extraction
+    'extraction.enabled': 'Extract entities/relationships from messages via LLM',
+    'extraction.llm_model': 'Override LLM model for extraction (blank = use llm.model)',
+    'extraction.chunk_size': 'Max messages per extraction batch',
+    'extraction.max_retries': 'Retry count on extraction failure',
+    'extraction.temperature': 'LLM temperature for extraction (0 = deterministic)',
+    // Recall
+    'recall.search_limit': 'Max memories returned per search query',
+    'recall.entity_search_limit': 'Max memories per entity-boosted search',
+    'recall.entity_boost_score': 'Score assigned to entity-matched memories',
+    'recall.entity_graph_depth': 'Graph traversal depth for entity relationships',
+    'recall.provider_search_limit': 'Max results from external providers',
+    'recall.federated_search_timeout': 'Timeout (seconds) for federated provider search',
+    // Recall pipeline
+    'recall_pipeline.parallel_search': 'Run vector + FTS + entity search in parallel',
+    'recall_pipeline.dedup_threshold': 'Similarity threshold for deduplicating results (0-1)',
+    // Scoring
+    'scoring.recency_weight': 'Weight for how recent a memory is (0-1)',
+    'scoring.importance_weight': 'Weight for memory priority/importance (0-1)',
+    'scoring.similarity_weight': 'Weight for vector similarity score (0-1)',
+    // Scheduler
+    'scheduler.cleanup_interval_hours': 'Hours between expired memory cleanup runs',
+    'scheduler.consolidation_interval_hours': 'Hours between memory consolidation runs',
+    'scheduler.drain_interval_seconds': 'Seconds between pending queue drain attempts',
+    // Consolidation
+    'consolidation.enabled': 'Merge similar memories into summaries periodically',
+    'consolidation.similarity_threshold': 'Min similarity to group memories for consolidation',
+    'consolidation.min_cluster_size': 'Min memories in a cluster before consolidating',
+    // Episodic
+    'episodic.provider': 'Vector store backend (chromadb)',
+    'episodic.path': 'Path to ChromaDB persistent storage',
+    'episodic.namespace': 'Collection namespace (isolates memory sets)',
+    'episodic.mode': 'embedded = local PersistentClient, http = remote HttpClient',
+    'episodic.fts_enabled': 'Enable SQLite FTS5 full-text search alongside vector search',
+    // Semantic
+    'semantic.provider': 'Graph database backend (sqlite)',
+    'semantic.path': 'Path to semantic graph database',
+    'semantic.schema': 'Schema name for entity types and relations',
+    'semantic.max_nodes': 'Safety cap on total graph nodes',
+    // Capture
+    'capture.enabled': 'Enable inbox/session watchers for auto-capture',
+    'capture.poll_interval': 'Seconds between inbox directory polls',
+    // Logging
+    'logging.level': 'Log verbosity: DEBUG, INFO, WARNING, ERROR',
+    // Security
+    'security.max_content_length': 'Max bytes per memory content (prevents abuse)',
+    // Cache
+    'cache.enabled': 'Enable response caching for think/search',
+    'cache.think_ttl': 'Cache TTL (seconds) for think responses',
+    'cache.search_ttl': 'Cache TTL (seconds) for search responses',
+    // Feedback
+    'feedback.enabled': 'Enable memory feedback (upvote/downvote)',
+    'feedback.auto_delete_threshold': 'Delete memory after N negative feedbacks',
+    // Serve
+    'serve.port': 'HTTP server port',
+    'serve.host': 'HTTP server bind address (0.0.0.0 = all interfaces)',
   },
 
   // Get LLM models filtered by current provider (or all if no match)
@@ -371,8 +443,10 @@ const Settings = {
         const displayVal = String(value || '').replace(/"/g, '&quot;');
         input = `<input id="${inputId}" type="text" value="${displayVal}" onchange="Settings._onChange('${keyPath}',this.value)">`;
       }
+      const hint = this._hints[keyPath] || '';
+      const hintBadge = hint ? `<span class="hint-badge" title="${hint.replace(/"/g, '&quot;')}">i</span>` : '';
       return `<div class="config-field">
-        <span class="config-field-label">${field}</span>
+        <span class="config-field-label">${field}${hintBadge}</span>
         <div class="config-field-input">${input}</div>
       </div>`;
     }).filter(Boolean).join('');

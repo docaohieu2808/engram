@@ -574,7 +574,15 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
 textarea { resize: vertical; min-height: 80px; font-family: var(--mono); }
-select { cursor: pointer; }
+select {
+  cursor: pointer;
+  padding-right: 28px !important;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
 
 /* ===== Pagination ===== */
 .pagination { display: flex; align-items: center; gap: 8px; margin-top: 16px; justify-content: center; }
@@ -912,7 +920,8 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
-  min-width: 0;
+  min-width: 160px;
+  width: 160px;
   flex-shrink: 0;
 }
 .config-field-input { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
@@ -923,7 +932,44 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
   padding: 6px 10px;
   font-size: 12px;
 }
-.config-field-input input[type="number"] { max-width: 100px; }
+.config-field-input input[type="number"] { max-width: none; }
+
+/* Config subsection divider (when a tab has multiple config sections) */
+.config-subsection-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.config-subsection-label:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* Info hint badge */
+.hint-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 9px;
+  font-weight: 700;
+  font-style: italic;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  margin-left: 4px;
+  cursor: help;
+  vertical-align: middle;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.hint-badge:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
 
 /* Restart required badge */
 .badge-restart {
