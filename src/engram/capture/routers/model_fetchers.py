@@ -20,8 +20,8 @@ _NON_TEXT_KW = frozenset({
 _ANTHROPIC_CURATED = sorted([
     "anthropic/claude-opus-4-6",
     "anthropic/claude-sonnet-4-6",
-    "anthropic/claude-opus-4-5-20250514",
-    "anthropic/claude-sonnet-4-5-20250514",
+    "anthropic/claude-opus-4-5-20251101",
+    "anthropic/claude-sonnet-4-5-20250929",
     "anthropic/claude-haiku-4-5-20251001",
 ])
 
