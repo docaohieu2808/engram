@@ -90,6 +90,7 @@ const API = {
   // Config
   getConfig() { return this._fetch('/config'); },
   updateConfig(body) { return this._fetch('/config', { method: 'PUT', body: JSON.stringify(body) }); },
+  restartServer() { return this._fetch('/restart', { method: 'POST' }); },
 
   // Cleanup & summarize
   cleanup() { return this._fetch('/cleanup', { method: 'POST' }); },

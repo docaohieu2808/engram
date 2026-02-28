@@ -356,8 +356,11 @@ const Settings = {
     try {
       const res = await API.updateConfig(this._dirty);
       if (statusEl) {
+        const restartBtn = res.restart_required
+          ? ' <button class="btn btn-sm btn-warning" onclick="Settings.restartServer()" style="margin-left:8px">Restart Now</button>'
+          : '';
         const msg = res.restart_required
-          ? `Saved ${res.changed.length} changes. <strong>Server restart required</strong> for some settings to take effect.`
+          ? `Saved ${res.changed.length} changes. <strong>Server restart required</strong> for some settings to take effect.${restartBtn}`
           : `Saved ${res.changed.length} changes.`;
         statusEl.style.display = 'block';
         statusEl.style.background = res.restart_required ? 'var(--warning-bg, #fff3cd)' : 'var(--success-bg, #d4edda)';
@@ -377,6 +380,39 @@ const Settings = {
       }
       App.toast(e.message, 'error');
     }
+  },
+
+  async restartServer() {
+    if (!confirm('Restart the server? The page will reload in a few seconds.')) return;
+    const statusEl = document.getElementById('cfg-status');
+    try {
+      await API.restartServer();
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.style.background = 'var(--info-bg, #d1ecf1)';
+        statusEl.style.color = 'var(--info, #0c5460)';
+        statusEl.innerHTML = 'Server restarting... page will reload automatically.';
+      }
+      // Poll until server is back, then reload
+      Settings._waitForServer();
+    } catch (e) {
+      // Server may already be shutting down — still wait for it
+      Settings._waitForServer();
+    }
+  },
+
+  _waitForServer(attempt = 0) {
+    if (attempt > 30) { // 30s max wait
+      App.toast('Server did not come back. Check manually.', 'error');
+      return;
+    }
+    setTimeout(async () => {
+      try {
+        const res = await fetch('/api/v1/health');
+        if (res.ok) { window.location.reload(); return; }
+      } catch {}
+      Settings._waitForServer(attempt + 1);
+    }, 1000);
   },
 
   // --- Helpers ---
