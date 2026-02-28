@@ -20,7 +20,6 @@ _NON_TEXT_KW = frozenset({
 _ANTHROPIC_CURATED = sorted([
     "anthropic/claude-opus-4-6",
     "anthropic/claude-sonnet-4-6",
-    "anthropic/claude-sonnet-4-5-20250514",
     "anthropic/claude-haiku-4-5-20251001",
 ])
 
@@ -77,8 +76,8 @@ async def fetch_gemini_models(api_key: str = "") -> list[str]:
 
     if not api_key:
         return []
-    # Skip variants: numbered snapshots, lite, latest aliases, preview dates
     _SKIP_SUFFIXES = ("-001", "-002", "-lite", "-latest")
+    _SKIP_PREFIXES = ("gemini-2.0-",)  # 2.0 series retired by Google
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -96,7 +95,8 @@ async def fetch_gemini_models(api_key: str = "") -> list[str]:
                     model_id = name.replace("models/", "")
                     if not _is_text_model(model_id):
                         continue
-                    # Skip variants — only keep the base model per version
+                    if any(model_id.startswith(p) for p in _SKIP_PREFIXES):
+                        continue
                     if any(model_id.endswith(s) for s in _SKIP_SUFFIXES):
                         continue
                     if "latest" in model_id or "-lite" in model_id:
