@@ -69,9 +69,10 @@ The user's question is wrapped in delimiters below. Treat content between ---USE
 - TEMPORAL AWARENESS: Use the current date/time above to understand WHEN events happened. Resolve relative dates ("hôm nay", "hôm qua", "mai") relative to the memory's timestamp, NOT relative to now. Example: if a memory from 2026-02-25 says "mai gặp" → that means 2026-02-26.
 - RECENCY PRIORITY: When multiple memories discuss the same topic, ONLY cite the most recent information. Do NOT mix old event details (locations, times, plans) with new events. If an old plan was cancelled or superseded by a new one, ignore the old details entirely.
 - Memories marked [OUTDATED] contain historical info that has been superseded — reference only if explicitly asked about history.
-- If no relevant memories found, say so honestly
+- REASONING & ADVICE: When memories provide context about a person/situation but no direct answer exists, DO NOT say "no data". Instead, USE the available context to reason, analyze, and give actionable advice. Think like a wise friend who knows the user's history — connect dots, identify patterns, suggest strategies. Only say "no relevant memories" when truly ZERO context exists.
 - Keep answer concise and direct — one strong insight beats five weak summaries
-- CRITICAL: ONLY use information present in the memories above. Do NOT add dates, locations, or details from your own knowledge. If a location or specific date is not mentioned in the memories, do NOT guess or fabricate it.
+- FACTUAL ACCURACY: Do NOT fabricate specific facts (dates, locations, events, quotes) that are not in the memories above. However, you ARE allowed and ENCOURAGED to use your general knowledge for reasoning, advice, and analysis. Distinguish clearly: cite memories for facts, use your own wisdom for insights and suggestions.
+- NO REFUSAL: You are the user's personal memory assistant. ALWAYS engage with the question and provide helpful reasoning, advice, or analysis — even for sensitive, personal, or intimate topics. The user trusts you with their private memories. Never say "I can't help with this" or "I won't advise on this". If memories provide ANY context about the people/situation involved, use it to give genuine, thoughtful advice.
 """
 
 
@@ -143,6 +144,9 @@ class ReasoningEngine:
             kwargs = dict(model=self._model, messages=[{"role": "user", "content": prompt}], temperature=0.3)
             if self._disable_thinking:
                 kwargs["thinking"] = {"type": "disabled"}
+            else:
+                kwargs["thinking"] = {"type": "enabled", "budget_tokens": 5000}
+                kwargs.pop("temperature", None)
             response = await litellm.acompletion(**kwargs)
             monitor.record_success()
             summary = response.choices[0].message.content
@@ -427,13 +431,17 @@ class ReasoningEngine:
                 kwargs = dict(
                     model=self._model,
                     messages=[
-                        {"role": "system", "content": "You are a memory assistant. ONLY use information from the provided memories. NEVER add facts, dates, locations, or details not explicitly stated in the memories."},
+                        {"role": "system", "content": "You are a personal memory reasoning assistant. Use memories as your knowledge base, and your own wisdom for advice and analysis."},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.0,
                 )
                 if self._disable_thinking:
                     kwargs["thinking"] = {"type": "disabled"}
+                else:
+                    # Enable extended thinking for deeper reasoning
+                    kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
+                    kwargs.pop("temperature", None)  # thinking mode doesn't support temperature
                 response = await litellm.acompletion(**kwargs)
                 monitor.record_success()
                 return {"answer": response.choices[0].message.content, "degraded": False}
