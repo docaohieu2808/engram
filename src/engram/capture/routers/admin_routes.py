@@ -270,31 +270,18 @@ async def put_config(request: Request, auth: AuthContext = Depends(get_auth_cont
 async def restart_server(request: Request, auth: AuthContext = Depends(get_auth_context)):
     """Gracefully restart the server process. Admin only.
 
-    Spawns a detached child that re-launches the server after the
-    current process exits. Works with nohup, systemd, bare uvicorn.
+    Uses os.execv to replace the current process with a fresh instance.
+    Environment variables (including ENGRAM_ALLOW_INSECURE) are preserved.
     """
     import asyncio
     import os
-    import signal
-    import subprocess
     import sys
 
     require_admin(auth)
 
     async def _do_restart():
         await asyncio.sleep(0.5)  # let response flush
-        # Spawn detached bash that waits for us to die, then re-launches
-        cmd = [sys.executable] + sys.argv
-        subprocess.Popen(
-            ["bash", "-c",
-             f"while kill -0 {os.getpid()} 2>/dev/null; do sleep 0.2; done; "
-             f"exec {' '.join(cmd)}"],
-            start_new_session=True,
-            stdin=subprocess.DEVNULL,
-            stdout=open("/tmp/engram-serve.log", "a"),
-            stderr=subprocess.STDOUT,
-        )
-        os.kill(os.getpid(), signal.SIGTERM)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     asyncio.get_event_loop().create_task(_do_restart())
     return {"status": "ok", "message": "Server restarting..."}
