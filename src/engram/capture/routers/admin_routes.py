@@ -280,18 +280,25 @@ async def list_models(
 
     all_models = litellm.model_list or []
 
-    # Use litellm's model_info to filter: only mode=chat models
-    def _is_chat_model(model_name: str) -> bool:
+    # Use litellm model_info mode=chat + exclude non-text-generation variants
+    _non_text_kw = frozenset({"image", "vision", "audio", "realtime", "tts",
+                              "transcribe", "search", "embed", "live", "native-audio",
+                              "computer-use", "customtools", "gemma", "exp-", "pro-exp"})
+
+    def _is_text_chat(model_name: str) -> bool:
         try:
             info = litellm.get_model_info(model_name)
-            return info.get("mode") == "chat"
+            if info.get("mode") != "chat":
+                return False
         except Exception:
             return False
+        low = model_name.lower()
+        return not any(kw in low for kw in _non_text_kw)
 
     provider_prefixes = {
         "anthropic": lambda m: m.startswith("claude-") and not m.startswith("claude-instant") and not m.startswith("claude-3-"),
-        "gemini": lambda m: m.startswith("gemini/gemini-") and "-1.0" not in m and "-1.5" not in m,
-        "openai": lambda m: m.startswith("gpt-4") or m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4"),
+        "gemini": lambda m: m.startswith("gemini/gemini-") and "-1.0" not in m and "-1.5" not in m and "-2.0-flash" not in m,
+        "openai": lambda m: (m.startswith("gpt-4.") or m.startswith("gpt-4o") or m.startswith("gpt-4.5") or m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4")) and "-0314" not in m and "-0613" not in m,
     }
 
     result = {}
@@ -301,10 +308,9 @@ async def list_models(
         if not prefix_fn:
             continue
         candidates = [m for m in all_models if prefix_fn(m)]
-        # Filter by mode=chat (removes realtime, transcribe, embed, image, etc.)
         models = sorted(set(
             (f"anthropic/{m}" if p == "anthropic" else m)
-            for m in candidates if _is_chat_model(m)
+            for m in candidates if _is_text_chat(m)
         ))
         result[p] = models
     return {"models": result}
