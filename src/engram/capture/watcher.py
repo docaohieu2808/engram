@@ -269,16 +269,32 @@ def daemonize() -> None:
 
 
 def is_daemon_running() -> bool:
-    """Check if watcher daemon is running."""
+    """Check if watcher daemon is running.
+
+    Validates PID file points to an actual engram process (not a recycled PID).
+    """
     if not PID_FILE.exists():
         return False
-    pid = int(PID_FILE.read_text().strip())
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except (ValueError, OSError):
+        PID_FILE.unlink(missing_ok=True)
+        return False
     try:
         os.kill(pid, 0)
-        return True
     except OSError:
         PID_FILE.unlink(missing_ok=True)
         return False
+    # PID alive — verify it's actually an engram process (Linux /proc)
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
+        if "engram" not in cmdline:
+            logger.warning("watcher: stale PID %d belongs to another process, cleaning up", pid)
+            PID_FILE.unlink(missing_ok=True)
+            return False
+    except OSError:
+        pass  # non-Linux — trust os.kill result
+    return True
 
 
 def stop_daemon() -> bool:
