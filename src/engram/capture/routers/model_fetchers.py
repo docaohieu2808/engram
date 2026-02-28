@@ -69,11 +69,17 @@ async def fetch_anthropic_models(api_key: str = "") -> list[str]:
 
 
 async def fetch_gemini_models(api_key: str = "") -> list[str]:
-    """Fetch active models from Google Gemini API."""
+    """Fetch active models from Google Gemini API.
+
+    Returns only the best variant per version (no -001, -lite, -latest aliases).
+    """
     import httpx
 
     if not api_key:
         return []
+    # Skip variants: numbered snapshots, lite, latest aliases, preview dates
+    _SKIP_SUFFIXES = ("-001", "-002", "-lite", "-latest")
+
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             models = []
@@ -88,8 +94,14 @@ async def fetch_gemini_models(api_key: str = "") -> list[str]:
                     if "generateContent" not in actions:
                         continue
                     model_id = name.replace("models/", "")
-                    if _is_text_model(model_id):
-                        models.append(f"gemini/{model_id}")
+                    if not _is_text_model(model_id):
+                        continue
+                    # Skip variants — only keep the base model per version
+                    if any(model_id.endswith(s) for s in _SKIP_SUFFIXES):
+                        continue
+                    if "latest" in model_id or "-lite" in model_id:
+                        continue
+                    models.append(f"gemini/{model_id}")
                 next_token = data.get("nextPageToken")
                 if next_token:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}&pageSize=100&pageToken={next_token}"
