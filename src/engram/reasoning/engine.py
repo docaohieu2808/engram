@@ -19,6 +19,7 @@ from engram.providers.router import federated_search
 from engram.resource_tier import get_resource_monitor
 from engram.sanitize import sanitize_llm_input
 from engram.semantic.graph import SemanticGraph
+from engram.config import RecallConfig
 from engram.utils import strip_diacritics
 
 litellm.suppress_debug_info = True
@@ -87,6 +88,7 @@ class ReasoningEngine:
         recall_config=None,
         scoring_config=None,
         disable_thinking: bool = False,
+        recall: RecallConfig | None = None,
     ):
         self._episodic = episodic
         self._graph = graph
@@ -98,6 +100,7 @@ class ReasoningEngine:
         self._node_names_cache: list[str] | None = None
         self._recall_config = recall_config
         self._scoring_config = scoring_config
+        self._recall = recall or RecallConfig()
         self._parallel_search = getattr(recall_config, "parallel_search", False) if recall_config else False
 
     def invalidate_cache(self) -> None:
@@ -171,7 +174,7 @@ class ReasoningEngine:
             answer (str): The synthesized or raw answer text.
             degraded (bool): True when LLM was skipped due to resource tier.
         """
-        _SEARCH_LIMIT = 15
+        _SEARCH_LIMIT = self._recall.search_limit
 
         # 0. Resolve temporal references in question so search finds dated memories
         search_question = question
@@ -186,7 +189,7 @@ class ReasoningEngine:
         # 1. Vector search for relevant episodic memories
         if self._parallel_search and self._episodic and self._graph:
             from engram.recall.parallel_search import ParallelSearcher
-            searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config, self._scoring_config)
+            searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config, self._scoring_config, recall=self._recall)
             search_results = await searcher.search(search_question, limit=_SEARCH_LIMIT)
             # Format parallel search results grouped by memory type for LLM context
             from engram.recall.fusion_formatter import format_for_llm
@@ -206,7 +209,7 @@ class ReasoningEngine:
 
         # 2b. Entity-boosted search: pull more episodic memories mentioning entities
         if entity_hints and self._episodic:
-            entity_memories = await self._search_by_entities(entity_hints, limit=10)
+            entity_memories = await self._search_by_entities(entity_hints, limit=self._recall.entity_search_limit)
             if _use_parallel:
                 # Merge into parallel results (dedup by content hash)
                 existing_contents = {r.content for r in episodic_results}
@@ -216,7 +219,7 @@ class ReasoningEngine:
                         episodic_results.append(SearchResult(
                             id=mem.id,
                             content=mem.content,
-                            score=0.55,  # Entity-boosted score
+                            score=self._recall.entity_boost_score,
                             source="entity_boost",
                             memory_type=mem.memory_type.value if hasattr(mem.memory_type, "value") else str(mem.memory_type),
                             importance=mem.priority,
@@ -236,12 +239,14 @@ class ReasoningEngine:
         # 3. Graph traversal for those entities
         semantic_results: dict[str, Any] = {}
         for entity in entity_hints:
-            related = await self._graph.get_related([entity], depth=2)
+            related = await self._graph.get_related([entity], depth=self._recall.entity_graph_depth)
             semantic_results.update(related)
 
         # 4. Federated search across external providers
         provider_results = await federated_search(
-            question, self._providers, limit=5, timeout_seconds=10.0,
+            question, self._providers,
+            limit=self._recall.provider_search_limit,
+            timeout_seconds=self._recall.federated_search_timeout,
         )
 
         # 5. If we have results, use LLM to synthesize (resource-aware)

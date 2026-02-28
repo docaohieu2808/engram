@@ -11,7 +11,7 @@ Engram is a dual-memory AI system that enables agents to reason like humans by c
 
 All four interfaces (CLI, MCP, HTTP, WebSocket) share the same memory layers.
 
-**Version:** 0.4.0 | **Tests:** 894+ | **LOC:** ~5000+
+**Version:** 0.4.2 | **Tests:** 972+ | **LOC:** ~5200+
 
 ---
 
@@ -739,6 +739,75 @@ my_command = "my_package.cli:my_command_group"
 - Plugins must conform to abstract interface (Protocol)
 - Health checks + graceful failure if plugin unavailable
 - Config-driven enable/disable per plugin
+
+---
+
+### Layer 5e: Configurable Everything (v0.4.2)
+
+**Path:** `src/engram/config.py` (extended), `src/engram/capture/routers/config_routes.py` (new), `src/engram/static/components/settings.js` (new)
+
+**Purpose:** Eliminate all hardcoded tuning parameters; expose via YAML config + WebUI live editor for zero-restart updates.
+
+**New Config Classes:**
+- **ExtractionConfig** — llm_model (inherit from llm.model), temperature (0.1), max_retries (3), retry_delay_seconds (1.0), chunk_size (50), user_msg_max_len (2000), assistant_msg_max_len (3000)
+- **RecallConfig (extended)** — search_limit (15), entity_search_limit (10), provider_search_limit (5), entity_graph_depth (2), entity_boost_score (0.55), semantic_edge_score (0.5), entity_co_mention_score (0.4), keyword_exact_match_score (0.6), fuzzy_match_score (0.3), fusion_similarity_weight (0.6), fusion_retention_weight (0.4), entity_resolution_context_window (10), entity_resolution_max_len (3000), fusion_entry_max_chars (200), format_for_llm_max_chars (2000), federated_search_timeout (10.0)
+- **SchedulerConfig** — consolidate_interval_seconds (21600), cleanup_interval_seconds (86400), decay_report_interval_seconds (86400), tick_interval_seconds (60), task_timeout_seconds (300), decay_access_multiplier (0.1)
+- **HealthConfig, CacheConfig, HooksConfig, RetrievalAuditConfig** — Secondary params (health.check_llm_model, cache.max_graph_cache_size, hooks.webhook_timeout_seconds, etc.)
+
+**API Endpoints (new):**
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/v1/config` | Read current config.yaml as JSON |
+| PUT | `/api/v1/config` | Merge config changes, validate, persist to config.yaml |
+
+**WebUI Settings Tab (new):**
+- Grouped sections: LLM, Embedding, Recall, Extraction, Scheduler, Health, Cache
+- Form controls: text, number, select, multi-select, boolean toggle
+- Live validation: type checking, range limits, dependency checks
+- "Restart Required" badge for server-level changes (llm.model, episodic.mode, auth.enabled)
+- "Save" button persists changes to ~/.engram/config.yaml
+
+**Model Selector UI (new):**
+- LLM section dropdown: Gemini, Claude, OpenAI, Custom
+- API key input per provider (masked password field)
+- Test button: sends probe query to verify model connectivity
+- Auto-set `llm.disable_thinking` flag based on model family (Claude Sonnet → true, Gemini → false, etc.)
+
+**Think Flag Unification:**
+- All hardcoded `thinking={"type":"disabled"}` removed
+- 4 modules now read `cfg.llm.disable_thinking`:
+  - `recall/entity_resolver.py:100`
+  - `health/components.py:98`
+  - `memory_extractor.py:83`
+  - `consolidation/engine.py:162`
+
+**YAML Config Example:**
+```yaml
+llm:
+  model: gemini-2.5-flash
+  disable_thinking: false
+  provider: gemini
+
+extraction:
+  llm_model: null  # inherit from llm.model
+  temperature: 0.1
+  max_retries: 3
+
+recall:
+  search_limit: 15
+  entity_boost_score: 0.55
+  fusion_similarity_weight: 0.6
+
+scheduler:
+  consolidate_interval_seconds: 21600
+  cleanup_interval_seconds: 86400
+```
+
+**Env Var Overlay:**
+```bash
+ENGRAM_LLM_MODEL=claude-opus-4-6 engram serve
+ENGRAM_EXTRACTION_TEMPERATURE=0.5 engram think "query"
+```
 
 ---
 

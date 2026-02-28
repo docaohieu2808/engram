@@ -79,7 +79,15 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         from engram.schema.loader import load_schema
         cfg = get_config()
         schema = load_schema(cfg.semantic.schema_name)
-        return EntityExtractor(model=cfg.llm.model, schema=schema)
+        return EntityExtractor(
+            model=cfg.extraction.llm_model or cfg.llm.model,
+            schema=schema,
+            disable_thinking=cfg.llm.disable_thinking,
+            chunk_size=cfg.extraction.chunk_size,
+            max_retries=cfg.extraction.max_retries,
+            retry_delay_seconds=cfg.extraction.retry_delay_seconds,
+            temperature=cfg.extraction.temperature,
+        )
 
     @app.command()
     def health(
@@ -382,8 +390,9 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
                 from engram.consolidation.engine import ConsolidationEngine
                 consolidation_engine = ConsolidationEngine(
                     _get_episodic(), model=cfg.llm.model, config=cfg.consolidation,
+                    disable_thinking=cfg.llm.disable_thinking,
                 )
-            scheduler = create_default_scheduler(_get_episodic(), consolidation_engine)
+            scheduler = create_default_scheduler(_get_episodic(), consolidation_engine, config=cfg.scheduler)
             scheduler.start()
             console.print("[dim]Memory scheduler started[/dim]")
 
@@ -432,6 +441,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         cfg = get_config()
         engine = ConsolidationEngine(
             _get_episodic(), model=cfg.llm.model, config=cfg.consolidation,
+            disable_thinking=cfg.llm.disable_thinking,
         )
         new_ids = run_async(engine.consolidate(limit=limit))
         if not new_ids:
@@ -514,9 +524,10 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             from engram.consolidation.engine import ConsolidationEngine
             consolidation_engine = ConsolidationEngine(
                 _get_episodic(), model=cfg.llm.model, config=cfg.consolidation,
+                disable_thinking=cfg.llm.disable_thinking,
             )
 
-        scheduler = create_default_scheduler(_get_episodic(), consolidation_engine)
+        scheduler = create_default_scheduler(_get_episodic(), consolidation_engine, config=cfg.scheduler)
         tasks = scheduler.status()
         if not tasks:
             console.print("[dim]No scheduled tasks.[/dim]")

@@ -23,12 +23,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
-logger = logging.getLogger("engram")
+from engram.config import SchedulerConfig
 
-# Default schedule intervals (seconds)
-SCHEDULE_CONSOLIDATE = 6 * 3600   # Every 6 hours
-SCHEDULE_CLEANUP = 24 * 3600      # Daily
-SCHEDULE_DECAY_REPORT = 24 * 3600  # Daily
+logger = logging.getLogger("engram")
 
 
 @dataclass
@@ -53,9 +50,11 @@ class MemoryScheduler:
         self,
         state_path: str = "~/.engram/scheduler_state.json",
         tick_interval: float = 60.0,
+        task_timeout: float = 300.0,
     ):
         self._state_path = Path(state_path).expanduser()
         self._tick_interval = tick_interval
+        self._task_timeout = task_timeout
         self._tasks: dict[str, ScheduledTask] = {}
         self._running = False
         self._task_handle: asyncio.Task | None = None
@@ -126,13 +125,13 @@ class MemoryScheduler:
 
             # Execute task with timeout
             try:
-                result = await asyncio.wait_for(task.func(), timeout=300.0)
+                result = await asyncio.wait_for(task.func(), timeout=self._task_timeout)
                 task.last_run = now
                 task.run_count += 1
                 task.last_error = None
                 logger.info("Scheduler task %s completed: %s", task.name, result)
             except asyncio.TimeoutError:
-                task.last_error = "timeout (300s)"
+                task.last_error = f"timeout ({self._task_timeout}s)"
                 logger.warning("Scheduler task %s timed out", task.name)
             except Exception as e:
                 task.last_error = str(e)[:200]
@@ -201,20 +200,23 @@ class MemoryScheduler:
             pass
 
 
-SCHEDULE_QUEUE_DRAIN = 60  # Every 60 seconds
-
-
 def create_default_scheduler(
     episodic_store: Any,
     consolidation_engine: Any | None = None,
+    config: SchedulerConfig | None = None,
 ) -> MemoryScheduler:
     """Create scheduler with default maintenance tasks.
 
     Args:
         episodic_store: EpisodicStore instance for cleanup/stats
         consolidation_engine: ConsolidationEngine instance (optional, for consolidation task)
+        config: SchedulerConfig with intervals and limits
     """
-    scheduler = MemoryScheduler()
+    cfg = config or SchedulerConfig()
+    scheduler = MemoryScheduler(
+        tick_interval=cfg.tick_interval_seconds,
+        task_timeout=cfg.task_timeout_seconds,
+    )
 
     # Task: drain pending queue (retry failed embeddings)
     async def drain_pending_queue() -> dict[str, Any]:
@@ -228,7 +230,7 @@ def create_default_scheduler(
 
     scheduler.register(
         "drain_pending_queue", drain_pending_queue,
-        interval_seconds=SCHEDULE_QUEUE_DRAIN,
+        interval_seconds=cfg.queue_drain_interval_seconds,
         requires_llm=False,
     )
 
@@ -239,7 +241,7 @@ def create_default_scheduler(
 
     scheduler.register(
         "cleanup_expired", cleanup_expired,
-        interval_seconds=SCHEDULE_CLEANUP,
+        interval_seconds=cfg.cleanup_interval_seconds,
         requires_llm=False,
     )
 
@@ -251,7 +253,7 @@ def create_default_scheduler(
 
         scheduler.register(
             "consolidate_memories", consolidate_memories,
-            interval_seconds=SCHEDULE_CONSOLIDATE,
+            interval_seconds=cfg.consolidate_interval_seconds,
             requires_llm=True,
         )
 
@@ -264,14 +266,14 @@ def create_default_scheduler(
         for mem in memories:
             ts = mem.timestamp if mem.timestamp.tzinfo else mem.timestamp.replace(tzinfo=timezone.utc)
             days = (now - ts).total_seconds() / 86400
-            retention = math.exp(-mem.decay_rate * days / (1 + 0.1 * mem.access_count))
+            retention = math.exp(-mem.decay_rate * days / (1 + cfg.decay_access_multiplier * mem.access_count))
             if retention < 0.3:
                 low_retention += 1
         return {"total_checked": len(memories), "low_retention": low_retention}
 
     scheduler.register(
         "decay_report", decay_report,
-        interval_seconds=SCHEDULE_DECAY_REPORT,
+        interval_seconds=cfg.decay_report_interval_seconds,
         requires_llm=False,
     )
 

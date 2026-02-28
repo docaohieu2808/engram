@@ -84,19 +84,21 @@ async def check_fts5(db_path: str = "~/.engram/fts_index.db") -> ComponentHealth
         return ComponentHealth("fts5", "unhealthy", error=str(exc))
 
 
-async def check_llm(model: str = "") -> ComponentHealth:
+async def check_llm(model: str = "", disable_thinking: bool = False) -> ComponentHealth:
     """Check LLM connectivity with a minimal test call."""
-    if not os.environ.get("GEMINI_API_KEY"):
+    if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
         return ComponentHealth("llm", "degraded", error="No API key — skipped")
     start = time.monotonic()
     try:
         import litellm
-        litellm.completion(
+        kwargs = dict(
             model=model or "gemini/gemini-2.5-flash",
             messages=[{"role": "user", "content": "ping"}],
             max_tokens=1,
-            thinking={"type": "disabled"},
         )
+        if disable_thinking:
+            kwargs["thinking"] = {"type": "disabled"}
+        litellm.completion(**kwargs)
         ms = (time.monotonic() - start) * 1000
         return ComponentHealth("llm", "healthy", ms, {"model": model or "gemini-2.5-flash"})
     except Exception as exc:

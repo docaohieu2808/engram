@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-__all__ = ["Config", "load_config", "save_config", "get_config_value", "set_config_value"]
+__all__ = [
+    "Config", "load_config", "save_config", "get_config_value", "set_config_value",
+    "ExtractionConfig", "RecallConfig", "SchedulerConfig",
+]
 
 import os
 import re
@@ -90,6 +93,7 @@ class HooksConfig(BaseModel):
     """Webhook URLs fired after memory operations (fire-and-forget)."""
     on_remember: str | None = None  # POST {id, content, memory_type} after remember()
     on_think: str | None = None     # POST {question, answer} after think()
+    webhook_timeout_seconds: float = 5.0
 
 
 class LoggingConfig(BaseModel):
@@ -153,19 +157,63 @@ class ScoringConfig(BaseModel):
     frequency_weight: float = 0.15
 
 
+class ExtractionConfig(BaseModel):
+    """LLM entity/memory extraction settings."""
+    llm_model: str = ""  # Empty = use llm.model
+    temperature: float = 0.1
+    max_retries: int = 3
+    retry_delay_seconds: float = 1.0
+    chunk_size: int = 50
+    user_msg_max_len: int = 2000
+    assistant_msg_max_len: int = 3000
+
+
+class RecallConfig(BaseModel):
+    """Recall pipeline tuning parameters."""
+    search_limit: int = 15
+    entity_search_limit: int = 10
+    provider_search_limit: int = 5
+    entity_graph_depth: int = 2
+    entity_boost_score: float = 0.55
+    semantic_edge_score: float = 0.5
+    entity_co_mention_score: float = 0.4
+    keyword_exact_match_score: float = 0.6
+    fuzzy_match_score: float = 0.3
+    fusion_similarity_weight: float = 0.6
+    fusion_retention_weight: float = 0.4
+    entity_resolution_context_window: int = 10
+    entity_resolution_max_len: int = 3000
+    fusion_entry_max_chars: int = 200
+    format_for_llm_max_chars: int = 2000
+    federated_search_timeout: float = 10.0
+
+
+class SchedulerConfig(BaseModel):
+    """Background scheduler intervals and limits."""
+    consolidate_interval_seconds: int = 21600   # 6 hours
+    cleanup_interval_seconds: int = 86400       # 24 hours
+    decay_report_interval_seconds: int = 86400  # 24 hours
+    queue_drain_interval_seconds: int = 60
+    tick_interval_seconds: int = 60
+    task_timeout_seconds: int = 300
+    decay_access_multiplier: float = 0.1
+
+
 class ConsolidationConfig(BaseModel):
     """Memory consolidation settings."""
     enabled: bool = False
     min_cluster_size: int = 3
     similarity_threshold: float = 0.3
     auto_trigger_threshold: int = 20  # messages before auto-consolidation
-    llm_model: str = "gemini/gemini-2.5-flash"
+    llm_model: str = ""  # Empty = use llm.model
 
 
 class RetrievalAuditConfig(BaseModel):
     """Retrieval audit logging configuration."""
     enabled: bool = False
     path: str = "~/.engram/retrieval_audit.jsonl"
+    max_file_bytes: int = 10_485_760  # 10MB
+    max_backups: int = 3
 
 
 class ResolutionConfig(BaseModel):
@@ -174,7 +222,7 @@ class ResolutionConfig(BaseModel):
     resolve_pronouns: bool = True
     resolve_temporal: bool = True
     context_window: int = 10  # messages to look back for pronoun resolution
-    llm_model: str = "gemini/gemini-2.5-flash"
+    llm_model: str = ""  # Empty = use llm.model
 
 
 class RecallPipelineConfig(BaseModel):
@@ -267,6 +315,9 @@ class Config(BaseModel):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
+    extraction: ExtractionConfig = Field(default_factory=ExtractionConfig)
+    recall: RecallConfig = Field(default_factory=RecallConfig)
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
     resolution: ResolutionConfig = Field(default_factory=ResolutionConfig)
     recall_pipeline: RecallPipelineConfig = Field(default_factory=RecallPipelineConfig)
@@ -395,8 +446,29 @@ _ENV_VAR_MAP: dict[str, tuple[str, str]] = {
     "INGESTION_AUTO_MEMORY": ("ingestion", "auto_memory"),
     "CONSOLIDATION_AUTO_TRIGGER_THRESHOLD": ("consolidation", "auto_trigger_threshold"),
     "CONSOLIDATION_LLM_MODEL": ("consolidation", "llm_model"),
+    "EXTRACTION_LLM_MODEL": ("extraction", "llm_model"),
+    "EXTRACTION_TEMPERATURE": ("extraction", "temperature"),
+    "EXTRACTION_MAX_RETRIES": ("extraction", "max_retries"),
+    "EXTRACTION_CHUNK_SIZE": ("extraction", "chunk_size"),
+    "EXTRACTION_USER_MSG_MAX_LEN": ("extraction", "user_msg_max_len"),
+    "EXTRACTION_ASSISTANT_MSG_MAX_LEN": ("extraction", "assistant_msg_max_len"),
+    "RECALL_SEARCH_LIMIT": ("recall", "search_limit"),
+    "RECALL_ENTITY_SEARCH_LIMIT": ("recall", "entity_search_limit"),
+    "RECALL_PROVIDER_SEARCH_LIMIT": ("recall", "provider_search_limit"),
+    "RECALL_ENTITY_GRAPH_DEPTH": ("recall", "entity_graph_depth"),
+    "RECALL_ENTITY_BOOST_SCORE": ("recall", "entity_boost_score"),
+    "RECALL_FUSION_SIMILARITY_WEIGHT": ("recall", "fusion_similarity_weight"),
+    "RECALL_FUSION_RETENTION_WEIGHT": ("recall", "fusion_retention_weight"),
+    "RECALL_FEDERATED_SEARCH_TIMEOUT": ("recall", "federated_search_timeout"),
+    "SCHEDULER_TICK_INTERVAL": ("scheduler", "tick_interval_seconds"),
+    "SCHEDULER_TASK_TIMEOUT": ("scheduler", "task_timeout_seconds"),
+    "SCHEDULER_CONSOLIDATE_INTERVAL": ("scheduler", "consolidate_interval_seconds"),
+    "SCHEDULER_CLEANUP_INTERVAL": ("scheduler", "cleanup_interval_seconds"),
+    "HOOKS_WEBHOOK_TIMEOUT": ("hooks", "webhook_timeout_seconds"),
     "RETRIEVAL_AUDIT_ENABLED": ("retrieval_audit", "enabled"),
     "RETRIEVAL_AUDIT_PATH": ("retrieval_audit", "path"),
+    "RETRIEVAL_AUDIT_MAX_FILE_BYTES": ("retrieval_audit", "max_file_bytes"),
+    "RETRIEVAL_AUDIT_MAX_BACKUPS": ("retrieval_audit", "max_backups"),
     "EVENT_BUS_ENABLED": ("event_bus", "enabled"),
     "EVENT_BUS_BACKEND": ("event_bus", "backend"),
     "EVENT_BUS_REDIS_URL": ("event_bus", "redis_url"),
@@ -425,6 +497,9 @@ def _get_section_models() -> dict[str, type[BaseModel]]:
         "cache": CacheConfig,
         "rate_limit": RateLimitConfig,
         "scoring": ScoringConfig,
+        "extraction": ExtractionConfig,
+        "recall": RecallConfig,
+        "scheduler": SchedulerConfig,
         "consolidation": ConsolidationConfig,
         "resolution": ResolutionConfig,
         "recall_pipeline": RecallPipelineConfig,

@@ -278,10 +278,11 @@ def run_server(
                 from engram.consolidation.engine import ConsolidationEngine
                 consolidation_engine = ConsolidationEngine(
                     episodic, model=config.llm.model, config=config.consolidation,
+                    disable_thinking=config.llm.disable_thinking,
                 )
             except Exception as e:
                 logger.warning("Consolidation engine unavailable: %s", e)
-        scheduler = create_default_scheduler(episodic, consolidation_engine)
+        scheduler = create_default_scheduler(episodic, consolidation_engine, config=config.scheduler)
         app.state.scheduler = scheduler
 
         @app.on_event("startup")

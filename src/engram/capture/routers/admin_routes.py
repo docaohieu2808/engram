@@ -1,6 +1,6 @@
 """Routes: GET /health, GET /health/ready, GET /status (admin), POST /backup,
 POST /restore, GET /audit/log, GET/POST /scheduler/tasks, POST /benchmark/run,
-POST /auth/token, GET /providers.
+POST /auth/token, GET /providers, GET/PUT /config.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from engram.auth import get_auth_context
 from engram.auth_models import AuthContext, Role, TokenPayload
-from engram.config import Config
+from engram.config import Config, load_config, save_config
 from engram.errors import EngramError, ErrorCode
 from engram.capture.server_helpers import require_admin, resolve_episodic
 
@@ -165,4 +165,102 @@ async def benchmark_run(request: Request, auth: AuthContext = Depends(get_auth_c
         "results": results,
         "accuracy": round(accuracy, 1),
         "avg_latency_ms": round(avg_latency, 1),
+    }
+
+
+# Sections with secrets that should be masked in GET responses
+_SECRET_FIELDS = {"api_key", "jwt_secret", "admin_secret", "password", "dsn", "redis_url"}
+
+# Sections that require server restart to take effect
+_RESTART_REQUIRED = {"serve", "episodic", "embedding", "semantic", "capture", "auth", "telemetry", "extraction", "recall", "scheduler"}
+
+
+def _mask_secrets(data: dict) -> dict:
+    """Recursively mask secret fields in config dict."""
+    out = {}
+    for k, v in data.items():
+        if isinstance(v, dict):
+            out[k] = _mask_secrets(v)
+        elif k in _SECRET_FIELDS and isinstance(v, str) and v:
+            out[k] = "***" + v[-4:] if len(v) > 4 else "***"
+        else:
+            out[k] = v
+    return out
+
+
+@router.get("/config")
+async def get_config(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    """Return current config with secrets masked. Admin only."""
+    require_admin(auth)
+    cfg: Config = request.app.state.cfg
+    data = cfg.model_dump(by_alias=True)
+    return {
+        "status": "ok",
+        "config": _mask_secrets(data),
+        "restart_required_sections": sorted(_RESTART_REQUIRED),
+    }
+
+
+@router.put("/config")
+async def put_config(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    """Update config sections. Body: {"section.field": value, ...}.
+
+    Validates types via Pydantic, saves to config.yaml, reloads.
+    Secret fields in the update body are stored as-is (not masked).
+    """
+    require_admin(auth)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise EngramError(ErrorCode.VALIDATION_ERROR, "Body must be a JSON object")
+
+    import yaml
+    from engram.config import get_config_path
+
+    config_path = get_config_path()
+    if config_path.exists():
+        with open(config_path) as f:
+            raw = yaml.safe_load(f) or {}
+    else:
+        raw = {}
+
+    changed = []
+    for key_path, value in body.items():
+        parts = key_path.split(".")
+        if len(parts) < 2:
+            continue
+        # Navigate to parent dict
+        node = raw
+        for part in parts[:-1]:
+            if part not in node or not isinstance(node[part], dict):
+                node[part] = {}
+            node = node[part]
+        node[parts[-1]] = value
+        changed.append(key_path)
+
+    # Save to disk (write-to-temp + atomic rename)
+    import tempfile
+    tmp_path = config_path.with_suffix(".tmp")
+    with open(tmp_path, "w") as f:
+        yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+
+    # Validate by loading saved file (includes env overlay)
+    try:
+        new_cfg = load_config(tmp_path)
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        raise EngramError(ErrorCode.VALIDATION_ERROR, f"Invalid config: {e}")
+
+    import os
+    os.replace(str(tmp_path), str(config_path))
+
+    # Update in-memory config
+    request.app.state.cfg = new_cfg
+
+    # Check if restart needed
+    restart_needed = any(p.split(".")[0] in _RESTART_REQUIRED for p in changed)
+
+    return {
+        "status": "ok",
+        "changed": changed,
+        "restart_required": restart_needed,
     }

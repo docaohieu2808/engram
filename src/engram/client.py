@@ -97,7 +97,11 @@ class EngramClient:
         """Lazy-init MemoryExtractor."""
         if self._extractor is None:
             from engram.memory_extractor import MemoryExtractor
-            self._extractor = MemoryExtractor(model=self._extract_model)
+            self._extractor = MemoryExtractor(
+                model=self._extract_model,
+                config=self._config.extraction,
+                disable_thinking=self._config.llm.disable_thinking,
+            )
         return self._extractor
 
     # ------------------------------------------------------------------ #

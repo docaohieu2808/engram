@@ -307,7 +307,15 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
 
         cfg = get_config()
         schema = load_schema(cfg.semantic.schema_name)
-        extractor = EntityExtractor(model=cfg.llm.model, schema=schema)
+        extractor = EntityExtractor(
+            model=cfg.extraction.llm_model or cfg.llm.model,
+            schema=schema,
+            disable_thinking=cfg.llm.disable_thinking,
+            chunk_size=cfg.extraction.chunk_size,
+            max_retries=cfg.extraction.max_retries,
+            retry_delay_seconds=cfg.extraction.retry_delay_seconds,
+            temperature=cfg.extraction.temperature,
+        )
         graph = get_graph()
         episodic = get_episodic()
 

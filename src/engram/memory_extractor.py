@@ -13,13 +13,11 @@ from typing import Any
 
 import litellm
 
+from engram.config import ExtractionConfig
 from engram.sanitize import sanitize_llm_input
 
 litellm.suppress_debug_info = True
 logger = logging.getLogger("engram")
-
-# Default extraction model — cheap, fast, good at JSON extraction
-_DEFAULT_EXTRACT_MODEL = "gemini/gemini-2.5-flash"
 
 EXTRACTION_PROMPT = """Extract important items from this conversation to remember long-term.
 Return a JSON array of objects with fields: content, type, priority.
@@ -55,8 +53,18 @@ Output (JSON array only, no markdown, no extra text):
 class MemoryExtractor:
     """Extract episodic memory items from a conversation turn using LLM."""
 
-    def __init__(self, model: str | None = None):
-        self._model = model or _DEFAULT_EXTRACT_MODEL
+    def __init__(
+        self,
+        model: str | None = None,
+        config: ExtractionConfig | None = None,
+        disable_thinking: bool = False,
+    ):
+        self._config = config or ExtractionConfig()
+        self._model = model or (self._config.llm_model or None)
+        self._disable_thinking = disable_thinking
+        if not self._model:
+            # Fallback to default; caller should pass llm.model from top-level config
+            self._model = "gemini/gemini-2.5-flash"
 
     async def extract(self, user_msg: str, assistant_msg: str) -> list[dict[str, Any]]:
         """Extract memorable items from a conversation turn.
@@ -70,18 +78,21 @@ class MemoryExtractor:
             Empty list on failure (fail-open).
         """
         # I-C4: sanitize user/assistant messages before LLM prompt interpolation
+        cfg = self._config
         prompt = EXTRACTION_PROMPT.format(
-            user_msg=sanitize_llm_input(user_msg, max_len=2000),
-            assistant_msg=sanitize_llm_input(assistant_msg, max_len=3000),
+            user_msg=sanitize_llm_input(user_msg, max_len=cfg.user_msg_max_len),
+            assistant_msg=sanitize_llm_input(assistant_msg, max_len=cfg.assistant_msg_max_len),
         )
 
         try:
-            response = await litellm.acompletion(
+            kwargs: dict[str, Any] = dict(
                 model=self._model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                thinking={"type": "disabled"},
+                temperature=cfg.temperature,
             )
+            if self._disable_thinking:
+                kwargs["thinking"] = {"type": "disabled"}
+            response = await litellm.acompletion(**kwargs)
             content = response.choices[0].message.content
             return self._parse(content)
         except Exception as e:
