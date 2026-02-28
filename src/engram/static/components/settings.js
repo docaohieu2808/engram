@@ -5,7 +5,7 @@ const Settings = {
   _loaded: false,
   _config: null,
   _restartSections: new Set(),
-  _dirty: {},  // key_path → new value
+  _dirty: {},  // key_path -> new value
   _fetchedModels: null,  // { anthropic: [...], gemini: [...], openai: [...] }
 
   async load() {
@@ -41,13 +41,13 @@ const Settings = {
     el.innerHTML = `
       ${this._config ? this._modelSelector() : ''}
       ${this._config ? this._configEditor() : ''}
-      <div class="card" style="margin-bottom:12px">
+      <div class="card settings-card">
         <h3>Scheduler Tasks</h3>
-        ${scheduler.length ? this._schedulerTable(scheduler) : '<span style="color:var(--text-muted)">No tasks registered</span>'}
+        ${scheduler.length ? this._schedulerTable(scheduler) : '<span class="empty-state">No tasks registered</span>'}
       </div>
-      <div class="card" style="border-color:var(--error)">
-        <h3 style="color:var(--error)">Danger Zone</h3>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="card settings-card danger-card">
+        <h3>Danger Zone</h3>
+        <div class="danger-actions">
           <button class="btn btn-danger" onclick="Settings.cleanup()">Cleanup Expired</button>
           <button class="btn btn-danger" onclick="Settings.clearAll()">Clear All Memories</button>
         </div>
@@ -90,35 +90,36 @@ const Settings = {
     const opts = models.map(m =>
       `<option value="${m.value}"${m.value === currentModel ? ' selected' : ''}>${m.label}</option>`
     ).join('');
-    const noKeyMsg = !hasModels
-      ? `<span style="color:var(--warning);font-size:11px">No models loaded — set API key for ${currentProvider} or click Refresh</span>`
-      : '';
 
-    return `<div class="card" style="margin-bottom:12px">
-      <h3 style="margin:0 0 8px">Model</h3>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <div>
-          <label style="font-size:11px;color:var(--text-muted)">LLM Model</label>
-          ${hasModels ? `<select id="model-select" onchange="Settings._onModelChange(this.value)" style="padding:4px 8px">
-            ${opts}
-            <option value="_custom"${!currentInList ? ' selected' : ''}>Custom...</option>
-          </select>` : `<select id="model-select" disabled style="padding:4px 8px"><option>No models available</option></select>`}
-          ${noKeyMsg}
+    return `<div class="card settings-card">
+      <h3>Model</h3>
+      <div class="model-selector">
+        <div class="form-group">
+          <label>LLM Model</label>
+          ${hasModels
+            ? `<select id="model-select" onchange="Settings._onModelChange(this.value)">
+                ${opts}
+                <option value="_custom"${!currentInList ? ' selected' : ''}>Custom...</option>
+              </select>`
+            : `<select id="model-select" disabled><option>No models available</option></select>`}
+          ${!hasModels ? `<div class="model-warning">No models loaded — set API key for ${currentProvider} or click Refresh</div>` : ''}
         </div>
-        <div id="model-custom-wrap" style="display:${currentInList ? 'none' : 'block'}">
-          <label style="font-size:11px;color:var(--text-muted)">Custom model ID</label>
-          <input id="model-custom" type="text" value="${currentModel}" style="width:220px" onchange="Settings._onChange('llm.model',this.value)">
+        <div class="form-group" id="model-custom-wrap" style="display:${currentInList ? 'none' : 'block'}">
+          <label>Custom model ID</label>
+          <input id="model-custom" type="text" value="${currentModel}" onchange="Settings._onChange('llm.model',this.value)">
         </div>
-        <div>
-          <label style="font-size:11px;color:var(--text-muted)">Disable thinking</label>
-          <select id="model-thinking" onchange="Settings._onChange('llm.disable_thinking',this.value==='true')" style="padding:4px 8px">
+        <div class="form-group">
+          <label>Disable thinking</label>
+          <select id="model-thinking" onchange="Settings._onChange('llm.disable_thinking',this.value==='true')">
             <option value="false"${!disableThinking ? ' selected' : ''}>No</option>
             <option value="true"${disableThinking ? ' selected' : ''}>Yes</option>
           </select>
         </div>
+      </div>
+      <div class="model-actions">
         <button class="btn btn-sm" onclick="Settings.testModel()" id="model-test-btn">Test</button>
-        <button class="btn btn-sm" onclick="Settings.refreshModels()" id="model-refresh-btn" title="Fetch latest models from providers">↻ Refresh Models</button>
-        <span id="model-test-result" style="font-size:12px"></span>
+        <button class="btn btn-sm" onclick="Settings.refreshModels()" id="model-refresh-btn" title="Fetch latest models from providers">Refresh Models</button>
+        <span id="model-test-result" class="model-test-result"></span>
       </div>
     </div>`;
   },
@@ -146,10 +147,12 @@ const Settings = {
     btn.disabled = true; btn.textContent = 'Testing...';
     result.textContent = '';
     try {
-      const res = await API.think('ping');
+      const res = await API.testModel();
+      result.className = 'model-test-result';
       result.style.color = 'var(--success)';
-      result.textContent = 'OK — model responded';
+      result.textContent = `OK — ${res.response}`;
     } catch (e) {
+      result.className = 'model-test-result';
       result.style.color = 'var(--error)';
       result.textContent = `Error: ${e.message}`;
     }
@@ -178,7 +181,7 @@ const Settings = {
     } catch (e) {
       if (result) { result.style.color = 'var(--error)'; result.textContent = e.message; }
     }
-    btn.disabled = false; btn.textContent = '↻ Refresh Models';
+    btn.disabled = false; btn.textContent = 'Refresh Models';
   },
 
   _configEditor() {
@@ -190,19 +193,22 @@ const Settings = {
         return this._sectionFields(s, data, needsRestart);
       }).join('');
       if (!sectionHtml) return '';
-      return `<div class="config-group"><h4 style="margin:0 0 6px;color:var(--primary)">${g.label}</h4>${sectionHtml}</div>`;
+      return `<div class="config-group">
+        <div class="config-group-title">${g.label}</div>
+        ${sectionHtml}
+      </div>`;
     }).filter(Boolean).join('');
 
-    return `<div class="card" style="margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h3 style="margin:0">Configuration</h3>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-sm" onclick="Settings._render()" title="Reload">↻ Reload</button>
+    return `<div class="card settings-card">
+      <div class="card-header">
+        <h3>Configuration</h3>
+        <div class="card-header-actions">
+          <button class="btn btn-sm" onclick="Settings._render()" title="Reload">Reload</button>
           <button class="btn btn-sm btn-primary" id="cfg-save-btn" onclick="Settings.saveConfig()" disabled>Save Changes</button>
         </div>
       </div>
-      <div id="cfg-status" style="display:none;margin-bottom:8px;padding:6px 10px;border-radius:4px;font-size:12px"></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px">${groups}</div>
+      <div id="cfg-status" class="cfg-status"></div>
+      <div class="config-grid">${groups}</div>
     </div>`;
   },
 
@@ -326,7 +332,7 @@ const Settings = {
   },
 
   _sectionFields(section, data, needsRestart) {
-    const badge = needsRestart ? ' <span style="background:var(--warning);color:#000;padding:1px 5px;border-radius:3px;font-size:10px">restart required</span>' : '';
+    const badge = needsRestart ? '<span class="badge-restart">restart required</span>' : '';
     const rows = Object.entries(data).map(([field, value]) => {
       const keyPath = `${section}.${field}`;
       const inputId = `cfg-${keyPath.replace(/\./g, '-')}`;
@@ -342,14 +348,14 @@ const Settings = {
         const changeHandler = isProvider
           ? `Settings._onDropdownChange('${keyPath}','${inputId}');Settings._cascadeProvider('${keyPath}')`
           : `Settings._onDropdownChange('${keyPath}','${inputId}')`;
-        input = `<select id="${inputId}" onchange="${changeHandler}" style="min-width:160px">` +
+        input = `<select id="${inputId}" onchange="${changeHandler}">` +
           opts.map(o => `<option value="${o.value}"${String(o.value) === currentVal ? ' selected' : ''}>${o.label}</option>`).join('') +
           (isModel ? `<option value="__custom"${hasCustom ? ' selected' : ''}>Custom...</option>` : '') +
           (hasCustom && !isModel ? `<option value="${currentVal}" selected>${currentVal}</option>` : '') +
           `</select>` +
           (isModel ? `<input id="${inputId}-custom" type="text" value="${hasCustom ? currentVal : ''}" ` +
             `placeholder="e.g. gemini/gemini-2.5-pro-preview" ` +
-            `style="width:200px;margin-left:4px;display:${hasCustom ? 'inline' : 'none'}" ` +
+            `style="display:${hasCustom ? 'inline' : 'none'}" ` +
             `onchange="Settings._onChange('${keyPath}',this.value)">` : '');
       } else if (type === 'boolean') {
         input = `<select id="${inputId}" onchange="Settings._onChange('${keyPath}',this.value==='true')">
@@ -358,17 +364,23 @@ const Settings = {
         </select>`;
       } else if (type === 'number') {
         const step = Number.isInteger(value) ? '1' : '0.01';
-        input = `<input id="${inputId}" type="number" step="${step}" value="${value}" onchange="Settings._onChange('${keyPath}',Number(this.value))" style="width:100px">`;
+        input = `<input id="${inputId}" type="number" step="${step}" value="${value}" onchange="Settings._onChange('${keyPath}',Number(this.value))">`;
       } else if (type === 'object' && value !== null) {
         return ''; // skip nested objects/arrays in flat editor
       } else {
         const displayVal = String(value || '').replace(/"/g, '&quot;');
-        input = `<input id="${inputId}" type="text" value="${displayVal}" onchange="Settings._onChange('${keyPath}',this.value)" style="width:180px">`;
+        input = `<input id="${inputId}" type="text" value="${displayVal}" onchange="Settings._onChange('${keyPath}',this.value)">`;
       }
-      return `<tr><td style="color:var(--text-secondary);padding:2px 8px 2px 0;font-size:12px;white-space:nowrap">${field}</td><td style="padding:2px 0">${input}</td></tr>`;
+      return `<div class="config-field">
+        <span class="config-field-label">${field}</span>
+        <div class="config-field-input">${input}</div>
+      </div>`;
     }).filter(Boolean).join('');
     if (!rows) return '';
-    return `<div style="margin-bottom:6px"><div style="font-size:11px;color:var(--text-muted);font-weight:600">${section}${badge}</div><table style="font-size:12px">${rows}</table></div>`;
+    return `<div class="config-fields">
+      ${badge ? `<div class="config-field-label">${section} ${badge}</div>` : ''}
+      ${rows}
+    </div>`;
   },
 
   _onDropdownChange(keyPath, inputId) {
@@ -394,13 +406,12 @@ const Settings = {
     try {
       const res = await API.updateConfig(this._dirty);
       if (statusEl) {
-        const restartBtn = '<button onclick="Settings.restartServer()" style="margin-left:8px;padding:3px 10px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Restart Now</button>';
+        const restartBtn = '<button class="btn-restart-inline" onclick="Settings.restartServer()">Restart Now</button>';
         const msg = res.restart_required
           ? `Saved ${res.changed.length} changes. <strong>Server restart required.</strong>${restartBtn}`
           : `Saved ${res.changed.length} changes.`;
         statusEl.style.display = 'block';
-        statusEl.style.background = res.restart_required ? '#fff3cd' : '#d4edda';
-        statusEl.style.color = res.restart_required ? '#856404' : '#155724';
+        statusEl.className = res.restart_required ? 'cfg-status cfg-status--warning' : 'cfg-status cfg-status--success';
         statusEl.innerHTML = msg;
       }
       this._dirty = {};
@@ -410,8 +421,7 @@ const Settings = {
     } catch (e) {
       if (statusEl) {
         statusEl.style.display = 'block';
-        statusEl.style.background = 'var(--error-bg, #f8d7da)';
-        statusEl.style.color = 'var(--error, #721c24)';
+        statusEl.className = 'cfg-status cfg-status--error';
         statusEl.textContent = e.message;
       }
       App.toast(e.message, 'error');
@@ -425,8 +435,7 @@ const Settings = {
       await API.restartServer();
       if (statusEl) {
         statusEl.style.display = 'block';
-        statusEl.style.background = 'var(--info-bg, #d1ecf1)';
-        statusEl.style.color = 'var(--info, #0c5460)';
+        statusEl.className = 'cfg-status cfg-status--success';
         statusEl.innerHTML = 'Server restarting... page will reload automatically.';
       }
       // Poll until server is back, then reload
@@ -457,10 +466,10 @@ const Settings = {
 
   _kvTable(obj) {
     const entries = Object.entries(obj);
-    if (!entries.length) return '<span style="color:var(--text-muted)">—</span>';
+    if (!entries.length) return '<span class="empty-state">—</span>';
     return '<table>' + entries.map(([k, v]) => {
       const display = typeof v === 'object' ? JSON.stringify(v) : String(v);
-      return `<tr><td style="color:var(--text-secondary);padding:3px 10px 3px 0">${k}</td><td style="padding:3px 0">${display}</td></tr>`;
+      return `<tr><td class="config-field-label" style="padding:3px 10px 3px 0">${k}</td><td style="padding:3px 0">${display}</td></tr>`;
     }).join('') + '</table>';
   },
 
@@ -471,8 +480,8 @@ const Settings = {
         <td>${this._formatInterval(t.interval_seconds)}</td>
         <td>${t.run_count}</td>
         <td>${this._formatInterval(t.next_run_in)}</td>
-        <td>${t.requires_llm ? '<span style="color:var(--warning)">Yes</span>' : 'No'}</td>
-        <td style="color:var(--error);font-size:11px">${t.last_error || '—'}</td>
+        <td>${t.requires_llm ? '<span class="badge" style="--src-color:var(--warning);background:rgba(245,158,11,.12);color:var(--warning)">Yes</span>' : 'No'}</td>
+        <td class="text-error" style="font-size:11px">${t.last_error || '—'}</td>
         <td><button class="btn btn-sm" onclick="Settings.forceRun('${t.name}')">Run</button></td>
       </tr>`).join('') + '</tbody></table></div>';
   },
