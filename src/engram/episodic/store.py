@@ -132,6 +132,9 @@ class EpisodicStore(
         await self._ensure_backend()
         count = await self._backend.count()
         if count > 0:
-            peek = await self._backend.peek(1)
-            if peek and peek.get("embeddings") and peek["embeddings"][0]:
-                self._embedding_dim = len(peek["embeddings"][0])
+            try:
+                peek = await self._backend.peek(1)
+                if peek and peek.get("embeddings") and peek["embeddings"][0]:
+                    self._embedding_dim = len(peek["embeddings"][0])
+            except Exception as exc:
+                logger.warning("_detect_embedding_dim: peek failed (%s), skipping", exc)

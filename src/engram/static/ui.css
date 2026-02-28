@@ -676,6 +676,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 /* ===== Truncated text ===== */
 .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; display: inline-block; }
 .truncate-wide { max-width: 350px; }
+.truncate-multiline { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; max-width: 420px; white-space: pre-wrap; word-break: break-word; }
 
 /* ===== Memory detail ===== */
 .memory-detail { padding: 20px 24px; }
