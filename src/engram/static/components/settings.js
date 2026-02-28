@@ -191,16 +191,22 @@ const Settings = {
   // Model catalogs per provider (used for cascading dropdowns)
   _llmModels: {
     anthropic: [
+      { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6', thinking: false },
       { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6', thinking: false },
       { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', thinking: false },
+      { value: 'anthropic/claude-sonnet-4-5-20250514', label: 'Claude Sonnet 4.5', thinking: false },
     ],
     gemini: [
       { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash', thinking: true },
       { value: 'gemini/gemini-2.5-pro', label: 'Gemini 2.5 Pro', thinking: true },
+      { value: 'gemini/gemini-3-flash-preview', label: 'Gemini 3 Flash (preview)', thinking: false },
+      { value: 'gemini/gemini-3-pro-preview', label: 'Gemini 3 Pro (preview)', thinking: false },
     ],
     openai: [
       { value: 'openai/gpt-4o', label: 'GPT-4o', thinking: false },
       { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', thinking: false },
+      { value: 'openai/o3', label: 'o3', thinking: true },
+      { value: 'openai/o3-mini', label: 'o3 Mini', thinking: true },
     ],
   },
   _embeddingModels: {
