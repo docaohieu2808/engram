@@ -2,6 +2,7 @@
 
 Only returns currently active models (retired ones are automatically excluded
 by the provider). Falls back to empty list on API failure (no key, timeout, etc.).
+Each fetcher accepts an api_key param (resolved from config + env by caller).
 """
 
 from __future__ import annotations
@@ -21,12 +22,10 @@ def _is_text_model(model_id: str) -> bool:
     return not any(kw in low for kw in _NON_TEXT_KW)
 
 
-async def fetch_anthropic_models() -> list[str]:
+async def fetch_anthropic_models(api_key: str = "") -> list[str]:
     """Fetch active models from Anthropic API."""
-    import os
     import httpx
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return []
     try:
@@ -53,12 +52,10 @@ async def fetch_anthropic_models() -> list[str]:
         return []
 
 
-async def fetch_gemini_models() -> list[str]:
+async def fetch_gemini_models(api_key: str = "") -> list[str]:
     """Fetch active models from Google Gemini API."""
-    import os
     import httpx
 
-    api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         return []
     try:
@@ -87,12 +84,10 @@ async def fetch_gemini_models() -> list[str]:
         return []
 
 
-async def fetch_openai_models() -> list[str]:
+async def fetch_openai_models(api_key: str = "") -> list[str]:
     """Fetch active models from OpenAI API."""
-    import os
     import httpx
 
-    api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
         return []
     try:
