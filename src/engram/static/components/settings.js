@@ -402,17 +402,19 @@ const Settings = {
   },
 
   _waitForServer(attempt = 0) {
-    if (attempt > 30) { // 30s max wait
-      App.toast('Server did not come back. Check manually.', 'error');
+    if (attempt > 20) { // 20s max wait
+      App.toast('Server did not come back. Please refresh manually.', 'error');
       return;
     }
+    // First 3 attempts wait longer to give server time to restart
+    const delay = attempt < 3 ? 2000 : 1000;
     setTimeout(async () => {
       try {
         const res = await fetch('/health');
         if (res.ok) { window.location.reload(); return; }
       } catch {}
       Settings._waitForServer(attempt + 1);
-    }, 1000);
+    }, delay);
   },
 
   // --- Helpers ---
