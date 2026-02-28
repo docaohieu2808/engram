@@ -16,6 +16,15 @@ _NON_TEXT_KW = frozenset({
 })
 
 
+# Curated list for OAuth tokens (can't call /v1/models)
+_ANTHROPIC_CURATED = sorted([
+    "anthropic/claude-opus-4-6",
+    "anthropic/claude-sonnet-4-6",
+    "anthropic/claude-sonnet-4-5-20250514",
+    "anthropic/claude-haiku-4-5-20251001",
+])
+
+
 def _is_text_model(model_id: str) -> bool:
     """Filter out non-text models by keyword."""
     low = model_id.lower()
@@ -23,11 +32,18 @@ def _is_text_model(model_id: str) -> bool:
 
 
 async def fetch_anthropic_models(api_key: str = "") -> list[str]:
-    """Fetch active models from Anthropic API."""
+    """Fetch active models from Anthropic API.
+
+    Note: OAuth tokens (sk-ant-oat*) don't support /v1/models.
+    Only standard API keys (sk-ant-api*) work.
+    """
     import httpx
 
     if not api_key:
         return []
+    # OAuth tokens can't list models — return curated list
+    if "oat" in api_key[:15]:
+        return _ANTHROPIC_CURATED
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             models = []
