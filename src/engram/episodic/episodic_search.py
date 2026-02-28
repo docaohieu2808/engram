@@ -153,11 +153,16 @@ class _EpisodicSearchMixin:
             memories.append(_build_memory(mem_id, doc, meta))
         return memories
 
-    async def get_recent(self, n: int = 20) -> list[EpisodicMemory]:
+    async def get_recent(
+        self, n: int = 20, where: dict[str, Any] | None = None,
+    ) -> list[EpisodicMemory]:
         """Retrieve the most recent N memories sorted by timestamp descending.
 
-        Uses ChromaDB native ordering via metadata timestamp_iso filter where possible.
-        Falls back to fetching a larger window when collection is small.
+        Args:
+            n: Maximum number of results.
+            where: Optional ChromaDB ``where`` filter (e.g. ``{"source": "OpenClaw"}``).
+                   When provided, scans the full collection instead of just the tail
+                   so that older items matching the filter are not missed.
         """
         n = min(n, 1000)  # Hard cap to prevent unbounded fetches
         try:
@@ -165,16 +170,22 @@ class _EpisodicSearchMixin:
             count = await self._backend.count()
             if count == 0:
                 return []
-            # Fetch from the tail of the collection (most recent insertions).
-            # ChromaDB get() returns items in insertion order, so we offset
-            # to skip older entries and only fetch the newest window.
-            fetch_limit = min(n * 5, count, 2000)
-            tail_offset = max(0, count - fetch_limit)
-            result = await self._backend.get_many(
-                include=["documents", "metadatas"],
-                limit=fetch_limit,
-                offset=tail_offset,
-            )
+            if where:
+                # With a metadata filter we must scan the whole collection;
+                # ChromaDB get() with where= handles this server-side.
+                result = await self._backend.get_many(
+                    include=["documents", "metadatas"],
+                    where=where,
+                )
+            else:
+                # No filter — fetch from the tail (most recent insertions).
+                fetch_limit = min(n * 5, count, 2000)
+                tail_offset = max(0, count - fetch_limit)
+                result = await self._backend.get_many(
+                    include=["documents", "metadatas"],
+                    limit=fetch_limit,
+                    offset=tail_offset,
+                )
         except Exception as e:
             raise RuntimeError(f"get_recent failed: {e}") from e
 

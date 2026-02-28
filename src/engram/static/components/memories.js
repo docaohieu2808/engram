@@ -100,7 +100,7 @@ const Memories = {
     return `<tr>
       <td><input type="checkbox" ${checked} onchange="Memories.toggleSelect('${m.id}',this.checked)"></td>
       <td><span class="truncate" style="max-width:60px;cursor:pointer;font-family:var(--mono);font-size:11px" title="${m.id}" onclick="navigator.clipboard.writeText('${m.id}');App.toast('ID copied','info')">${shortId}</span></td>
-      <td><span class="truncate" style="max-width:400px" title="${this._esc(m.content)}">${App.truncate(m.content, 120)}</span></td>
+      <td><span class="truncate-multiline" title="${this._esc(m.content)}">${this._esc(App.truncate(m.content, 400))}</span></td>
       <td>${App.typeBadge(m.memory_type)}</td>
       <td>${Memories._sourceBadge(m.source)}</td>
       <td>${App.priorityBar(m.priority)}</td>

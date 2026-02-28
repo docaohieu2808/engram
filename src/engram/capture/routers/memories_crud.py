@@ -41,24 +41,38 @@ async def list_memories(
     state = request.app.state
     ep = resolve_episodic(state, auth)
     limit = min(limit, 100)
-    # Fetch enough to cover offset+limit after filtering
-    fetch_limit = min((offset + limit) * 3, 5000)
-    if search:
-        raw = await ep.search(search, limit=fetch_limit)
+    # Build ChromaDB where filter for fields that can be pushed down
+    where_parts: list[dict] = []
+    if source:
+        where_parts.append({"source": source})
+    if memory_type:
+        mt_vals = memory_type.split(",")
+        if len(mt_vals) == 1:
+            where_parts.append({"memory_type": mt_vals[0]})
+        else:
+            where_parts.append({"memory_type": {"$in": mt_vals}})
+
+    chroma_where = None
+    if len(where_parts) == 1:
+        chroma_where = where_parts[0]
+    elif len(where_parts) > 1:
+        chroma_where = {"$and": where_parts}
+
+    # When ChromaDB handles filtering server-side, fetch a large window
+    # so pagination totals are accurate. Without server-side filters,
+    # use a smaller multiplier since post-filtering is lighter.
+    if chroma_where:
+        fetch_limit = 5000  # ChromaDB does the heavy lifting
     else:
-        raw = await ep.get_recent(n=fetch_limit)
+        fetch_limit = min((offset + limit) * 3, 5000)
+    if search:
+        raw = await ep.search(search, limit=fetch_limit, filters=chroma_where)
+    else:
+        raw = await ep.get_recent(n=fetch_limit, where=chroma_where)
 
     filtered = []
-    mt_filter = set(memory_type.split(",")) if memory_type else None
     tag_filter = set(t.strip() for t in tags.split(",")) if tags else None
     for m in raw:
-        mt_val = m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type)
-        if mt_filter and mt_val not in mt_filter:
-            continue
-        if source:
-            m_source = getattr(m, "source", "") or ""
-            if m_source != source:
-                continue
         if not (priority_min <= m.priority <= priority_max):
             continue
         if not (confidence_min <= m.confidence <= confidence_max):
