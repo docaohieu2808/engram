@@ -279,10 +279,18 @@ async def list_models(
     import litellm
 
     all_models = litellm.model_list or []
+    # Exclude non-text models (image gen, video, audio, embedding, vision-only, TTS)
+    _non_text = {"image", "vision", "embed", "veo", "audio", "tts", "aqa",
+                 "learnlm", "imagen", "sora", "dall-e", "whisper", "moderation"}
+
+    def _is_text_model(name: str) -> bool:
+        low = name.lower()
+        return not any(kw in low for kw in _non_text)
+
     provider_filters = {
         "anthropic": lambda m: m.startswith("claude-") and not m.startswith("claude-instant"),
-        "gemini": lambda m: m.startswith("gemini/"),
-        "openai": lambda m: m.startswith("gpt-") or m.startswith("o1-") or m.startswith("o3-") or m.startswith("o4-"),
+        "gemini": lambda m: m.startswith("gemini/gemini-") and _is_text_model(m),
+        "openai": lambda m: (m.startswith("gpt-") or m.startswith("o1-") or m.startswith("o3-") or m.startswith("o4-")) and _is_text_model(m),
     }
 
     result = {}
