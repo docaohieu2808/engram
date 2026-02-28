@@ -303,6 +303,25 @@ async def list_models(
     return {"models": result}
 
 
+@router.post("/test-model")
+async def test_model(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    """Lightweight model test — calls LLM directly without ChromaDB."""
+    import litellm
+
+    cfg: Config = request.app.state.cfg
+    model = cfg.llm.model
+    try:
+        resp = await litellm.acompletion(
+            model=model,
+            messages=[{"role": "user", "content": "say hi"}],
+            max_tokens=10,
+            timeout=15,
+        )
+        return {"status": "ok", "response": resp.choices[0].message.content.strip()[:50]}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)[:200])
+
+
 @router.post("/restart")
 async def restart_server(request: Request, auth: AuthContext = Depends(get_auth_context)):
     """Gracefully restart the server process. Admin only.
