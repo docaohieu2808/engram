@@ -41,10 +41,12 @@ class ConsolidationEngine:
         episodic: EpisodicStore,
         model: str,
         config: ConsolidationConfig | None = None,
+        disable_thinking: bool = False,
     ):
         self._episodic = episodic
         self._model = model
         self._config = config or ConsolidationConfig()
+        self._disable_thinking = disable_thinking
 
     async def consolidate(self, limit: int = 50) -> list[str]:
         """Fetch recent unconsolidated memories, cluster, summarize, store.
@@ -154,11 +156,13 @@ class ConsolidationEngine:
         )
         prompt = _CONSOLIDATION_PROMPT.format(memories=memory_texts)
 
-        response = await litellm.acompletion(
+        kwargs = dict(
             model=self._model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=300,
-            thinking={"type": "disabled"},
         )
+        if self._disable_thinking:
+            kwargs["thinking"] = {"type": "disabled"}
+        response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content.strip()

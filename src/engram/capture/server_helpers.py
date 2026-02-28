@@ -50,6 +50,7 @@ def resolve_engine(state: Any, auth: AuthContext, ep: EpisodicStore, gr: Semanti
         recall_config=cfg.recall_pipeline,
         scoring_config=cfg.scoring,
         disable_thinking=cfg.llm.disable_thinking,
+        recall=cfg.recall,
     )
 
 

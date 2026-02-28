@@ -11,7 +11,7 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-from engram.config import RecallPipelineConfig, ScoringConfig
+from engram.config import RecallConfig, RecallPipelineConfig, ScoringConfig
 from engram.models import ResolvedText, SearchResult
 
 if TYPE_CHECKING:
@@ -30,11 +30,13 @@ class ParallelSearcher:
         semantic: SemanticGraph,
         config: RecallPipelineConfig | None = None,
         scoring: ScoringConfig | None = None,
+        recall: RecallConfig | None = None,
     ):
         self._episodic = episodic
         self._semantic = semantic
         self._config = config or RecallPipelineConfig()
         self._scoring = scoring
+        self._recall = recall or RecallConfig()
 
     async def search(
         self,
@@ -104,7 +106,7 @@ class ParallelSearcher:
         """Traverse semantic graph for entity-related information."""
         if not entity_names:
             return []
-        related = await self._semantic.get_related(entity_names, depth=2)
+        related = await self._semantic.get_related(entity_names, depth=self._recall.entity_graph_depth)
         results: list[SearchResult] = []
         for name, data in related.items():
             for node in data.get("nodes", []):
@@ -112,14 +114,14 @@ class ParallelSearcher:
                 results.append(SearchResult(
                     id=node.key,
                     content=f"{node.type}: {node.name}{attrs_str}",
-                    score=0.5,
+                    score=self._recall.semantic_edge_score,
                     source="entity_graph",
                 ))
             for edge in data.get("edges", []):
                 results.append(SearchResult(
                     id=edge.key,
                     content=f"{edge.from_node} --{edge.relation}--> {edge.to_node}",
-                    score=0.4,
+                    score=self._recall.entity_co_mention_score,
                     source="entity_graph",
                 ))
         return results
@@ -133,7 +135,7 @@ class ParallelSearcher:
             SearchResult(
                 id=m.id,
                 content=m.content,
-                score=0.6,  # Fixed score; FTS5 confirms exact keyword match
+                score=self._recall.keyword_exact_match_score,
                 source="fts",
                 memory_type=m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type),
                 importance=m.priority,
@@ -149,7 +151,7 @@ class ParallelSearcher:
             SearchResult(
                 id=n.key,
                 content=f"{n.type}: {n.name}",
-                score=0.3,
+                score=self._recall.fuzzy_match_score,
                 source="keyword",
             )
             for n in nodes[:limit]

@@ -4,6 +4,42 @@ All notable changes to this project are documented here. Follows [Keep a Changel
 
 ---
 
+## [v0.4.2] — 2026-02-28
+### Configuration Management + Live Settings Editor
+
+**Added**
+- **Configurable Everything** (`src/engram/config.py` extensions)
+  - ExtractionConfig: llm_model, temperature, max_retries, retry_delay_seconds, chunk_size, msg limits
+  - RecallConfig: search_limit, entity_search_limit, provider_search_limit, graph_depth, scoring params
+  - SchedulerConfig: consolidate/cleanup/decay intervals, tick interval, task timeout, decay multiplier
+  - Secondary configs: health.check_llm_model, cache.max_*_size, hooks.webhook_timeout, retrieval_audit limits
+  - All hardcoded tuning parameters now YAML-configurable via config.yaml or ENGRAM_* env vars
+
+- **WebUI Settings Editor** (new `/Settings` tab)
+  - GET/PUT `/api/v1/config` endpoints for read/write config.yaml
+  - Grouped config sections: LLM, Embedding, Recall, Extraction, Scheduler, Health, Cache, Hooks
+  - Live preview of current config values with type validation
+  - Restart-required badge for server-level configs
+  - Save validation: type checking, range limits, dependency verification
+
+- **LLM Model Selector** (Settings → LLM section)
+  - Dropdown UI for model selection (Gemini, Claude, OpenAI)
+  - Per-provider API key configuration
+  - Test button to verify model connectivity
+  - Auto-set `disable_thinking` flag based on model family
+
+- **Think Flag Unification** (Phase 2)
+  - All 4 modules now respect `cfg.llm.disable_thinking`:
+    - `recall/entity_resolver.py`
+    - `health/components.py`
+    - `memory_extractor.py`
+    - `consolidation/engine.py`
+  - Zero hardcoded thinking={"type":"disabled"} outside defaults
+
+**Tests:** 972 total (+ config validation, WebUI editor, settings form tests)
+
+---
+
 ## [v0.4.1] — 2026-02-27
 ### WebSocket API + Test Coverage
 

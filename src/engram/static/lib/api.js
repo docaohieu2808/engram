@@ -87,6 +87,10 @@ const API = {
   // Benchmark
   runBenchmark(questions) { return this._fetch('/benchmark/run', { method: 'POST', body: JSON.stringify({ questions }) }); },
 
+  // Config
+  getConfig() { return this._fetch('/config'); },
+  updateConfig(body) { return this._fetch('/config', { method: 'PUT', body: JSON.stringify(body) }); },
+
   // Cleanup & summarize
   cleanup() { return this._fetch('/cleanup', { method: 'POST' }); },
   summarize(count = 20) { return this._fetch('/summarize', { method: 'POST', body: JSON.stringify({ count }) }); },

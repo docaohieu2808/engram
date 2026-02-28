@@ -56,17 +56,31 @@ EXTRACTION_PROMPT = """You are an entity extraction system. Extract entities and
 class EntityExtractor:
     """Extract semantic entities from chat messages using LLM."""
 
-    def __init__(self, model: str, schema: SchemaDefinition):
+    def __init__(
+        self,
+        model: str,
+        schema: SchemaDefinition,
+        disable_thinking: bool = False,
+        chunk_size: int = 50,
+        max_retries: int = 3,
+        retry_delay_seconds: float = 1.0,
+        temperature: float = 0.1,
+    ):
         self._model = model
         self._schema = schema
         self._schema_prompt = schema_to_prompt(schema)
+        self._disable_thinking = disable_thinking
+        self._chunk_size = chunk_size
+        self._max_retries = max_retries
+        self._retry_delay_seconds = retry_delay_seconds
+        self._temperature = temperature
 
     async def extract_entities(self, messages: list[dict[str, Any]]) -> ExtractionResult:
         """Extract entities from a list of chat messages."""
         all_nodes: dict[str, SemanticNode] = {}  # case-insensitive key → node
         all_edges: dict[str, SemanticEdge] = {}
 
-        for chunk in self._chunk_messages(messages, chunk_size=50):
+        for chunk in self._chunk_messages(messages, chunk_size=self._chunk_size):
             result = await self._extract_chunk(chunk)
             for node in result.nodes:
                 # Case-insensitive dedup: keep first occurrence's casing
@@ -163,24 +177,26 @@ class EntityExtractor:
         prompt = EXTRACTION_PROMPT.format(schema=self._schema_prompt, messages=formatted)
 
         last_exc: Exception | None = None
-        for attempt in range(3):  # 1 initial + 2 retries
+        for attempt in range(self._max_retries):
             try:
-                response = await litellm.acompletion(
+                kwargs: dict[str, Any] = dict(
                     model=self._model,
                     messages=[{"role": "user", "content": prompt}],
-                    temperature=0.1,
+                    temperature=self._temperature,
                     response_format={"type": "json_object"},
-                    thinking={"type": "disabled"},
                 )
+                if self._disable_thinking:
+                    kwargs["thinking"] = {"type": "disabled"}
+                response = await litellm.acompletion(**kwargs)
                 content = response.choices[0].message.content
                 return self._parse_response(content)
             except Exception as e:
                 last_exc = e
                 err_str = str(e).lower()
                 is_transient = any(k in err_str for k in ("connection", "rate", "timeout", "503", "429"))
-                if is_transient and attempt < 2:
+                if is_transient and attempt < self._max_retries - 1:
                     logger.warning("Extraction transient error (attempt %d): %s", attempt + 1, e)
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(self._retry_delay_seconds)
                     continue
                 break
 

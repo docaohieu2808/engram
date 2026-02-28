@@ -69,6 +69,7 @@ async def resolve_pronouns(
     text: str,
     context: list[dict],
     model: str = "gemini/gemini-2.5-flash",
+    disable_thinking: bool = False,
 ) -> ResolvedText:
     """Use LLM to resolve pronouns given conversation context.
 
@@ -92,13 +93,15 @@ async def resolve_pronouns(
 
     try:
         import litellm
-        response = await litellm.acompletion(
+        kwargs = dict(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=256,
-            thinking={"type": "disabled"},
         )
+        if disable_thinking:
+            kwargs["thinking"] = {"type": "disabled"}
+        response = await litellm.acompletion(**kwargs)
         raw = response.choices[0].message.content.strip()
         # Strip markdown code fences if present
         if raw.startswith("```"):
@@ -146,6 +149,7 @@ async def resolve(
     model: str = "gemini/gemini-2.5-flash",
     resolve_temporal_refs: bool = True,
     resolve_pronoun_refs: bool = True,
+    disable_thinking: bool = False,
 ) -> ResolvedText:
     """Full resolution pipeline: temporal + pronoun.
 
@@ -175,7 +179,7 @@ async def resolve(
 
         # 2b: LLM fallback only when pronouns still remain unresolved after regex pass
         if context and _has_resolvable_pronouns(resolved_text):
-            pronoun_result = await resolve_pronouns(resolved_text, context, model)
+            pronoun_result = await resolve_pronouns(resolved_text, context, model, disable_thinking=disable_thinking)
             resolved_text = pronoun_result.resolved
             entities = pronoun_result.entities
 
