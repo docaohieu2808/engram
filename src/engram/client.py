@@ -90,6 +90,7 @@ class EngramClient:
                 episodic=self._episodic,
                 graph=self._graph,
                 model=self._model,
+                disable_thinking=self._config.llm.disable_thinking,
             )
 
     def _ensure_extractor(self):

@@ -64,6 +64,7 @@ def register_ws_routes(
             on_think_hook=config.hooks.on_think,
             recall_config=config.recall_pipeline,
             scoring_config=config.scoring,
+            disable_thinking=config.llm.disable_thinking,
         )
 
     # Wire event bus to broadcast manager — per-connection handler (subscribed on connect)

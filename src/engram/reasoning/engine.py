@@ -86,10 +86,12 @@ class ReasoningEngine:
         providers: list[MemoryProvider] | None = None,
         recall_config=None,
         scoring_config=None,
+        disable_thinking: bool = False,
     ):
         self._episodic = episodic
         self._graph = graph
         self._model = model
+        self._disable_thinking = disable_thinking
         self._on_think_hook = on_think_hook
         self._providers = providers or []
         # Cache of graph node names to avoid full scan on every think() call
@@ -136,7 +138,7 @@ class ReasoningEngine:
 
         try:
             kwargs = dict(model=self._model, messages=[{"role": "user", "content": prompt}], temperature=0.3)
-            if "gemini" in self._model:
+            if self._disable_thinking:
                 kwargs["thinking"] = {"type": "disabled"}
             response = await litellm.acompletion(**kwargs)
             monitor.record_success()
@@ -425,7 +427,7 @@ class ReasoningEngine:
                     ],
                     temperature=0.0,
                 )
-                if "gemini" in self._model:
+                if self._disable_thinking:
                     kwargs["thinking"] = {"type": "disabled"}
                 response = await litellm.acompletion(**kwargs)
                 monitor.record_success()

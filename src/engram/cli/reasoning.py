@@ -29,6 +29,7 @@ def register(app: typer.Typer, get_config) -> None:
         return ReasoningEngine(
             episodic, graph, model=cfg.llm.model,
             on_think_hook=cfg.hooks.on_think, providers=providers,
+            disable_thinking=cfg.llm.disable_thinking,
         )
 
     @app.command()

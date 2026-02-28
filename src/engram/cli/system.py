@@ -71,6 +71,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             model=cfg.llm.model,
             on_think_hook=cfg.hooks.on_think,
             recall_config=cfg.recall_pipeline,
+            disable_thinking=cfg.llm.disable_thinking,
         )
 
     def _get_extractor():

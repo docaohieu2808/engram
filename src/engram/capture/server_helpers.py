@@ -49,6 +49,7 @@ def resolve_engine(state: Any, auth: AuthContext, ep: EpisodicStore, gr: Semanti
         on_think_hook=cfg.hooks.on_think,
         recall_config=cfg.recall_pipeline,
         scoring_config=cfg.scoring,
+        disable_thinking=cfg.llm.disable_thinking,
     )
 
 
