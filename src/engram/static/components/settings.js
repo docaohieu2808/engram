@@ -78,20 +78,12 @@ const Settings = {
     { label: 'Server', sections: ['serve'] },
   ],
 
-  // Known model families and their thinking model status
-  _modelOptions: [
-    { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6', thinking: false },
-    { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', thinking: false },
-    { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash', thinking: true },
-    { value: 'gemini/gemini-2.5-pro', label: 'Gemini 2.5 Pro', thinking: true },
-    { value: 'openai/gpt-4o', label: 'GPT-4o', thinking: false },
-    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', thinking: false },
-  ],
-
   _modelSelector() {
     const currentModel = this._config?.llm?.model || '';
+    const currentProvider = this._config?.llm?.provider || '';
     const disableThinking = this._config?.llm?.disable_thinking || false;
-    const opts = this._modelOptions.map(m =>
+    const models = this._getLlmModels(currentProvider);
+    const opts = models.map(m =>
       `<option value="${m.value}"${m.value === currentModel ? ' selected' : ''}>${m.label}</option>`
     ).join('');
 
@@ -102,10 +94,10 @@ const Settings = {
           <label style="font-size:11px;color:var(--text-muted)">LLM Model</label>
           <select id="model-select" onchange="Settings._onModelChange(this.value)" style="padding:4px 8px">
             ${opts}
-            <option value="_custom"${!this._modelOptions.find(m => m.value === currentModel) ? ' selected' : ''}>Custom...</option>
+            <option value="_custom"${!models.find(m => m.value === currentModel) ? ' selected' : ''}>Custom...</option>
           </select>
         </div>
-        <div id="model-custom-wrap" style="display:${this._modelOptions.find(m => m.value === currentModel) ? 'none' : 'block'}">
+        <div id="model-custom-wrap" style="display:${models.find(m => m.value === currentModel) ? 'none' : 'block'}">
           <label style="font-size:11px;color:var(--text-muted)">Custom model ID</label>
           <input id="model-custom" type="text" value="${currentModel}" style="width:220px" onchange="Settings._onChange('llm.model',this.value)">
         </div>
@@ -131,7 +123,7 @@ const Settings = {
     customWrap.style.display = 'none';
     this._onChange('llm.model', value);
     // Auto-set disable_thinking based on model family
-    const known = this._modelOptions.find(m => m.value === value);
+    const known = Object.values(this._llmModels).flat().find(m => m.value === value);
     if (known) {
       const thinkEl = document.getElementById('model-thinking');
       if (thinkEl) { thinkEl.value = String(known.thinking); }
@@ -180,82 +172,136 @@ const Settings = {
     </div>`;
   },
 
-  // Fields with known dropdown options: "section.field" → [{value, label}]
-  _dropdownOptions: {
-    'embedding.provider': [
-      { value: 'gemini', label: 'Gemini' },
-      { value: 'openai', label: 'OpenAI' },
-      { value: 'cohere', label: 'Cohere' },
+  // Model catalogs per provider (used for cascading dropdowns)
+  _llmModels: {
+    anthropic: [
+      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6', thinking: false },
+      { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', thinking: false },
     ],
-    'embedding.model': [
+    gemini: [
+      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash', thinking: true },
+      { value: 'gemini/gemini-2.5-pro', label: 'Gemini 2.5 Pro', thinking: true },
+    ],
+    openai: [
+      { value: 'openai/gpt-4o', label: 'GPT-4o', thinking: false },
+      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', thinking: false },
+    ],
+  },
+  _embeddingModels: {
+    gemini: [
       { value: 'gemini-embedding-001', label: 'Gemini Embedding 001' },
-      { value: 'text-embedding-3-small', label: 'OpenAI text-embedding-3-small' },
-      { value: 'text-embedding-3-large', label: 'OpenAI text-embedding-3-large' },
     ],
-    'embedding.key_strategy': [
-      { value: 'failover', label: 'Failover (primary first)' },
-      { value: 'round-robin', label: 'Round Robin (spread quota)' },
+    openai: [
+      { value: 'text-embedding-3-small', label: 'text-embedding-3-small' },
+      { value: 'text-embedding-3-large', label: 'text-embedding-3-large' },
     ],
-    'llm.provider': [
-      { value: 'anthropic', label: 'Anthropic' },
-      { value: 'gemini', label: 'Google Gemini' },
-      { value: 'openai', label: 'OpenAI' },
+    cohere: [
+      { value: 'embed-english-v3.0', label: 'Embed English v3.0' },
+      { value: 'embed-multilingual-v3.0', label: 'Embed Multilingual v3.0' },
     ],
-    'llm.model': [
-      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'gemini/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { value: 'openai/gpt-4o', label: 'GPT-4o' },
-      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-    ],
-    'extraction.llm_model': [
-      { value: '', label: '(inherit from LLM model)' },
-      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-    ],
-    'consolidation.llm_model': [
-      { value: '', label: '(inherit from LLM model)' },
-      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-    ],
-    'resolution.llm_model': [
-      { value: '', label: '(inherit from LLM model)' },
-      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-    ],
-    'episodic.provider': [
-      { value: 'chromadb', label: 'ChromaDB' },
-    ],
-    'episodic.mode': [
-      { value: 'embedded', label: 'Embedded (local)' },
-      { value: 'http', label: 'HTTP (remote)' },
-    ],
-    'semantic.provider': [
-      { value: 'sqlite', label: 'SQLite' },
-      { value: 'postgresql', label: 'PostgreSQL' },
-    ],
-    'logging.format': [
-      { value: 'text', label: 'Text' },
-      { value: 'json', label: 'JSON' },
-    ],
-    'logging.level': [
-      { value: 'DEBUG', label: 'DEBUG' },
-      { value: 'INFO', label: 'INFO' },
-      { value: 'WARNING', label: 'WARNING' },
-      { value: 'ERROR', label: 'ERROR' },
-    ],
-    'audit.backend': [
-      { value: 'file', label: 'File' },
-    ],
-    'event_bus.backend': [
-      { value: 'memory', label: 'In-Memory' },
-      { value: 'redis', label: 'Redis' },
-    ],
+  },
+
+  // Get LLM models filtered by current provider (or all if no match)
+  _getLlmModels(provider) {
+    return this._llmModels[provider] || Object.values(this._llmModels).flat();
+  },
+  _getEmbeddingModels(provider) {
+    return this._embeddingModels[provider] || Object.values(this._embeddingModels).flat();
+  },
+
+  // Build dropdown options dynamically — provider-aware for model fields
+  _getDropdownOptions(keyPath) {
+    const staticOpts = {
+      'embedding.provider': [
+        { value: 'gemini', label: 'Gemini' },
+        { value: 'openai', label: 'OpenAI' },
+        { value: 'cohere', label: 'Cohere' },
+      ],
+      'embedding.key_strategy': [
+        { value: 'failover', label: 'Failover (primary first)' },
+        { value: 'round-robin', label: 'Round Robin (spread quota)' },
+      ],
+      'llm.provider': [
+        { value: 'anthropic', label: 'Anthropic' },
+        { value: 'gemini', label: 'Google Gemini' },
+        { value: 'openai', label: 'OpenAI' },
+      ],
+      'episodic.provider': [{ value: 'chromadb', label: 'ChromaDB' }],
+      'episodic.mode': [
+        { value: 'embedded', label: 'Embedded (local)' },
+        { value: 'http', label: 'HTTP (remote)' },
+      ],
+      'semantic.provider': [
+        { value: 'sqlite', label: 'SQLite' },
+        { value: 'postgresql', label: 'PostgreSQL' },
+      ],
+      'logging.format': [
+        { value: 'text', label: 'Text' },
+        { value: 'json', label: 'JSON' },
+      ],
+      'logging.level': [
+        { value: 'DEBUG', label: 'DEBUG' },
+        { value: 'INFO', label: 'INFO' },
+        { value: 'WARNING', label: 'WARNING' },
+        { value: 'ERROR', label: 'ERROR' },
+      ],
+      'audit.backend': [{ value: 'file', label: 'File' }],
+      'event_bus.backend': [
+        { value: 'memory', label: 'In-Memory' },
+        { value: 'redis', label: 'Redis' },
+      ],
+    };
+    if (staticOpts[keyPath]) return staticOpts[keyPath];
+
+    // Dynamic: model fields depend on their provider
+    const llmProvider = this._dirty['llm.provider'] || this._config?.llm?.provider || '';
+    const embProvider = this._dirty['embedding.provider'] || this._config?.embedding?.provider || '';
+
+    if (keyPath === 'embedding.model') return this._getEmbeddingModels(embProvider);
+    if (keyPath === 'llm.model') return this._getLlmModels(llmProvider);
+    // Sub-model fields: inherit list from current llm.provider + add "(inherit)" option
+    if (['extraction.llm_model', 'consolidation.llm_model', 'resolution.llm_model'].includes(keyPath)) {
+      return [{ value: '', label: '(inherit from LLM model)' }, ...Object.values(this._llmModels).flat()];
+    }
+    return null;
+  },
+
+  // Cascade: when a provider changes, re-render dependent model dropdown
+  _cascadeProvider(keyPath) {
+    const cascadeMap = {
+      'llm.provider': 'llm.model',
+      'embedding.provider': 'embedding.model',
+    };
+    const targetKey = cascadeMap[keyPath];
+    if (!targetKey) return;
+    const targetId = `cfg-${targetKey.replace(/\./g, '-')}`;
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    const opts = this._getDropdownOptions(targetKey) || [];
+    // Pick first model of new provider as default
+    const firstVal = opts.length ? opts[0].value : '';
+    el.innerHTML = opts.map(o =>
+      `<option value="${o.value}"${o.value === firstVal ? ' selected' : ''}>${o.label}</option>`
+    ).join('');
+    this._onChange(targetKey, firstVal);
+
+    // For llm.provider, also update the top Model selector card
+    if (keyPath === 'llm.provider') {
+      const modelSelect = document.getElementById('model-select');
+      if (modelSelect) {
+        const allModels = this._getLlmModels(this._dirty['llm.provider'] || this._config?.llm?.provider);
+        modelSelect.innerHTML = allModels.map(m =>
+          `<option value="${m.value}"${m.value === firstVal ? ' selected' : ''}>${m.label}</option>`
+        ).join('') + '<option value="_custom">Custom...</option>';
+      }
+      // Auto-set disable_thinking
+      const known = Object.values(this._llmModels).flat().find(m => m.value === firstVal);
+      if (known) {
+        const thinkEl = document.getElementById('model-thinking');
+        if (thinkEl) thinkEl.value = String(known.thinking);
+        this._onChange('llm.disable_thinking', known.thinking);
+      }
+    }
   },
 
   _sectionFields(section, data, needsRestart) {
@@ -266,11 +312,15 @@ const Settings = {
       const type = typeof value;
       let input;
       // Check if this field has known dropdown options
-      const opts = this._dropdownOptions[keyPath];
+      const opts = this._getDropdownOptions(keyPath);
       if (opts) {
         const currentVal = String(value ?? '');
         const hasCustom = currentVal && !opts.find(o => String(o.value) === currentVal);
-        input = `<select id="${inputId}" onchange="Settings._onChange('${keyPath}',this.value)" style="min-width:160px">` +
+        const isProvider = keyPath.endsWith('.provider');
+        const changeHandler = isProvider
+          ? `Settings._onChange('${keyPath}',this.value);Settings._cascadeProvider('${keyPath}')`
+          : `Settings._onChange('${keyPath}',this.value)`;
+        input = `<select id="${inputId}" onchange="${changeHandler}" style="min-width:160px">` +
           opts.map(o => `<option value="${o.value}"${String(o.value) === currentVal ? ' selected' : ''}>${o.label}</option>`).join('') +
           (hasCustom ? `<option value="${currentVal}" selected>${currentVal}</option>` : '') +
           `</select>`;
