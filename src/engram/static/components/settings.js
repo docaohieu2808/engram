@@ -408,7 +408,7 @@ const Settings = {
     }
     setTimeout(async () => {
       try {
-        const res = await fetch('/api/v1/health');
+        const res = await fetch('/health');
         if (res.ok) { window.location.reload(); return; }
       } catch {}
       Settings._waitForServer(attempt + 1);
