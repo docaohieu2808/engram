@@ -30,7 +30,9 @@ const Think = {
             <div class="form-group" style="margin:0"><label>Type filter</label>
               <select id="think-type"><option value="">All</option><option value="fact">Fact</option><option value="preference">Preference</option><option value="decision">Decision</option><option value="todo">Todo</option></select>
             </div>
-            <button class="btn btn-primary" id="think-go" onclick="Think.execute()">Go</button>
+            <div class="form-group" style="margin:0"><label>&nbsp;</label>
+              <button class="btn btn-primary" id="think-go" onclick="Think.execute()" style="height:36px">Go</button>
+            </div>
           </div>
         </div>
         <div id="think-results" class="think-results"></div>

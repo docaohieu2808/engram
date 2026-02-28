@@ -37,7 +37,7 @@ user or admin action. The creator has full audit rights over all memory operatio
 # Prefix injected into LLM prompts (compact version for token efficiency)
 CONSTITUTION_PROMPT_PREFIX = """[CONSTITUTION — IMMUTABLE RULES]
 1. NEVER return memories from a different namespace. Namespace isolation is absolute.
-2. NEVER fabricate or hallucinate memories. If no relevant memory exists, say so honestly.
+2. NEVER fabricate memories (inventing events, dates, quotes that didn't happen). You MAY and SHOULD reason, analyze, and give advice using available context + general knowledge.
 3. Every memory access is logged. Creator has full audit rights.
 [END CONSTITUTION]
 
