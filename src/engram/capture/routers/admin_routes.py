@@ -282,7 +282,9 @@ async def list_models(
     # Only current-gen text/chat models (no deprecated, no media models)
     _exclude = {"image", "vision", "embed", "veo", "audio", "tts", "aqa",
                 "learnlm", "imagen", "sora", "dall-e", "whisper", "moderation",
-                "instruct", "0301", "0314", "0613"}
+                "instruct", "0301", "0314", "0613", "realtime", "transcribe",
+                "search", "codex", "diarize", "gemma", "computer-use",
+                "customtools", "live-"}
 
     def _is_current(name: str) -> bool:
         low = name.lower()
