@@ -135,12 +135,10 @@ class ReasoningEngine:
             return f"[Resource tier: {monitor.get_tier().value} — LLM unavailable]\n\n" + memories_text
 
         try:
-            response = await litellm.acompletion(
-                model=self._model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                thinking={"type": "disabled"},
-            )
+            kwargs = dict(model=self._model, messages=[{"role": "user", "content": prompt}], temperature=0.3)
+            if "gemini" in self._model:
+                kwargs["thinking"] = {"type": "disabled"}
+            response = await litellm.acompletion(**kwargs)
             monitor.record_success()
             summary = response.choices[0].message.content
         except Exception as e:
@@ -419,15 +417,17 @@ class ReasoningEngine:
         last_exc: Exception | None = None
         for attempt in range(3):  # 1 initial + 2 retries
             try:
-                response = await litellm.acompletion(
+                kwargs = dict(
                     model=self._model,
                     messages=[
                         {"role": "system", "content": "You are a memory assistant. ONLY use information from the provided memories. NEVER add facts, dates, locations, or details not explicitly stated in the memories."},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.0,
-                    thinking={"type": "disabled"},
                 )
+                if "gemini" in self._model:
+                    kwargs["thinking"] = {"type": "disabled"}
+                response = await litellm.acompletion(**kwargs)
                 monitor.record_success()
                 return {"answer": response.choices[0].message.content, "degraded": False}
             except Exception as e:
