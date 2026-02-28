@@ -168,6 +168,22 @@ async def benchmark_run(request: Request, auth: AuthContext = Depends(get_auth_c
     }
 
 
+def _resolve_provider_keys(cfg: Config) -> dict[str, str]:
+    """Build provider→api_key map from config + env vars."""
+    import os
+    llm_key = cfg.llm.api_key if not cfg.llm.api_key.startswith("$") else ""
+    llm_provider = cfg.llm.provider
+    keys = {
+        "anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
+        "gemini": os.environ.get("GEMINI_API_KEY", ""),
+        "openai": os.environ.get("OPENAI_API_KEY", ""),
+    }
+    # Config llm.api_key overrides the env var for the active provider
+    if llm_key:
+        keys[llm_provider] = llm_key
+    return keys
+
+
 # Sections with secrets that should be masked in GET responses
 _SECRET_FIELDS = {"api_key", "jwt_secret", "admin_secret", "password", "dsn", "redis_url"}
 
@@ -280,12 +296,16 @@ async def list_models(
     """
     from engram.capture.routers.model_fetchers import PROVIDER_FETCHERS
 
+    # Resolve API keys from config (supports env var substitution)
+    cfg: Config = request.app.state.cfg
+    api_keys = _resolve_provider_keys(cfg)
+
     result = {}
     providers = [provider] if provider != "all" else ["anthropic", "gemini", "openai"]
     for p in providers:
         fetcher = PROVIDER_FETCHERS.get(p)
         if fetcher:
-            result[p] = await fetcher()
+            result[p] = await fetcher(api_keys.get(p, ""))
     return {"models": result}
 
 
