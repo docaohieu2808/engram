@@ -1,6 +1,6 @@
 """Routes: GET /health, GET /health/ready, GET /status (admin), POST /backup,
 POST /restore, GET /audit/log, GET/POST /scheduler/tasks, POST /benchmark/run,
-POST /auth/token, GET /providers, GET/PUT /config.
+POST /auth/token, GET /providers, GET/PUT /config, POST /restart.
 """
 
 from __future__ import annotations
@@ -264,3 +264,26 @@ async def put_config(request: Request, auth: AuthContext = Depends(get_auth_cont
         "changed": changed,
         "restart_required": restart_needed,
     }
+
+
+@router.post("/restart")
+async def restart_server(request: Request, auth: AuthContext = Depends(get_auth_context)):
+    """Gracefully restart the server process. Admin only.
+
+    Sends SIGTERM to self after a short delay so the HTTP response
+    can be returned first. Works with systemd (auto-restart) and
+    bare uvicorn (os.execv re-exec).
+    """
+    import asyncio
+    import os
+    import sys
+
+    require_admin(auth)
+
+    async def _do_restart():
+        await asyncio.sleep(0.5)  # let response flush
+        # Re-exec the same process in-place (replaces current process)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    asyncio.get_event_loop().create_task(_do_restart())
+    return {"status": "ok", "message": "Server restarting..."}
