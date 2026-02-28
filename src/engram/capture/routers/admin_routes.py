@@ -266,6 +266,39 @@ async def put_config(request: Request, auth: AuthContext = Depends(get_auth_cont
     }
 
 
+@router.get("/models")
+async def list_models(
+    provider: str = "all",
+    request: Request = None,
+    auth: AuthContext = Depends(get_auth_context),
+):
+    """List available LLM models from litellm's registry, filtered by provider.
+
+    ?provider=anthropic|gemini|openai|all (default: all 3 main providers)
+    """
+    import litellm
+
+    all_models = litellm.model_list or []
+    provider_filters = {
+        "anthropic": lambda m: m.startswith("claude-") and not m.startswith("claude-instant"),
+        "gemini": lambda m: m.startswith("gemini/"),
+        "openai": lambda m: m.startswith("gpt-") or m.startswith("o1-") or m.startswith("o3-") or m.startswith("o4-"),
+    }
+
+    result = {}
+    providers = [provider] if provider != "all" else list(provider_filters.keys())
+    for p in providers:
+        filt = provider_filters.get(p)
+        if filt:
+            # Add provider prefix for litellm routing (anthropic needs it)
+            models = sorted(set(
+                (f"anthropic/{m}" if p == "anthropic" else m)
+                for m in all_models if filt(m)
+            ))
+            result[p] = models
+    return {"models": result}
+
+
 @router.post("/restart")
 async def restart_server(request: Request, auth: AuthContext = Depends(get_auth_context)):
     """Gracefully restart the server process. Admin only.

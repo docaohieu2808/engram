@@ -6,6 +6,7 @@ const Settings = {
   _config: null,
   _restartSections: new Set(),
   _dirty: {},  // key_path → new value
+  _fetchedModels: null,  // { anthropic: [...], gemini: [...], openai: [...] }
 
   async load() {
     if (!this._loaded) {
@@ -98,6 +99,7 @@ const Settings = {
           </select>
         </div>
         <button class="btn btn-sm" onclick="Settings.testModel()" id="model-test-btn">Test</button>
+        <button class="btn btn-sm" onclick="Settings.refreshModels()" id="model-refresh-btn" title="Fetch latest models from providers">↻ Refresh Models</button>
         <span id="model-test-result" style="font-size:12px"></span>
       </div>
     </div>`;
@@ -134,6 +136,29 @@ const Settings = {
       result.textContent = `Error: ${e.message}`;
     }
     btn.disabled = false; btn.textContent = 'Test';
+  },
+
+  async refreshModels() {
+    const btn = document.getElementById('model-refresh-btn');
+    const result = document.getElementById('model-test-result');
+    btn.disabled = true; btn.textContent = 'Loading...';
+    try {
+      const res = await API.listModels('all');
+      this._fetchedModels = res.models || {};
+      // Update _llmModels with fetched data
+      for (const [provider, models] of Object.entries(this._fetchedModels)) {
+        this._llmModels[provider] = models.map(m => ({
+          value: m, label: m.replace(/^(anthropic|gemini|openai)\//, ''), thinking: false,
+        }));
+      }
+      // Re-render to pick up new models
+      await this._render();
+      const total = Object.values(this._fetchedModels).reduce((s, a) => s + a.length, 0);
+      App.toast(`Loaded ${total} models from providers`, 'success');
+    } catch (e) {
+      if (result) { result.style.color = 'var(--error)'; result.textContent = e.message; }
+    }
+    btn.disabled = false; btn.textContent = '↻ Refresh Models';
   },
 
   _configEditor() {

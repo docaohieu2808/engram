@@ -91,6 +91,7 @@ const API = {
   getConfig() { return this._fetch('/config'); },
   updateConfig(body) { return this._fetch('/config', { method: 'PUT', body: JSON.stringify(body) }); },
   restartServer() { return this._fetch('/restart', { method: 'POST' }); },
+  listModels(provider) { return this._fetch(`/models?provider=${provider || 'all'}`); },
 
   // Cleanup & summarize
   cleanup() { return this._fetch('/cleanup', { method: 'POST' }); },
