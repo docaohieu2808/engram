@@ -270,18 +270,18 @@ async def put_config(request: Request, auth: AuthContext = Depends(get_auth_cont
 async def restart_server(request: Request, auth: AuthContext = Depends(get_auth_context)):
     """Gracefully restart the server process. Admin only.
 
-    Uses os.execv to replace the current process with a fresh instance.
-    Environment variables (including ENGRAM_ALLOW_INSECURE) are preserved.
+    Sends SIGTERM after response flushes. Relies on systemd Restart=always
+    to bring the process back up automatically.
     """
     import asyncio
     import os
-    import sys
+    import signal
 
     require_admin(auth)
 
     async def _do_restart():
         await asyncio.sleep(0.5)  # let response flush
-        os.execv(sys.executable, [sys.executable] + sys.argv)
+        os.kill(os.getpid(), signal.SIGTERM)
 
     asyncio.get_event_loop().create_task(_do_restart())
     return {"status": "ok", "message": "Server restarting..."}
