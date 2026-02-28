@@ -279,46 +279,34 @@ async def list_models(
     import litellm
 
     all_models = litellm.model_list or []
-    # Only current-gen text/chat models (no deprecated, no media models)
-    _exclude = {"image", "vision", "embed", "veo", "audio", "tts", "aqa",
-                "learnlm", "imagen", "sora", "dall-e", "whisper", "moderation",
-                "instruct", "0301", "0314", "0613", "realtime", "transcribe",
-                "search", "codex", "diarize", "gemma", "computer-use",
-                "customtools", "live-"}
 
-    def _is_current(name: str) -> bool:
-        low = name.lower()
-        return not any(kw in low for kw in _exclude)
+    # Use litellm's model_info to filter: only mode=chat models
+    def _is_chat_model(model_name: str) -> bool:
+        try:
+            info = litellm.get_model_info(model_name)
+            return info.get("mode") == "chat"
+        except Exception:
+            return False
 
-    provider_filters = {
-        "anthropic": lambda m: (
-            m.startswith("claude-") and _is_current(m)
-            and not m.startswith("claude-instant")
-            and not m.startswith("claude-3-")  # skip claude 3.x (deprecated)
-        ),
-        "gemini": lambda m: (
-            m.startswith("gemini/gemini-") and _is_current(m)
-            and not any(v in m for v in ["-1.0", "-1.5", "-exp-", "exp-0"])
-        ),
-        "openai": lambda m: (
-            _is_current(m) and (
-                m.startswith("gpt-4o") or m.startswith("gpt-4.") or m.startswith("gpt-5")
-                or m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
-            )
-        ),
+    provider_prefixes = {
+        "anthropic": lambda m: m.startswith("claude-") and not m.startswith("claude-instant") and not m.startswith("claude-3-"),
+        "gemini": lambda m: m.startswith("gemini/gemini-") and "-1.0" not in m and "-1.5" not in m,
+        "openai": lambda m: m.startswith("gpt-4") or m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4"),
     }
 
     result = {}
-    providers = [provider] if provider != "all" else list(provider_filters.keys())
+    providers = [provider] if provider != "all" else list(provider_prefixes.keys())
     for p in providers:
-        filt = provider_filters.get(p)
-        if filt:
-            # Add provider prefix for litellm routing (anthropic needs it)
-            models = sorted(set(
-                (f"anthropic/{m}" if p == "anthropic" else m)
-                for m in all_models if filt(m)
-            ))
-            result[p] = models
+        prefix_fn = provider_prefixes.get(p)
+        if not prefix_fn:
+            continue
+        candidates = [m for m in all_models if prefix_fn(m)]
+        # Filter by mode=chat (removes realtime, transcribe, embed, image, etc.)
+        models = sorted(set(
+            (f"anthropic/{m}" if p == "anthropic" else m)
+            for m in candidates if _is_chat_model(m)
+        ))
+        result[p] = models
     return {"models": result}
 
 
