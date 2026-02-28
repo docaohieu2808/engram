@@ -12,6 +12,18 @@ const Settings = {
     if (!this._loaded) {
       this._loaded = true;
       document.getElementById('tab-settings').innerHTML = '<div class="loading-overlay"><div class="spinner"></div> Loading settings...</div>';
+      // Auto-fetch live models from provider APIs
+      try {
+        const res = await API.listModels('all');
+        const fetched = res.models || {};
+        for (const [provider, models] of Object.entries(fetched)) {
+          if (models.length) {
+            this._llmModels[provider] = models.map(m => ({
+              value: m, label: m.replace(/^(anthropic|gemini|openai)\//, ''), thinking: false,
+            }));
+          }
+        }
+      } catch {}
     }
     await this._render();
   },
@@ -73,21 +85,27 @@ const Settings = {
     const currentProvider = this._config?.llm?.provider || '';
     const disableThinking = this._config?.llm?.disable_thinking || false;
     const models = this._getLlmModels(currentProvider);
+    const hasModels = models.length > 0;
+    const currentInList = hasModels && models.find(m => m.value === currentModel);
     const opts = models.map(m =>
       `<option value="${m.value}"${m.value === currentModel ? ' selected' : ''}>${m.label}</option>`
     ).join('');
+    const noKeyMsg = !hasModels
+      ? `<span style="color:var(--warning);font-size:11px">No models loaded — set API key for ${currentProvider} or click Refresh</span>`
+      : '';
 
     return `<div class="card" style="margin-bottom:12px">
       <h3 style="margin:0 0 8px">Model</h3>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <div>
           <label style="font-size:11px;color:var(--text-muted)">LLM Model</label>
-          <select id="model-select" onchange="Settings._onModelChange(this.value)" style="padding:4px 8px">
+          ${hasModels ? `<select id="model-select" onchange="Settings._onModelChange(this.value)" style="padding:4px 8px">
             ${opts}
-            <option value="_custom"${!models.find(m => m.value === currentModel) ? ' selected' : ''}>Custom...</option>
-          </select>
+            <option value="_custom"${!currentInList ? ' selected' : ''}>Custom...</option>
+          </select>` : `<select id="model-select" disabled style="padding:4px 8px"><option>No models available</option></select>`}
+          ${noKeyMsg}
         </div>
-        <div id="model-custom-wrap" style="display:${models.find(m => m.value === currentModel) ? 'none' : 'block'}">
+        <div id="model-custom-wrap" style="display:${currentInList ? 'none' : 'block'}">
           <label style="font-size:11px;color:var(--text-muted)">Custom model ID</label>
           <input id="model-custom" type="text" value="${currentModel}" style="width:220px" onchange="Settings._onChange('llm.model',this.value)">
         </div>
@@ -189,26 +207,7 @@ const Settings = {
   },
 
   // Model catalogs per provider (used for cascading dropdowns)
-  _llmModels: {
-    anthropic: [
-      { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6', thinking: false },
-      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6', thinking: false },
-      { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', thinking: false },
-      { value: 'anthropic/claude-sonnet-4-5-20250514', label: 'Claude Sonnet 4.5', thinking: false },
-    ],
-    gemini: [
-      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash', thinking: true },
-      { value: 'gemini/gemini-2.5-pro', label: 'Gemini 2.5 Pro', thinking: true },
-      { value: 'gemini/gemini-3-flash-preview', label: 'Gemini 3 Flash (preview)', thinking: false },
-      { value: 'gemini/gemini-3-pro-preview', label: 'Gemini 3 Pro (preview)', thinking: false },
-    ],
-    openai: [
-      { value: 'openai/gpt-4o', label: 'GPT-4o', thinking: false },
-      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', thinking: false },
-      { value: 'openai/o3', label: 'o3', thinking: true },
-      { value: 'openai/o3-mini', label: 'o3 Mini', thinking: true },
-    ],
-  },
+  _llmModels: { anthropic: [], gemini: [], openai: [] },
   _embeddingModels: {
     gemini: [
       { value: 'gemini-embedding-001', label: 'Gemini Embedding 001' },
