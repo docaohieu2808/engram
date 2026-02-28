@@ -279,18 +279,31 @@ async def list_models(
     import litellm
 
     all_models = litellm.model_list or []
-    # Exclude non-text models (image gen, video, audio, embedding, vision-only, TTS)
-    _non_text = {"image", "vision", "embed", "veo", "audio", "tts", "aqa",
-                 "learnlm", "imagen", "sora", "dall-e", "whisper", "moderation"}
+    # Only current-gen text/chat models (no deprecated, no media models)
+    _exclude = {"image", "vision", "embed", "veo", "audio", "tts", "aqa",
+                "learnlm", "imagen", "sora", "dall-e", "whisper", "moderation",
+                "instruct", "0301", "0314", "0613"}
 
-    def _is_text_model(name: str) -> bool:
+    def _is_current(name: str) -> bool:
         low = name.lower()
-        return not any(kw in low for kw in _non_text)
+        return not any(kw in low for kw in _exclude)
 
     provider_filters = {
-        "anthropic": lambda m: m.startswith("claude-") and not m.startswith("claude-instant"),
-        "gemini": lambda m: m.startswith("gemini/gemini-") and _is_text_model(m),
-        "openai": lambda m: (m.startswith("gpt-") or m.startswith("o1-") or m.startswith("o3-") or m.startswith("o4-")) and _is_text_model(m),
+        "anthropic": lambda m: (
+            m.startswith("claude-") and _is_current(m)
+            and not m.startswith("claude-instant")
+            and not m.startswith("claude-3-")  # skip claude 3.x (deprecated)
+        ),
+        "gemini": lambda m: (
+            m.startswith("gemini/gemini-") and _is_current(m)
+            and not any(v in m for v in ["-1.0", "-1.5", "-exp-", "exp-0"])
+        ),
+        "openai": lambda m: (
+            _is_current(m) and (
+                m.startswith("gpt-4o") or m.startswith("gpt-4.") or m.startswith("gpt-5")
+                or m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
+            )
+        ),
     }
 
     result = {}
