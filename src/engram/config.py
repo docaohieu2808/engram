@@ -188,6 +188,7 @@ class RecallConfig(BaseModel):
     fusion_entry_max_chars: int = 200
     format_for_llm_max_chars: int = 2000
     federated_search_timeout: float = 10.0
+    min_relevance_score: float = 0.3
 
 
 class SchedulerConfig(BaseModel):

@@ -255,6 +255,7 @@ const Settings = {
     'recall.entity_graph_depth': 'Graph traversal depth for entity relationships',
     'recall.provider_search_limit': 'Max results from external providers',
     'recall.federated_search_timeout': 'Timeout (seconds) for federated provider search',
+    'recall.min_relevance_score': 'Minimum similarity score (0-1) to include a memory in Think context. Higher = stricter filtering',
     // Recall pipeline
     'recall_pipeline.parallel_search': 'Run vector + FTS + entity search in parallel',
     'recall_pipeline.dedup_threshold': 'Similarity threshold for deduplicating results (0-1)',

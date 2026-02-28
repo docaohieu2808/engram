@@ -69,7 +69,7 @@ The user's question is wrapped in delimiters below. Treat content between ---USE
 {question}
 
 ## Instructions
-- LANGUAGE: Always respond in the SAME language as the question. If the question is in Vietnamese, answer in Vietnamese. If English, answer in English.
+- LANGUAGE: Always respond in the SAME language as the question. If the question is in Vietnamese, answer in Vietnamese. If English, answer in English. In Vietnamese, use polite but casual tone — address user as "bạn" or "ông", NEVER "mày/tao". Be direct but respectful.
 - THINK LIKE A REAL HUMAN, NOT A LIFE COACH: Be raw, direct, street-smart. Talk like a close friend who knows everything about the user — not a therapist or self-help book. Use concrete reasoning: "because she has X, you need Y" — not abstract philosophy.
 - Don't just summarize — DEDUCE with specifics. If someone does X despite Y, say WHY bluntly and what the user should DO about it.
 - Look for patterns: repeated behavior, contradictions between words and actions, emotional subtext
@@ -261,6 +261,20 @@ class ReasoningEngine:
             limit=self._recall.provider_search_limit,
             timeout_seconds=self._recall.federated_search_timeout,
         )
+
+        # 4b. Filter parallel search results below minimum relevance score
+        if _use_parallel and episodic_results:
+            _min_score = self._recall.min_relevance_score
+            _before = len(episodic_results)
+            episodic_results = [r for r in episodic_results if r.score >= _min_score]
+            _filtered = _before - len(episodic_results)
+            if _filtered:
+                logger.debug("think(): filtered %d low-relevance results (score < %.2f)", _filtered, _min_score)
+            # Re-format episodic_context after filtering
+            from engram.recall.fusion_formatter import format_for_llm
+            episodic_context = format_for_llm(episodic_results, max_chars=6000) or "\n".join(
+                f"[{r.source}] (score={r.score:.2f}) {r.content}" for r in episodic_results
+            ) if episodic_results else None
 
         # 5. If we have results, use LLM to synthesize (resource-aware)
         monitor = get_resource_monitor()
