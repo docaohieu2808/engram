@@ -145,11 +145,13 @@ const Settings = {
     try {
       const res = await API.listModels('all');
       this._fetchedModels = res.models || {};
-      // Update _llmModels with fetched data
+      // Update _llmModels with fetched data (only if non-empty, keep hardcoded fallback)
       for (const [provider, models] of Object.entries(this._fetchedModels)) {
-        this._llmModels[provider] = models.map(m => ({
-          value: m, label: m.replace(/^(anthropic|gemini|openai)\//, ''), thinking: false,
-        }));
+        if (models.length) {
+          this._llmModels[provider] = models.map(m => ({
+            value: m, label: m.replace(/^(anthropic|gemini|openai)\//, ''), thinking: false,
+          }));
+        }
       }
       // Re-render to pick up new models
       await this._render();
@@ -292,8 +294,8 @@ const Settings = {
     const el = document.getElementById(targetId);
     if (!el) return;
     const opts = this._getDropdownOptions(targetKey) || [];
-    // Pick first model of new provider as default
-    const firstVal = opts.length ? opts[0].value : '';
+    if (!opts.length) return;  // Don't cascade if no models available
+    const firstVal = opts[0].value;
     el.innerHTML = opts.map(o =>
       `<option value="${o.value}"${o.value === firstVal ? ' selected' : ''}>${o.label}</option>`
     ).join('');
