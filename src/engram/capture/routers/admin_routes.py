@@ -169,19 +169,13 @@ async def benchmark_run(request: Request, auth: AuthContext = Depends(get_auth_c
 
 
 def _resolve_provider_keys(cfg: Config) -> dict[str, str]:
-    """Build provider→api_key map from config + env vars."""
+    """Build provider→api_key map from env vars (one per provider)."""
     import os
-    llm_key = cfg.llm.api_key if not cfg.llm.api_key.startswith("$") else ""
-    llm_provider = cfg.llm.provider
-    keys = {
+    return {
         "anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
         "gemini": os.environ.get("GEMINI_API_KEY", ""),
         "openai": os.environ.get("OPENAI_API_KEY", ""),
     }
-    # Config llm.api_key overrides the env var for the active provider
-    if llm_key:
-        keys[llm_provider] = llm_key
-    return keys
 
 
 # Sections with secrets that should be masked in GET responses
