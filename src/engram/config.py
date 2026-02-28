@@ -38,6 +38,8 @@ class EpisodicConfig(BaseModel):
 class EmbeddingConfig(BaseModel):
     provider: str = "gemini"
     model: str = "gemini-embedding-001"
+    # Primary API key for embedding provider (env var ref like ${GEMINI_API_KEY} or literal)
+    api_key: str = "${GEMINI_API_KEY}"
     # Key rotation strategy: "failover" (primary first, fallback on error)
     # or "round-robin" (rotate evenly across keys to spread quota)
     key_strategy: str = "failover"
@@ -571,6 +573,47 @@ def load_config(path: Path | None = None) -> Config:
         data = {}
     data = _apply_env_overlay(data)
     return Config(**data)
+
+
+_ENV_KEY_MAP = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
+
+
+def _resolve_anthropic_token(api_key: str) -> str:
+    """For Anthropic, auto-read fresh OAuth token from ~/.claude/.credentials.json."""
+    creds_path = Path.home() / ".claude" / ".credentials.json"
+    if creds_path.exists():
+        try:
+            import json
+            creds = json.loads(creds_path.read_text())
+            fresh_token = creds.get("claudeAiOauth", {}).get("accessToken", "")
+            if fresh_token:
+                return fresh_token
+        except Exception:
+            pass
+    return api_key
+
+
+def _apply_provider_key(provider: str, api_key: str) -> None:
+    """Set resolved API key in os.environ for litellm to pick up."""
+    if not api_key or api_key.startswith("${"):
+        return
+    if provider == "anthropic":
+        api_key = _resolve_anthropic_token(api_key)
+    env_key = _ENV_KEY_MAP.get(provider.lower())
+    if env_key:
+        os.environ[env_key] = api_key
+
+
+def apply_llm_api_key(config: Config) -> None:
+    """Resolve LLM + embedding api_keys and set in os.environ for litellm."""
+    # LLM key
+    _apply_provider_key(config.llm.provider, config.llm.api_key)
+    # Embedding key (may differ from LLM provider)
+    _apply_provider_key(config.embedding.provider, config.embedding.api_key)
 
 
 def save_config(config: Config, path: Path | None = None) -> None:

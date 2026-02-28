@@ -85,6 +85,9 @@ async def remember(req: RememberRequest, request: Request, auth: AuthContext = D
 async def think(req: ThinkRequest, request: Request, auth: AuthContext = Depends(get_auth_context)):
     state = request.app.state
     cfg: Config = state.cfg
+    # Refresh API key (Anthropic OAuth tokens expire frequently)
+    from engram.config import apply_llm_api_key
+    apply_llm_api_key(cfg)
     cache: EngramCache | None = getattr(state, "cache", None)
     ep = resolve_episodic(state, auth)
     gr = await resolve_graph(state, auth)

@@ -336,6 +336,9 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         """Watch inbox for chat files and auto-ingest. Also watches OpenClaw sessions if enabled."""
         # Load .env so daemon child inherits API keys after fork
         _load_env_file()
+        # Resolve LLM api_key (auto-refresh Anthropic OAuth tokens)
+        from engram.config import apply_llm_api_key
+        apply_llm_api_key(get_config())
         from engram.capture.watcher import InboxWatcher, daemonize, is_daemon_running, stop_daemon
 
         if stop:
@@ -568,9 +571,12 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         host: Optional[str] = typer.Option(None, "--host"),
     ):
         """Start HTTP webhook server."""
+        _load_env_file()
         from engram.capture.server import run_server
+        from engram.config import apply_llm_api_key
 
         cfg = get_config()
+        apply_llm_api_key(cfg)
         if port:
             cfg.serve.port = port
         if host:
