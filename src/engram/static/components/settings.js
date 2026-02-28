@@ -304,15 +304,21 @@ const Settings = {
       const opts = this._getDropdownOptions(keyPath);
       if (opts) {
         const currentVal = String(value ?? '');
+        const isModel = keyPath.endsWith('.model') || keyPath.endsWith('.llm_model');
         const hasCustom = currentVal && !opts.find(o => String(o.value) === currentVal);
         const isProvider = keyPath.endsWith('.provider');
         const changeHandler = isProvider
-          ? `Settings._onChange('${keyPath}',this.value);Settings._cascadeProvider('${keyPath}')`
-          : `Settings._onChange('${keyPath}',this.value)`;
+          ? `Settings._onDropdownChange('${keyPath}','${inputId}');Settings._cascadeProvider('${keyPath}')`
+          : `Settings._onDropdownChange('${keyPath}','${inputId}')`;
         input = `<select id="${inputId}" onchange="${changeHandler}" style="min-width:160px">` +
           opts.map(o => `<option value="${o.value}"${String(o.value) === currentVal ? ' selected' : ''}>${o.label}</option>`).join('') +
-          (hasCustom ? `<option value="${currentVal}" selected>${currentVal}</option>` : '') +
-          `</select>`;
+          (isModel ? `<option value="__custom"${hasCustom ? ' selected' : ''}>Custom...</option>` : '') +
+          (hasCustom && !isModel ? `<option value="${currentVal}" selected>${currentVal}</option>` : '') +
+          `</select>` +
+          (isModel ? `<input id="${inputId}-custom" type="text" value="${hasCustom ? currentVal : ''}" ` +
+            `placeholder="e.g. gemini/gemini-2.5-pro-preview" ` +
+            `style="width:200px;margin-left:4px;display:${hasCustom ? 'inline' : 'none'}" ` +
+            `onchange="Settings._onChange('${keyPath}',this.value)">` : '');
       } else if (type === 'boolean') {
         input = `<select id="${inputId}" onchange="Settings._onChange('${keyPath}',this.value==='true')">
           <option value="true"${value ? ' selected' : ''}>true</option>
@@ -331,6 +337,17 @@ const Settings = {
     }).filter(Boolean).join('');
     if (!rows) return '';
     return `<div style="margin-bottom:6px"><div style="font-size:11px;color:var(--text-muted);font-weight:600">${section}${badge}</div><table style="font-size:12px">${rows}</table></div>`;
+  },
+
+  _onDropdownChange(keyPath, inputId) {
+    const select = document.getElementById(inputId);
+    const customInput = document.getElementById(inputId + '-custom');
+    if (select.value === '__custom') {
+      if (customInput) { customInput.style.display = 'inline'; customInput.focus(); }
+    } else {
+      if (customInput) { customInput.style.display = 'none'; }
+      this._onChange(keyPath, select.value);
+    }
   },
 
   _onChange(keyPath, value) {
