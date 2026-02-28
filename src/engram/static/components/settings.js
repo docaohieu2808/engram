@@ -345,15 +345,13 @@ const Settings = {
     try {
       const res = await API.updateConfig(this._dirty);
       if (statusEl) {
-        const restartBtn = res.restart_required
-          ? ' <button class="btn btn-sm btn-warning" onclick="Settings.restartServer()" style="margin-left:8px">Restart Now</button>'
-          : '';
+        const restartBtn = '<button onclick="Settings.restartServer()" style="margin-left:8px;padding:3px 10px;background:#e67e22;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Restart Now</button>';
         const msg = res.restart_required
-          ? `Saved ${res.changed.length} changes. <strong>Server restart required</strong> for some settings to take effect.${restartBtn}`
+          ? `Saved ${res.changed.length} changes. <strong>Server restart required.</strong>${restartBtn}`
           : `Saved ${res.changed.length} changes.`;
         statusEl.style.display = 'block';
-        statusEl.style.background = res.restart_required ? 'var(--warning-bg, #fff3cd)' : 'var(--success-bg, #d4edda)';
-        statusEl.style.color = res.restart_required ? 'var(--warning, #856404)' : 'var(--success, #155724)';
+        statusEl.style.background = res.restart_required ? '#fff3cd' : '#d4edda';
+        statusEl.style.color = res.restart_required ? '#856404' : '#155724';
         statusEl.innerHTML = msg;
       }
       this._dirty = {};
