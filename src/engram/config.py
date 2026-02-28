@@ -74,9 +74,11 @@ class CaptureConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: str = "gemini"
-    model: str = "gemini/gemini-2.5-flash"
-    api_key: str = "${GEMINI_API_KEY}"
+    provider: str = "anthropic"
+    model: str = "anthropic/claude-sonnet-4-6"
+    api_key: str = "${ANTHROPIC_API_KEY}"
+    # Set true for thinking models (e.g. gemini-2.5-flash) to disable thinking tokens
+    disable_thinking: bool = False
 
 
 class ServeConfig(BaseModel):
