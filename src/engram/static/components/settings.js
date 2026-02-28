@@ -180,6 +180,84 @@ const Settings = {
     </div>`;
   },
 
+  // Fields with known dropdown options: "section.field" → [{value, label}]
+  _dropdownOptions: {
+    'embedding.provider': [
+      { value: 'gemini', label: 'Gemini' },
+      { value: 'openai', label: 'OpenAI' },
+      { value: 'cohere', label: 'Cohere' },
+    ],
+    'embedding.model': [
+      { value: 'gemini-embedding-001', label: 'Gemini Embedding 001' },
+      { value: 'text-embedding-3-small', label: 'OpenAI text-embedding-3-small' },
+      { value: 'text-embedding-3-large', label: 'OpenAI text-embedding-3-large' },
+    ],
+    'embedding.key_strategy': [
+      { value: 'failover', label: 'Failover (primary first)' },
+      { value: 'round-robin', label: 'Round Robin (spread quota)' },
+    ],
+    'llm.provider': [
+      { value: 'anthropic', label: 'Anthropic' },
+      { value: 'gemini', label: 'Google Gemini' },
+      { value: 'openai', label: 'OpenAI' },
+    ],
+    'llm.model': [
+      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'gemini/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'openai/gpt-4o', label: 'GPT-4o' },
+      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+    ],
+    'extraction.llm_model': [
+      { value: '', label: '(inherit from LLM model)' },
+      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { value: 'anthropic/claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+    ],
+    'consolidation.llm_model': [
+      { value: '', label: '(inherit from LLM model)' },
+      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+    ],
+    'resolution.llm_model': [
+      { value: '', label: '(inherit from LLM model)' },
+      { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+      { value: 'gemini/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+    ],
+    'episodic.provider': [
+      { value: 'chromadb', label: 'ChromaDB' },
+    ],
+    'episodic.mode': [
+      { value: 'embedded', label: 'Embedded (local)' },
+      { value: 'http', label: 'HTTP (remote)' },
+    ],
+    'semantic.provider': [
+      { value: 'sqlite', label: 'SQLite' },
+      { value: 'postgresql', label: 'PostgreSQL' },
+    ],
+    'logging.format': [
+      { value: 'text', label: 'Text' },
+      { value: 'json', label: 'JSON' },
+    ],
+    'logging.level': [
+      { value: 'DEBUG', label: 'DEBUG' },
+      { value: 'INFO', label: 'INFO' },
+      { value: 'WARNING', label: 'WARNING' },
+      { value: 'ERROR', label: 'ERROR' },
+    ],
+    'audit.backend': [
+      { value: 'file', label: 'File' },
+    ],
+    'event_bus.backend': [
+      { value: 'memory', label: 'In-Memory' },
+      { value: 'redis', label: 'Redis' },
+    ],
+  },
+
   _sectionFields(section, data, needsRestart) {
     const badge = needsRestart ? ' <span style="background:var(--warning);color:#000;padding:1px 5px;border-radius:3px;font-size:10px">restart required</span>' : '';
     const rows = Object.entries(data).map(([field, value]) => {
@@ -187,7 +265,16 @@ const Settings = {
       const inputId = `cfg-${keyPath.replace(/\./g, '-')}`;
       const type = typeof value;
       let input;
-      if (type === 'boolean') {
+      // Check if this field has known dropdown options
+      const opts = this._dropdownOptions[keyPath];
+      if (opts) {
+        const currentVal = String(value ?? '');
+        const hasCustom = currentVal && !opts.find(o => String(o.value) === currentVal);
+        input = `<select id="${inputId}" onchange="Settings._onChange('${keyPath}',this.value)" style="min-width:160px">` +
+          opts.map(o => `<option value="${o.value}"${String(o.value) === currentVal ? ' selected' : ''}>${o.label}</option>`).join('') +
+          (hasCustom ? `<option value="${currentVal}" selected>${currentVal}</option>` : '') +
+          `</select>`;
+      } else if (type === 'boolean') {
         input = `<select id="${inputId}" onchange="Settings._onChange('${keyPath}',this.value==='true')">
           <option value="true"${value ? ' selected' : ''}>true</option>
           <option value="false"${!value ? ' selected' : ''}>false</option>
