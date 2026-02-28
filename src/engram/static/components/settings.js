@@ -17,28 +17,17 @@ const Settings = {
 
   async _render() {
     const el = document.getElementById('tab-settings');
-    let status = {}, scheduler = [];
-    try { status = await API.status(); } catch {}
-    try { const s = await API.schedulerTasks(); scheduler = s.tasks || []; } catch {}
+    let scheduler = [];
     try {
       const res = await API.getConfig();
       this._config = res.config || {};
       this._restartSections = new Set(res.restart_required_sections || []);
     } catch { this._config = null; }
+    try { const s = await API.schedulerTasks(); scheduler = s.tasks || []; } catch {}
 
     el.innerHTML = `
       ${this._config ? this._modelSelector() : ''}
       ${this._config ? this._configEditor() : ''}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-        <div class="card">
-          <h3>Episodic Store</h3>
-          ${this._kvTable(status.episodic || {})}
-        </div>
-        <div class="card">
-          <h3>Semantic Graph</h3>
-          ${this._kvTable(status.semantic || {})}
-        </div>
-      </div>
       <div class="card" style="margin-bottom:12px">
         <h3>Scheduler Tasks</h3>
         ${scheduler.length ? this._schedulerTable(scheduler) : '<span style="color:var(--text-muted)">No tasks registered</span>'}
