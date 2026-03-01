@@ -11,12 +11,27 @@ from pathlib import Path
 
 from engram.setup.connectors.base import AgentConnector, ConfigureResult
 
-# Engram MCP server entry to inject into any mcpServers config
-ENGRAM_MCP_ENTRY: dict = {
-    "command": "engram-mcp",
-    "args": [],
-    "env": {},
-}
+
+def _resolve_engram_mcp_command() -> str:
+    """Resolve the engram-mcp command to an absolute path if not in system PATH."""
+    system_bin = shutil.which("engram-mcp")
+    if system_bin:
+        return system_bin
+    # Fallback: check the same venv/prefix as the running engram binary
+    import sys
+    candidate = Path(sys.executable).parent / "engram-mcp"
+    if candidate.exists():
+        return str(candidate)
+    return "engram-mcp"  # last resort — hope it's in PATH
+
+
+def get_engram_mcp_entry() -> dict:
+    """Build engram MCP server entry with resolved command path."""
+    return {
+        "command": _resolve_engram_mcp_command(),
+        "args": [],
+        "env": {},
+    }
 
 
 def _read_mcp_config(path: Path) -> dict:
@@ -33,7 +48,7 @@ def _read_mcp_config(path: Path) -> dict:
 def _merge_engram_entry(config: dict) -> dict:
     """Add engram entry to mcpServers in config dict. Idempotent."""
     mcp_servers = config.setdefault("mcpServers", {})
-    mcp_servers["engram"] = ENGRAM_MCP_ENTRY
+    mcp_servers["engram"] = get_engram_mcp_entry()
     return config
 
 
