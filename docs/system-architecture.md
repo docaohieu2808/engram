@@ -11,7 +11,7 @@ Engram is a dual-memory AI system that enables agents to reason like humans by c
 
 All four interfaces (CLI, MCP, HTTP, WebSocket) share the same memory layers.
 
-**Version:** 0.4.2 | **Tests:** 972+ | **LOC:** ~5200+
+**Version:** 0.4.3 | **Tests:** 972+ | **LOC:** ~7100+
 
 ---
 
@@ -808,6 +808,53 @@ scheduler:
 ENGRAM_LLM_MODEL=claude-opus-4-6 engram serve
 ENGRAM_EXTRACTION_TEMPERATURE=0.5 engram think "query"
 ```
+
+---
+
+### Layer 12: Setup Wizard (v0.4.3)
+
+**Path:** `src/engram/setup/`, `src/engram/cli/setup_cmd.py`
+
+**Purpose:** Interactive CLI wizard to auto-detect installed AI agents/IDEs and configure engram shared memory integration.
+
+**Components:**
+
+- **AgentConnector** (`setup/connectors/base.py`) — Abstract base class
+  - `detect()` → `DetectionResult` (installed, version, config_path)
+  - `configure(dry_run)` → `ConfigureResult` (success, files_modified, backup_path)
+  - `verify()` → `bool`
+
+- **McpJsonConnector** (`setup/connectors/mcp_json_mixin.py`) — Shared MCP config mixin
+  - JSON merge strategy: read existing → merge engram entry → write back
+  - Absolute path resolution for `engram-mcp` binary (venv-safe)
+  - Backup original config before modification
+  - Idempotent: skip if already configured
+
+- **Connectors** (9 total, sorted by tier):
+  | Tier | Connector | Config Method |
+  |------|-----------|--------------|
+  | 1 | Claude Code | MCP JSON (`~/.claude/mcp.json`) |
+  | 1 | OpenClaw | Skill file (`~/.openclaw/workspace/skills/engram/SKILL.md`) |
+  | 1 | Cursor | MCP JSON (`~/.cursor/mcp.json`) |
+  | 1 | Windsurf | MCP JSON (`~/.codeium/windsurf/mcp_config.json`) |
+  | 2 | Cline | MCP JSON (VSCode extension settings) |
+  | 2 | Aider | YAML config (`~/.aider.conf.yml`) |
+  | 2 | Zed | JSON settings (`~/.config/zed/settings.json`) |
+  | 2 | Void | MCP JSON (`~/.void/mcp.json`) |
+  | 3 | Antigravity | Proxy config (`~/.antigravity/config.json`) |
+
+- **Detector** (`setup/detector.py`) — `scan_agents()` iterates registry, returns (connector, result) pairs
+- **Wizard UI** (`setup/wizard.py`) — Rich panels + questionary checkbox prompts
+- **Verifier** (`setup/verifier.py`) — Post-config verification + server status check
+- **Federation** (`setup/federation/`) — Mem0, Cognee, Zep provider detection stubs
+
+**CLI Flags:**
+- `engram setup` — Interactive mode (questionary checkbox)
+- `engram setup --dry-run` — Preview changes without writing
+- `engram setup --non-interactive` — Configure all detected agents
+- `engram setup --status` — Show connection status + verification
+
+**Non-TTY Detection:** Auto-fallback to `--non-interactive` when stdin is not a terminal (CI, SSH pipes).
 
 ---
 

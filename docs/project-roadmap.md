@@ -2,6 +2,24 @@
 
 ## Version History
 
+### v0.4.3 (Completed — 2026-03-01)
+**Interactive Setup Wizard**
+
+**`engram setup` Command** ✓
+- Interactive wizard auto-detects installed AI agents/IDEs
+- 9 connectors: Claude Code, OpenClaw, Cursor, Windsurf, Cline, Aider, Zed, Void, Antigravity
+- Connector base class with detect/configure/verify interface
+- McpJsonConnector mixin for MCP JSON config merge pattern
+- Resolves engram-mcp to absolute path (venv-safe)
+- `--dry-run`, `--non-interactive`, `--status` flags
+- Auto-fallback to non-interactive in non-TTY (CI/SSH)
+- Federation provider stubs: Mem0, Cognee, Zep
+- Verification engine + server status check
+- New package: `src/engram/setup/` (24 files, 1965+ lines)
+- New dependency: `questionary>=2.0.0`
+
+---
+
 ### v0.4.1 (Completed — 2026-02-27)
 **WebSocket API + Real-Time Push**
 
@@ -596,6 +614,7 @@ v3.0.0: /api/v2/remember removed (after 6mo notice in v2.0)
 | v0.3.0 | 2026-02-25 | Activation-Based Recall + Consolidation + TUI | ✓ Released |
 | v0.3.1 | 2026-02-25 | Recall Pipeline + Entity Resolution + Learning | ✓ Released |
 | v0.3.2 | 2026-02-25 | Brain Features (Audit Trail, Resource Tier, Constitution, Scheduler) | ✓ Released |
+| v0.4.3 | 2026-03-01 | Interactive Setup Wizard | ✓ Released |
 | v0.4.1 | 2026-02-27 | WebSocket API + Real-Time Push | ✓ Released |
 | v0.4.2+ | 2026-06-30 | Advanced Queries + Performance | Planned |
 | v0.4.0 | 2026-09-30 | Multi-Node Distribution | Planned |

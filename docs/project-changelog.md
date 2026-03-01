@@ -4,6 +4,41 @@ All notable changes to this project are documented here. Follows [Keep a Changel
 
 ---
 
+## [v0.4.3] — 2026-03-01
+### Interactive Setup Wizard
+
+**Added**
+- **`engram setup` command** — Interactive wizard to auto-detect and configure AI agents/IDEs for engram shared memory
+  - Auto-detects installed agents: Claude Code, OpenClaw, Cursor, Windsurf, Cline, Aider, Zed, Void, Antigravity
+  - Checkbox prompt (questionary) for agent selection in interactive mode
+  - Auto-fallback to `--non-interactive` in non-TTY environments (CI, SSH pipes)
+  - `--dry-run` flag previews changes without writing
+  - `--non-interactive` flag configures all detected agents automatically
+  - `--status` flag shows current connection status + verification table
+
+- **Connector architecture** (`src/engram/setup/connectors/`)
+  - `AgentConnector` ABC with `detect()`, `configure()`, `verify()` interface
+  - `McpJsonConnector` mixin for MCP JSON config merge (Claude Code, Cursor, Windsurf, Cline, Void)
+  - Connector registry with auto-discovery, sorted by tier (1-3)
+  - Each connector <200 lines, self-contained
+
+- **MCP path resolution fix** — Resolves `engram-mcp` to absolute path when installed in venv (not in system PATH)
+
+- **Wizard UI** (`src/engram/setup/wizard.py`) — Rich panels + progress bars + questionary prompts
+  - Detection table with status/version/details per agent
+  - Configuration progress bar
+  - Completion summary with verification results
+
+- **Federation providers** (`src/engram/setup/federation/`) — Mem0, Cognee, Zep provider detection stubs
+
+- **Verification engine** (`src/engram/setup/verifier.py`) — Post-config verification + server status check
+
+**New files:** 24 files, 1965+ lines across `setup/`, `cli/setup_cmd.py`
+
+**New dependency:** `questionary>=2.0.0`
+
+---
+
 ## [v0.4.2] — 2026-02-28
 ### Configuration Management + Live Settings Editor
 
