@@ -489,9 +489,29 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         tui_app = EngramTUI(episodic, session_store)
         tui_app.run()
 
+    @app.command("queue-status")
+    def queue_status():
+        """Show embedding queue status (pending retries after embedding API failure)."""
+        from engram.episodic.embedding_queue import get_embedding_queue
+        q = get_embedding_queue()
+        stats = q.queue_status()
+        pending = stats["pending"]
+        done = stats["done"]
+        failed = stats["failed"]
+        style = "green" if pending == 0 else "yellow"
+        console.print(f"[bold]Embedding Queue:[/bold] [{style}]{pending} pending[/{style}]")
+        console.print(f"  Processed (done): {done}")
+        console.print(f"  Permanently failed: {failed}")
+        if stats["oldest_pending"]:
+            console.print(f"  Oldest pending: {stats['oldest_pending']}")
+        if stats["last_error"]:
+            console.print(f"  Last error: [red]{stats['last_error']}[/red]")
+        if pending == 0:
+            console.print("[dim]Queue empty — all embeddings are current.[/dim]")
+
     @app.command("resource-status")
     def resource_status():
-        """Show resource tier and LLM availability status."""
+        """Show resource tier, LLM availability, and embedding health."""
         from engram.resource_tier import get_resource_monitor
         monitor = get_resource_monitor()
         status = monitor.status()
@@ -502,6 +522,16 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         console.print(f"  Since last success: {status['seconds_since_last_success']}s")
         if status["forced"]:
             console.print(f"  [yellow]Forced tier: {status['forced']}[/yellow]")
+        # Show embedding queue health
+        try:
+            from engram.episodic.embedding_queue import get_embedding_queue
+            q_stats = get_embedding_queue().queue_status()
+            pending = q_stats["pending"]
+            embed_style = "green" if pending == 0 else ("yellow" if pending < 100 else "red")
+            console.print(f"[bold]Embedding Health:[/bold] [{embed_style}]{pending} queued[/{embed_style}]"
+                          f" ({q_stats['failed']} failed permanently)")
+        except Exception:
+            pass
 
     @app.command("constitution-status")
     def constitution_status():

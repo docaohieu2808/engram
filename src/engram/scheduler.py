@@ -218,7 +218,7 @@ def create_default_scheduler(
         task_timeout=cfg.task_timeout_seconds,
     )
 
-    # Task: drain pending queue (retry failed embeddings)
+    # Task: drain pending queue (retry failed embeddings — legacy JSONL queue)
     async def drain_pending_queue() -> dict[str, Any]:
         from engram.episodic.pending_queue import get_pending_queue
         queue = get_pending_queue()
@@ -231,6 +231,24 @@ def create_default_scheduler(
     scheduler.register(
         "drain_pending_queue", drain_pending_queue,
         interval_seconds=cfg.queue_drain_interval_seconds,
+        requires_llm=False,
+    )
+
+    # Task: process embedding queue (SQLite-backed retry, runs every 5 min)
+    async def process_embedding_queue() -> dict[str, Any]:
+        from engram.resource_tier import get_resource_monitor, ResourceTier
+        monitor = get_resource_monitor()
+        if monitor.get_tier() == ResourceTier.READONLY:
+            return {"skipped": True, "reason": "readonly tier"}
+        from engram.episodic.embedding_queue import process_embedding_queue as _process, get_embedding_queue
+        queue = get_embedding_queue()
+        if queue.pending_count() == 0:
+            return {"skipped": True}
+        return await _process(episodic_store, queue)
+
+    scheduler.register(
+        "process_embedding_queue", process_embedding_queue,
+        interval_seconds=300,  # 5 minutes
         requires_llm=False,
     )
 

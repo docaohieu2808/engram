@@ -131,7 +131,15 @@ class _EpisodicCrudMixin:
         if metadata:
             doc_metadata.update(metadata)
 
+        _embedded = True
         try:
+            # Skip embedding on BASIC/READONLY tier — save API call, queue directly
+            from engram.resource_tier import get_resource_monitor, ResourceTier
+            _monitor = get_resource_monitor()
+            _tier = _monitor.get_tier()
+            if _tier in (ResourceTier.BASIC, ResourceTier.READONLY):
+                raise RuntimeError(f"Skipping embed on degraded tier: {_tier.value}")
+
             await self._ensure_backend()
             await self._detect_embedding_dim()
             embeddings = await asyncio.to_thread(
@@ -150,22 +158,25 @@ class _EpisodicCrudMixin:
                 content=content,
                 metadata=doc_metadata,
             )
+            _monitor.record_success()
         except ValueError:
             # Re-raise validation errors (dimension mismatch, etc.) — not retriable
             raise
         except Exception as e:
-            # Embedding or backend failure — enqueue for retry instead of dropping
-            logger.warning("Embedding failed, queued for retry: %s", content[:50])
+            # Embedding or backend failure — enqueue for retry, continue to FTS/hooks
+            _embedded = False
+            logger.warning("Embedding failed, queued for retry (id=%s): %s", memory_id[:8], e)
             try:
-                from engram.episodic.pending_queue import get_pending_queue
-                get_pending_queue().enqueue(
-                    content=content,
-                    timestamp=doc_metadata.get("timestamp"),
-                    metadata={k: v for k, v in doc_metadata.items() if k != "timestamp"},
-                )
+                from engram.resource_tier import get_resource_monitor
+                _rm = get_resource_monitor()
+                _rm.record_failure("quota" if "quota" in str(e).lower() else "embedding")
+            except Exception:
+                pass
+            try:
+                from engram.episodic.embedding_queue import get_embedding_queue
+                get_embedding_queue().enqueue(memory_id, content, doc_metadata)
             except Exception as qe:
-                logger.error("PendingQueue enqueue also failed: %s", qe)
-            raise RuntimeError(f"Failed to store memory: {e}") from e
+                logger.error("EmbeddingQueue enqueue also failed: %s", qe)
 
         # Sync to FTS5 index (fire-and-forget; non-blocking on failure)
         mt_str = memory_type.value if isinstance(memory_type, MemoryType) else memory_type
