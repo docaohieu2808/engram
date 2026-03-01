@@ -59,6 +59,23 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
             entities=entities or [], tags=tags or [],
             topic_key=topic_key, metadata=metadata,
         )
+        # Check if embedding was queued (partial success)
+        try:
+            from engram.episodic.embedding_queue import get_embedding_queue
+            _q = get_embedding_queue()
+            _pending = _q.pending_count()
+            # If queue grew, this remember was queued (not embedded yet)
+            if _pending > 0:
+                # Check if this specific memory_id is in queue by checking queue status
+                _batch = _q.dequeue_batch(limit=1)
+                _queued = any(item["id"] == mem_id for item in _batch)
+                if _queued:
+                    return (
+                        f"Remembered (id={mem_id[:8]}, type={memory_type}, priority={priority})"
+                        f" [embedding queued — {_pending} pending]"
+                    )
+        except Exception:
+            pass
         return f"Remembered (id={mem_id[:8]}, type={memory_type}, priority={priority})"
 
     @mcp.tool()
