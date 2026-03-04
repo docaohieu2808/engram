@@ -56,6 +56,14 @@ EXTRACTION_PROMPT = """You are an entity extraction system. Extract entities and
 class EntityExtractor:
     """Extract semantic entities from chat messages using LLM."""
 
+    # Model fallback chain: try each model on quota/rate/auth errors
+    _MODEL_FALLBACK_CHAIN = [
+        "gemini/gemini-3.1-pro-preview",
+        "gemini/gemini-3-pro-preview",
+        "gemini/gemini-2.5-pro",
+        "gemini/gemini-2.5-flash",
+    ]
+
     def __init__(
         self,
         model: str,
@@ -176,8 +184,38 @@ class EntityExtractor:
         out = list(seen.values())
         return out
 
+    async def _llm_call_with_fallback(self, kwargs: dict) -> Any:
+        """Call litellm with model fallback chain on quota/rate/auth errors."""
+        primary_model = kwargs.get("model", self._model)
+
+        # Build fallback list: primary first, then chain (skip duplicates)
+        seen = {primary_model}
+        fallback_models = [primary_model]
+        for m in self._MODEL_FALLBACK_CHAIN:
+            if m not in seen:
+                fallback_models.append(m)
+                seen.add(m)
+
+        last_exc: Exception | None = None
+        for model in fallback_models:
+            kwargs["model"] = model
+            try:
+                return await litellm.acompletion(**kwargs)
+            except Exception as e:
+                last_exc = e
+                err_str = str(e).lower()
+                is_retriable = any(k in err_str for k in (
+                    "429", "rate", "quota", "resource_exhausted",
+                    "auth", "api key", "403", "401",
+                ))
+                if is_retriable and model != fallback_models[-1]:
+                    logger.warning("Extraction LLM %s failed (%s), trying next model", model, type(e).__name__)
+                    continue
+                raise
+        raise last_exc  # type: ignore[misc]
+
     async def _extract_chunk(self, messages: list[dict]) -> ExtractionResult:
-        """Run LLM extraction on a chunk of messages, with up to 2 retries on transient errors."""
+        """Run LLM extraction on a chunk of messages, with retries + model fallback."""
         # Skip chunk entirely if ALL messages are junk content
         extractable = [m for m in messages if should_extract(m.get("content", ""))]
         if not extractable:
@@ -200,13 +238,13 @@ class EntityExtractor:
                 )
                 if self._disable_thinking:
                     kwargs["thinking"] = {"type": "disabled"}
-                response = await litellm.acompletion(**kwargs)
+                response = await self._llm_call_with_fallback(kwargs)
                 content = response.choices[0].message.content
                 return self._parse_response(content)
             except Exception as e:
                 last_exc = e
                 err_str = str(e).lower()
-                is_transient = any(k in err_str for k in ("connection", "rate", "timeout", "503", "429"))
+                is_transient = any(k in err_str for k in ("connection", "timeout", "503"))
                 if is_transient and attempt < self._max_retries - 1:
                     logger.warning("Extraction transient error (attempt %d): %s", attempt + 1, e)
                     await asyncio.sleep(self._retry_delay_seconds)
