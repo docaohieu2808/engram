@@ -19,7 +19,7 @@ from engram.providers.router import federated_search
 from engram.resource_tier import get_resource_monitor
 from engram.sanitize import sanitize_llm_input
 from engram.semantic.graph import SemanticGraph
-from engram.config import RecallConfig
+from engram.config import RecallConfig, LLMConfig
 from engram.utils import strip_diacritics
 
 litellm.suppress_debug_info = True
@@ -46,6 +46,11 @@ REASONING_PROMPT = """You are the user's personal AI — part memory, part brain
 2. **Your own trained knowledge**: psychology, relationships, strategy, human behavior, sexuality, business, health, etc.
 
 COMBINE BOTH to give the most useful, realistic answer. Memories tell you WHO and WHAT — your knowledge tells you WHY and HOW.
+
+**CRITICAL: Relevance filtering**
+- For GENERAL knowledge questions (e.g. "K8s best practices", "how does DNS work"), prioritize External Knowledge and your trained knowledge. Only cite personal memories if the user explicitly asks about THEIR system.
+- For PERSONAL questions (e.g. "what's my server setup", "who is X"), prioritize Memories.
+- Do NOT inject the user's personal infrastructure details into answers about general topics unless explicitly asked.
 
 ## Output Format
 Write DENSE, COMPACT reasoning — no filler, no fluff. Use short paragraphs and bullet points.
@@ -112,6 +117,21 @@ class ReasoningEngine:
         self._scoring_config = scoring_config
         self._recall = recall or RecallConfig()
         self._parallel_search = getattr(recall_config, "parallel_search", False) if recall_config else False
+        self._default_model = LLMConfig().model  # fallback model from code defaults
+
+    async def _llm_call_with_fallback(self, kwargs: dict) -> Any:
+        """Call litellm with fallback to default model on auth/key errors."""
+        try:
+            return await litellm.acompletion(**kwargs)
+        except Exception as e:
+            err_str = str(e).lower()
+            is_auth_error = any(k in err_str for k in ("auth", "api key", "permission", "403", "401"))
+            # Only fallback if using non-default model and error is auth-related
+            if is_auth_error and kwargs.get("model") != self._default_model:
+                logger.warning("LLM auth failed for %s, falling back to %s: %s", kwargs["model"], self._default_model, e)
+                kwargs["model"] = self._default_model
+                return await litellm.acompletion(**kwargs)
+            raise
 
     def invalidate_cache(self) -> None:
         """Invalidate entity hints cache (call when graph mutates)."""
@@ -156,7 +176,7 @@ class ReasoningEngine:
             else:
                 kwargs["thinking"] = {"type": "enabled", "budget_tokens": 5000}
                 kwargs.pop("temperature", None)
-            response = await litellm.acompletion(**kwargs)
+            response = await self._llm_call_with_fallback(kwargs)
             monitor.record_success()
             summary = response.choices[0].message.content
         except Exception as e:
@@ -301,8 +321,30 @@ class ReasoningEngine:
         else:
             result = {"answer": "No relevant memories found for this question.", "degraded": False}
 
+        # 6. Recall boost: bump importance for memories used in this Think
+        await self._boost_recalled_memories(episodic_results)
+
         fire_hook(self._on_think_hook, {"question": question, "answer": result["answer"]})
         return result
+
+    async def _boost_recalled_memories(self, results) -> None:
+        """Increment importance for memories recalled during Think (spaced repetition)."""
+        if not results or not self._episodic:
+            return
+        _BOOST = 0.1
+        _MAX_IMPORTANCE = 10
+        try:
+            for r in results:
+                mid = getattr(r, "id", None)
+                if not mid:
+                    continue
+                current = getattr(r, "importance", None) or 5
+                new_imp = min(current + _BOOST, _MAX_IMPORTANCE)
+                if new_imp != current:
+                    await self._episodic.update_metadata(mid, {"importance": new_imp})
+            logger.debug("recall boost: bumped %d memories by +%.1f", len(results), _BOOST)
+        except Exception as exc:
+            logger.debug("recall boost failed (non-critical): %s", exc)
 
     async def _extract_entity_hints(self, question: str) -> list[str]:
         """Match words in question against known graph node names.
@@ -465,7 +507,7 @@ class ReasoningEngine:
                     # Enable extended thinking for deeper reasoning
                     kwargs["thinking"] = {"type": "enabled", "budget_tokens": 10000}
                     kwargs.pop("temperature", None)  # thinking mode doesn't support temperature
-                response = await litellm.acompletion(**kwargs)
+                response = await self._llm_call_with_fallback(kwargs)
                 monitor.record_success()
                 return {"answer": response.choices[0].message.content, "degraded": False}
             except Exception as e:
