@@ -73,6 +73,13 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             _cached_graph = create_graph(cfg.semantic)
         return _cached_graph
 
+    def _get_providers():
+        from engram.providers.registry import ProviderRegistry
+        cfg = get_config()
+        registry = ProviderRegistry()
+        registry.load_from_config(cfg)
+        return registry.get_active()
+
     def _get_engine():
         from engram.reasoning.engine import ReasoningEngine
         cfg = get_config()
@@ -80,6 +87,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             _get_episodic(), _get_graph(),
             model=cfg.llm.model,
             on_think_hook=cfg.hooks.on_think,
+            providers=_get_providers(),
             recall_config=cfg.recall_pipeline,
             disable_thinking=cfg.llm.disable_thinking,
         )
