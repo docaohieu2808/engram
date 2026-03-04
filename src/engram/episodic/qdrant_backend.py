@@ -24,8 +24,8 @@ class QdrantBackend:
         self._collection_name: str = ""
 
     async def initialize(self, namespace: str, embedding_dim: int | None = None) -> None:
-        """Create collection if it doesn't exist."""
-        from qdrant_client.models import Distance, VectorParams
+        """Create collection if it doesn't exist, ensure payload indexes."""
+        from qdrant_client.models import Distance, VectorParams, PayloadSchemaType
         self._collection_name = namespace
         try:
             self._client.get_collection(self._collection_name)
@@ -37,6 +37,15 @@ class QdrantBackend:
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
             )
             logger.info("Created Qdrant collection '%s' (dim=%d)", self._collection_name, dim)
+        # Ensure payload index on timestamp for order_by support (needs DATETIME for range)
+        try:
+            self._client.create_payload_index(
+                collection_name=self._collection_name,
+                field_name="timestamp",
+                field_schema=PayloadSchemaType.DATETIME,
+            )
+        except Exception:
+            pass  # index already exists
 
     def _col(self) -> str:
         if not self._collection_name:
@@ -74,17 +83,30 @@ class QdrantBackend:
         }
 
     async def get_many(self, ids: list[str] | None = None, where: dict | None = None, include: list[str] | None = None, limit: int | None = None, offset: int | None = None) -> dict:
-        """Retrieve multiple documents. Returns ChromaDB-style result dict."""
+        """Retrieve multiple documents. Returns ChromaDB-style result dict.
+
+        Uses order_by=timestamp desc to get most recent results.
+        The offset parameter is ignored for Qdrant scroll (not compatible).
+        """
         if ids is not None:
             points = self._client.retrieve(collection_name=self._col(), ids=ids, with_payload=True, with_vectors="embeddings" in (include or []))
         else:
-            from qdrant_client.models import Filter
+            from qdrant_client.models import Filter, OrderBy, Direction
             qdrant_filter = _build_qdrant_filter(where) if where else None
-            points, _next_offset = self._client.scroll(
-                collection_name=self._col(), scroll_filter=qdrant_filter,
-                limit=limit or 100, offset=offset,
-                with_payload=True, with_vectors="embeddings" in (include or []),
-            )
+            try:
+                points, _next_offset = self._client.scroll(
+                    collection_name=self._col(), scroll_filter=qdrant_filter,
+                    limit=limit or 100,
+                    with_payload=True, with_vectors="embeddings" in (include or []),
+                    order_by=OrderBy(key="timestamp", direction=Direction.DESC),
+                )
+            except Exception:
+                # Fallback: no order_by (index may not exist yet)
+                points, _next_offset = self._client.scroll(
+                    collection_name=self._col(), scroll_filter=qdrant_filter,
+                    limit=limit or 100,
+                    with_payload=True, with_vectors="embeddings" in (include or []),
+                )
         return _points_to_chroma_dict(points, include)
 
     async def delete(self, ids: list[str]) -> None:
