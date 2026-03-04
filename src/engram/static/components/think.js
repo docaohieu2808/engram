@@ -116,14 +116,35 @@ const Think = {
 
   _formatSources(sources, qType) {
     if (!sources || !sources.length) return '';
-    const icons = { episodic: '🧠', semantic: '🔗', provider: '📚', llm: '💡' };
-    const labels = { episodic: 'Memory', semantic: 'Graph', provider: '', llm: 'LLM Knowledge' };
+    // SVG icons (no emoji)
+    const _ico = {
+      context: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+      knowledge: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>',
+      graph: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><line x1="8.5" y1="7.5" x2="15.5" y2="16.5"/><line x1="15.5" y1="7.5" x2="8.5" y2="16.5"/></svg>',
+      llm: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+    };
     const typeBadge = qType ? `<span class="badge" style="background:${qType==='general'?'#2563eb':qType==='personal'?'#7c3aed':'#d97706'};color:#fff;font-size:10px;margin-right:6px">${qType.toUpperCase()}</span>` : '';
     const badges = sources.map(s => {
-      const icon = icons[s.type] || '📄';
-      const label = s.name || labels[s.type] || s.type;
+      let icon, label, cat;
+      if (s.type === 'episodic') {
+        icon = _ico.context; label = 'Context Memory'; cat = 'context';
+      } else if (s.type === 'semantic') {
+        icon = _ico.graph; label = 'Graph'; cat = 'graph';
+      } else if (s.type === 'provider') {
+        icon = _ico.knowledge; label = s.name || 'Knowledge'; cat = 'knowledge';
+      } else {
+        icon = _ico.llm; label = 'LLM Knowledge'; cat = 'llm';
+      }
       const count = s.count ? ` (${s.count})` : '';
-      return `<span class="badge" style="background:var(--bg-secondary);font-size:11px;padding:2px 8px;margin-right:4px">${icon} ${label}${count}</span>`;
+      const colors = { context: '#7c3aed', knowledge: '#2563eb', graph: '#059669', llm: '#d97706' };
+      const bg = colors[cat] || 'var(--bg-secondary)';
+      // Origin breakdown for context memory (ClaudeCode, OpenClaw, think, etc.)
+      let originInfo = '';
+      if (s.origins && Object.keys(s.origins).length > 0) {
+        const parts = Object.entries(s.origins).map(([k,v]) => `${k}: ${v}`);
+        originInfo = ` <span style="font-size:10px;opacity:0.8">[${parts.join(', ')}]</span>`;
+      }
+      return `<span class="badge" style="background:${bg};color:#fff;font-size:11px;padding:2px 8px;margin-right:4px;display:inline-flex;align-items:center;gap:3px">${icon} ${label}${count}${originInfo}</span>`;
     }).join('');
     return `<div style="margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">${typeBadge}${badges}</div>`;
   },

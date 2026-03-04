@@ -209,7 +209,8 @@ class SearchResult(BaseModel):
     id: str
     content: str
     score: float
-    source: str  # "semantic", "entity_graph", "keyword"
+    source: str  # search channel: "semantic", "entity_graph", "keyword", "fts"
+    origin: str = ""  # ingestion source: "ClaudeCode", "OpenClaw", "think", "manual", etc.
     memory_type: str = "fact"
     importance: int = 5
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

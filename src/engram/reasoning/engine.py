@@ -229,7 +229,7 @@ class ReasoningEngine:
             answer (str): The synthesized or raw answer text.
             degraded (bool): True when LLM was skipped due to resource tier.
         """
-        _SEARCH_LIMIT = self._recall.search_limit
+        _search_limit = self._recall.search_limit
 
         # 0. Classify question type — skip memory retrieval for pure general knowledge
         from engram.recall.question_classifier import classify_question, QuestionType
@@ -254,6 +254,9 @@ class ReasoningEngine:
         logger.info("think(): q_type=%s, skip_memory=%s", q_type.value, skip_memory)
         if skip_memory:
             logger.info("think(): GENERAL question — skipping episodic/semantic retrieval")
+        elif q_type == QuestionType.MIXED:
+            # Reduce episodic context for MIXED — memory is background only
+            _search_limit = 3
 
         # 0b. Resolve temporal references in question so search finds dated memories
         search_question = question
@@ -274,17 +277,18 @@ class ReasoningEngine:
         elif self._parallel_search and self._episodic and self._graph:
             from engram.recall.parallel_search import ParallelSearcher
             searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config, self._scoring_config, recall=self._recall)
-            search_results = await searcher.search(search_question, limit=_SEARCH_LIMIT)
+            search_results = await searcher.search(search_question, limit=_search_limit)
             # Format parallel search results grouped by memory type for LLM context
             from engram.recall.fusion_formatter import format_for_llm
-            episodic_context = format_for_llm(search_results, max_chars=6000) or "\n".join(
+            _max_chars = 3000 if q_type == QuestionType.MIXED else 6000
+            episodic_context = format_for_llm(search_results, max_chars=_max_chars) or "\n".join(
                 f"[{r.source}] (score={r.score:.2f}) {r.content}" for r in search_results
             )
             # Use SearchResult list as episodic_results proxy for downstream synthesis
             episodic_results = search_results
             _use_parallel = True
         else:
-            episodic_results = await self._episodic.search(search_question, limit=_SEARCH_LIMIT)
+            episodic_results = await self._episodic.search(search_question, limit=_search_limit)
             episodic_context = None
             _use_parallel = False
 
@@ -340,7 +344,7 @@ class ReasoningEngine:
         if _use_parallel and episodic_results:
             _min_score = self._recall.min_relevance_score
             if q_type == QuestionType.MIXED:
-                _min_score = max(_min_score, 0.5)
+                _min_score = max(_min_score, 0.6)
             _before = len(episodic_results)
             episodic_results = [r for r in episodic_results if r.score >= _min_score]
             _filtered = _before - len(episodic_results)
@@ -363,6 +367,7 @@ class ReasoningEngine:
                 result = await self._synthesize(
                     question, episodic_results, semantic_results, provider_results,
                     episodic_context_override=episodic_context if _use_parallel else None,
+                    q_type=q_type,
                 )
             else:
                 tier = monitor.get_tier()
@@ -385,7 +390,19 @@ class ReasoningEngine:
         # 6. Build source attribution so UI can show where the answer came from
         sources: list[dict] = []
         if episodic_results:
-            sources.append({"type": "episodic", "count": len(episodic_results)})
+            # Break down episodic memories by origin source (ClaudeCode/OpenClaw/think/manual)
+            from collections import Counter
+            origin_counts: Counter = Counter()
+            for r in episodic_results:
+                # Use .origin (ingestion source), not .source (search channel)
+                origin = getattr(r, "origin", "") or ""
+                if not origin and hasattr(r, "metadata") and isinstance(r.metadata, dict):
+                    origin = r.metadata.get("source", "")
+                origin_counts[origin or "unknown"] += 1
+            sources.append({
+                "type": "episodic", "count": len(episodic_results),
+                "origins": dict(origin_counts),
+            })
         if semantic_results:
             sources.append({"type": "semantic", "count": len(semantic_results)})
         if provider_results:
@@ -397,7 +414,7 @@ class ReasoningEngine:
         if not sources:
             sources.append({"type": "llm", "name": "trained_knowledge"})
         result["sources"] = sources
-        result["question_type"] = q_type.value
+        result["question_type"] = q_type.value if q_type else ""
 
         # 7. Recall boost: bump importance for memories used in this Think
         await self._boost_recalled_memories(episodic_results)
@@ -509,6 +526,7 @@ class ReasoningEngine:
         semantic: dict[str, Any],
         provider_results: list | None = None,
         episodic_context_override: str | None = None,
+        q_type: QuestionType | None = None,
     ) -> dict:
         """Use LLM to reason over combined memory results.
 
@@ -567,7 +585,7 @@ class ReasoningEngine:
         import secrets
 
         if is_general_only:
-            # General knowledge mode: no personal memory context, neutral prompt
+            # GENERAL: no personal memory context at all
             provider_section = f"\n\n## Reference Material\n{provider_ctx}" if has_provider else ""
             prompt = constitution_prefix + f"""Answer the following question using your trained knowledge and any reference material provided. Be direct, practical, and specific.{provider_section}
 
@@ -577,10 +595,28 @@ class ReasoningEngine:
 ## Instructions
 - LANGUAGE: Respond in the SAME language as the question.
 - Be concise, use bullet points and headers.
-- Do NOT reference any personal infrastructure, servers, or user-specific context.
 - Focus purely on general best practices and technical knowledge.
 """
             sys_msg = "You are a knowledgeable technical assistant. Answer general knowledge questions accurately and concisely."
+        elif q_type and q_type.value == "mixed":
+            # MIXED: include memories BUT with strict instruction to prioritize general knowledge
+            prompt = constitution_prefix + REASONING_PROMPT.format(
+                current_datetime=now.strftime("%Y-%m-%d %H:%M:%S (%A, %Z)") + f" [sid:{secrets.token_hex(4)}]",
+                episodic_context=episodic_ctx,
+                semantic_context=semantic_ctx,
+                provider_context=provider_ctx,
+                question=sanitize_llm_input(question),
+            )
+            prompt += """
+
+## MIXED QUESTION RULES (CRITICAL — OVERRIDE ALL OTHER INSTRUCTIONS)
+This question has BOTH personal and general knowledge signals. Follow STRICTLY:
+1. **CITE SOURCES**: When using info from "External Knowledge" section, prefix with [Source: provider-name]. When using your own trained knowledge, prefix with [LLM]. This helps the user understand where each piece of advice comes from.
+2. **ZERO personal names**: Do NOT mention specific server names, people names, project names, app names from Episodic Memories. Pretend you don't know them.
+3. **NO "current setup" references**: Never say "hệ thống hiện tại", "setup hiện tại", "cụm X node hiện tại", or compare to user's existing infrastructure.
+4. **Memory = silent context**: Use memories ONLY to gauge the user's skill level. Do NOT surface memory content in the answer.
+5. **External Knowledge FIRST**: If Reference Material has relevant content, prioritize it over your trained knowledge."""
+            sys_msg = "You are a technical assistant. Answer with general best practices. You have background context about the user but do NOT reference their personal setup."
         else:
             prompt = constitution_prefix + REASONING_PROMPT.format(
                 current_datetime=now.strftime("%Y-%m-%d %H:%M:%S (%A, %Z)") + f" [sid:{secrets.token_hex(4)}]",
