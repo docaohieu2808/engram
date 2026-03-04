@@ -29,6 +29,12 @@ _METADATA_BLOCK_PATTERN = re.compile(
     re.DOTALL,
 )
 
+# Patterns to skip entirely — OpenClaw system noise
+_SKIP_PATTERNS = [
+    re.compile(r"^HEARTBEAT_OK$"),
+    re.compile(r"^NO_REPLY$"),
+]
+
 # Roles we capture — skip toolCall, toolResult, session, thinking_level_change, etc.
 _CAPTURE_ROLES = {"user", "assistant"}
 
@@ -44,11 +50,22 @@ def _extract_text(content: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
+def _should_skip(text: str) -> bool:
+    """Return True if message is OpenClaw system noise that should not be stored."""
+    for pat in _SKIP_PATTERNS:
+        if pat.search(text):
+            return True
+    return False
+
+
 def _clean_tags(text: str) -> str:
-    """Remove system tags, message IDs, and Telegram metadata blocks from captured text."""
+    """Remove system tags, message IDs, Telegram metadata, and reply markers from captured text."""
     text = _TAG_PATTERN.sub("", text)
     text = _SYSTEM_TAG_PATTERN.sub("", text)
     text = _METADATA_BLOCK_PATTERN.sub("", text)
+    # Strip OpenClaw reply markers
+    text = re.sub(r"\[\[reply_to_current\]\]\s*", "", text)
+    text = re.sub(r"\[\[reply_to:\d+\]\]\s*", "", text)
     return text.strip()
 
 
@@ -86,6 +103,10 @@ def parse_session_line(line: str) -> dict[str, Any] | None:
         return None
 
     if not text:
+        return None
+
+    # Skip OpenClaw system noise (HEARTBEAT, NO_REPLY)
+    if _should_skip(text):
         return None
 
     text = _clean_tags(text)
