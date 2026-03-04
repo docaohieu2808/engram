@@ -38,8 +38,9 @@ def _extract_text(content: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
+# Match metadata with ```json``` backticks (Telegram inject) OR without backticks (plain text)
 _METADATA_BLOCK_PATTERN = re.compile(
-    r"(?:Conversation info|Sender)\s*\(untrusted metadata\):\s*```json\s*\{[^}]*\}\s*```",
+    r"(?:Conversation info|Sender)\s*\(untrusted metadata\):\s*(?:```json\s*)?\{[^}]*\}\s*(?:```)?",
     re.DOTALL,
 )
 
