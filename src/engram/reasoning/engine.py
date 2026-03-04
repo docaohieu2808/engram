@@ -147,7 +147,7 @@ class ReasoningEngine:
             except Exception as e:
                 last_exc = e
                 err_str = str(e).lower()
-                is_retriable = any(k in err_str for k in ("429", "rate", "quota", "resource_exhausted", "auth", "api key", "403", "401"))
+                is_retriable = any(k in err_str for k in ("429", "rate", "quota", "resource_exhausted", "auth", "api key", "403", "401", "404", "not found", "not_found"))
                 if is_retriable and model != fallback_models[-1]:
                     logger.warning("LLM %s failed (%s), trying next model", model, type(e).__name__)
                     continue
