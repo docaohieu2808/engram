@@ -63,8 +63,8 @@ def _canonicalize_entities(entities: list[str] | None) -> list[str]:
 
 
 def _collection_name(namespace: str) -> str:
-    """Build ChromaDB collection name from namespace."""
-    return f"engram_{namespace}"
+    """Build collection name from namespace. Used as-is (no prefix added)."""
+    return namespace
 
 
 def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> EpisodicMemory:

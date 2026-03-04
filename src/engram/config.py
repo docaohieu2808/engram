@@ -27,10 +27,11 @@ class EpisodicConfig(BaseModel):
     decay_enabled: bool = True
     dedup_enabled: bool = True
     dedup_threshold: float = 0.85  # cosine similarity; 1.0 = identical
-    # Backend transport: "embedded" (local PersistentClient) or "http" (remote HttpClient)
+    # Backend transport: "embedded" (local PersistentClient), "http" (remote HttpClient), or "qdrant"
     mode: str = "embedded"
     host: str = "localhost"
     port: int = 8000
+    api_key: str = ""  # API key for remote backends (e.g. Qdrant)
     fts_db_path: str = "~/.engram/fts_index.db"
     fts_enabled: bool = True
 
@@ -79,9 +80,9 @@ class CaptureConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: str = "anthropic"
-    model: str = "anthropic/claude-sonnet-4-6"
-    api_key: str = "${ANTHROPIC_API_KEY}"
+    provider: str = "gemini"
+    model: str = "gemini/gemini-3.1-pro-preview"
+    api_key: str = "${GEMINI_API_KEY}"
     # Set true for thinking models (e.g. gemini-2.5-flash) to disable thinking tokens
     disable_thinking: bool = False
 

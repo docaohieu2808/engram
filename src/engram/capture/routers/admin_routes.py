@@ -134,30 +134,46 @@ async def scheduler_force_run(
 
 @router.post("/benchmark/run")
 async def benchmark_run(request: Request, auth: AuthContext = Depends(get_auth_context)):
-    """Run benchmark with provided questions."""
+    """Run benchmark using Think engine (LLM reasoning, not raw recall)."""
     require_admin(auth)
     body = await request.json()
     questions = body.get("questions", [])
     if not questions:
         raise EngramError(ErrorCode.VALIDATION_ERROR, "questions list required")
     state = request.app.state
+    cfg: Config = state.cfg
+    from engram.config import apply_llm_api_key
+    apply_llm_api_key(cfg)
     ep = resolve_episodic(state, auth)
-    results = []
-    for q in questions:
+    from engram.capture.server_helpers import resolve_graph, resolve_engine
+    gr = await resolve_graph(state, auth)
+    eng = resolve_engine(state, auth, ep, gr)
+    provider_registry = getattr(state, "provider_registry", None)
+    if provider_registry is not None:
+        eng._providers = provider_registry.get_active()
+    import asyncio
+
+    async def _run_one(q):
         query = q.get("question", "")
         expected = q.get("expected", "")
         start = time.time()
-        recalls = await ep.search(query, limit=3)
+        try:
+            think_result = await eng.think(query)
+            actual = think_result.get("answer", "")
+        except Exception as exc:
+            actual = f"[error] {exc}"
         latency = round((time.time() - start) * 1000, 1)
-        actual = recalls[0].content if recalls else ""
-        correct = expected.lower() in actual.lower() if expected else False
-        results.append({
-            "question": query,
-            "expected": expected,
-            "actual": actual[:200],
-            "correct": correct,
-            "latency_ms": latency,
-        })
+        # Keyword matching: split expected into words, check >=50% appear in actual
+        if expected:
+            keywords = [w for w in expected.lower().split() if len(w) > 1]
+            actual_lower = actual.lower()
+            matched = sum(1 for kw in keywords if kw in actual_lower) if keywords else 0
+            correct = (matched / len(keywords)) >= 0.5 if keywords else False
+        else:
+            correct = False
+        return {"question": query, "expected": expected, "actual": actual[:300], "correct": correct, "latency_ms": latency}
+
+    results = await asyncio.gather(*[_run_one(q) for q in questions])
     accuracy = sum(1 for r in results if r["correct"]) / len(results) * 100 if results else 0
     avg_latency = sum(r["latency_ms"] for r in results) / len(results) if results else 0
     return {

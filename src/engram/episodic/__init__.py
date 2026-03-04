@@ -21,6 +21,15 @@ def make_episodic_backend(config: "EpisodicConfig"):  # type: ignore[name-define
     from engram.config import EpisodicConfig  # local import to avoid circular imports
 
     mode = getattr(config, "mode", "embedded")
+    provider = getattr(config, "provider", "chromadb")
+    # Qdrant backend (remote vector DB)
+    if provider == "qdrant" or mode == "qdrant":
+        from engram.episodic.qdrant_backend import QdrantBackend
+        return QdrantBackend(
+            host=getattr(config, "host", "localhost"),
+            port=getattr(config, "port", 6333),
+            api_key=getattr(config, "api_key", None),
+        )
     if mode == "http":
         from engram.episodic.chromadb_http_backend import ChromaDBHttpBackend
         return ChromaDBHttpBackend(
