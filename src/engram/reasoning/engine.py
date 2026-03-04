@@ -119,23 +119,45 @@ class ReasoningEngine:
         self._parallel_search = getattr(recall_config, "parallel_search", False) if recall_config else False
         self._default_model = LLMConfig().model  # fallback model from code defaults
 
+    # Gemini model fallback chain: try each model on quota/rate errors
+    _MODEL_FALLBACK_CHAIN = [
+        "gemini/gemini-3.1-pro-preview",
+        "gemini/gemini-3-pro-preview",
+        "gemini/gemini-2.5-pro",
+        "gemini/gemini-2.5-flash",
+    ]
+
     async def _llm_call_with_fallback(self, kwargs: dict) -> Any:
-        """Call litellm with fallback to default model on auth/key errors."""
-        try:
-            return await litellm.acompletion(**kwargs)
-        except Exception as e:
-            err_str = str(e).lower()
-            is_auth_error = any(k in err_str for k in ("auth", "api key", "permission", "403", "401"))
-            # Only fallback if using non-default model and error is auth-related
-            if is_auth_error and kwargs.get("model") != self._default_model:
-                logger.warning("LLM auth failed for %s, falling back to %s: %s", kwargs["model"], self._default_model, e)
-                kwargs["model"] = self._default_model
+        """Call litellm with model fallback chain on quota/rate/auth errors."""
+        primary_model = kwargs.get("model", self._model)
+
+        # Build fallback list: primary first, then chain (skip duplicates)
+        seen = {primary_model}
+        fallback_models = [primary_model]
+        for m in self._MODEL_FALLBACK_CHAIN:
+            if m not in seen:
+                fallback_models.append(m)
+                seen.add(m)
+
+        last_exc: Exception | None = None
+        for model in fallback_models:
+            kwargs["model"] = model
+            try:
                 return await litellm.acompletion(**kwargs)
-            raise
+            except Exception as e:
+                last_exc = e
+                err_str = str(e).lower()
+                is_retriable = any(k in err_str for k in ("429", "rate", "quota", "resource_exhausted", "auth", "api key", "403", "401"))
+                if is_retriable and model != fallback_models[-1]:
+                    logger.warning("LLM %s failed (%s), trying next model", model, type(e).__name__)
+                    continue
+                raise
+        raise last_exc  # type: ignore[misc]
 
     def invalidate_cache(self) -> None:
         """Invalidate entity hints cache (call when graph mutates)."""
         self._node_names_cache = None
+        self._personal_entity_names = None
 
     async def summarize(self, n: int = 20, save: bool = False) -> str:
         """Summarize recent N memories into key insights using LLM.
@@ -209,18 +231,47 @@ class ReasoningEngine:
         """
         _SEARCH_LIMIT = self._recall.search_limit
 
-        # 0. Resolve temporal references in question so search finds dated memories
+        # 0. Classify question type — skip memory retrieval for pure general knowledge
+        from engram.recall.question_classifier import classify_question, QuestionType
+        # Only pass personal entities (Person, Project, Environment) to classifier.
+        # Technology/Service entities (K8s, Docker, Redis) are general knowledge,
+        # not personal context — they should NOT trigger personal classification.
+        _PERSONAL_ENTITY_TYPES = {"person", "project", "environment"}
+        if self._node_names_cache is None and self._graph:
+            try:
+                all_nodes = await self._graph.get_nodes()
+                self._node_names_cache = [n.name for n in all_nodes]
+                # Cache personal-only names separately for classifier
+                self._personal_entity_names = [
+                    n.name for n in all_nodes
+                    if n.type.lower() in _PERSONAL_ENTITY_TYPES
+                ]
+            except Exception:
+                pass
+        personal_entities = getattr(self, "_personal_entity_names", None)
+        q_type = classify_question(question, known_entities=personal_entities)
+        skip_memory = q_type == QuestionType.GENERAL
+        logger.info("think(): q_type=%s, skip_memory=%s", q_type.value, skip_memory)
+        if skip_memory:
+            logger.info("think(): GENERAL question — skipping episodic/semantic retrieval")
+
+        # 0b. Resolve temporal references in question so search finds dated memories
         search_question = question
-        try:
-            from engram.recall.temporal_resolver import resolve_temporal
-            resolved_q, _resolved_date = resolve_temporal(question)
-            if _resolved_date:
-                search_question = resolved_q
-        except Exception as exc:
-            logger.debug("engine: temporal resolution failed, using original query: %s", exc)
+        if not skip_memory:
+            try:
+                from engram.recall.temporal_resolver import resolve_temporal
+                resolved_q, _resolved_date = resolve_temporal(question)
+                if _resolved_date:
+                    search_question = resolved_q
+            except Exception as exc:
+                logger.debug("engine: temporal resolution failed, using original query: %s", exc)
 
         # 1. Vector search for relevant episodic memories
-        if self._parallel_search and self._episodic and self._graph:
+        if skip_memory:
+            episodic_results = []
+            episodic_context = None
+            _use_parallel = False
+        elif self._parallel_search and self._episodic and self._graph:
             from engram.recall.parallel_search import ParallelSearcher
             searcher = ParallelSearcher(self._episodic, self._graph, self._recall_config, self._scoring_config, recall=self._recall)
             search_results = await searcher.search(search_question, limit=_SEARCH_LIMIT)
@@ -238,10 +289,10 @@ class ReasoningEngine:
             _use_parallel = False
 
         # 2. Find entity hints in question by matching against known nodes
-        entity_hints = await self._extract_entity_hints(question)
+        entity_hints = [] if skip_memory else await self._extract_entity_hints(question)
 
         # 2b. Entity-boosted search: pull more episodic memories mentioning entities
-        if entity_hints and self._episodic:
+        if entity_hints and self._episodic and not skip_memory:
             entity_memories = await self._search_by_entities(entity_hints, limit=self._recall.entity_search_limit)
             if _use_parallel:
                 # Merge into parallel results (dedup by content hash)
@@ -269,22 +320,27 @@ class ReasoningEngine:
                         episodic_results.append(mem)
                         existing_ids.add(mem.id)
 
-        # 3. Graph traversal for those entities
+        # 3. Graph traversal for those entities (skip for general questions)
         semantic_results: dict[str, Any] = {}
         for entity in entity_hints:
             related = await self._graph.get_related([entity], depth=self._recall.entity_graph_depth)
             semantic_results.update(related)
 
         # 4. Federated search across external providers
+        # For GENERAL questions, force federation (always query LlamaIndex/external sources)
         provider_results = await federated_search(
             question, self._providers,
             limit=self._recall.provider_search_limit,
             timeout_seconds=self._recall.federated_search_timeout,
+            force_federation=skip_memory,
         )
 
         # 4b. Filter parallel search results below minimum relevance score
+        # For MIXED questions, raise the bar to reduce noise from irrelevant personal memories
         if _use_parallel and episodic_results:
             _min_score = self._recall.min_relevance_score
+            if q_type == QuestionType.MIXED:
+                _min_score = max(_min_score, 0.5)
             _before = len(episodic_results)
             episodic_results = [r for r in episodic_results if r.score >= _min_score]
             _filtered = _before - len(episodic_results)
@@ -296,22 +352,27 @@ class ReasoningEngine:
                 f"[{r.source}] (score={r.score:.2f}) {r.content}" for r in episodic_results
             ) if episodic_results else None
 
-        # 5. If we have results, use LLM to synthesize (resource-aware)
+        # 5. Synthesize answer (resource-aware)
+        # For GENERAL questions: always call LLM (use trained knowledge, no memories)
+        # For PERSONAL/MIXED: call LLM only if we have memory results
         monitor = get_resource_monitor()
-        if episodic_results or semantic_results or provider_results:
+        has_results = bool(episodic_results or semantic_results or provider_results)
+        should_synthesize = has_results or skip_memory  # general Q always gets LLM
+        if should_synthesize:
             if monitor.can_use_llm():
                 result = await self._synthesize(
                     question, episodic_results, semantic_results, provider_results,
                     episodic_context_override=episodic_context if _use_parallel else None,
                 )
             else:
-                # BASIC tier: return raw results without LLM synthesis
                 tier = monitor.get_tier()
                 logger.warning(
                     "think() degraded: resource tier %s — skipping LLM synthesis",
                     tier.value,
                 )
-                if _use_parallel:
+                if skip_memory:
+                    result = {"answer": "Resource tier too low for general knowledge questions.", "degraded": True}
+                elif _use_parallel:
                     result = {
                         "answer": episodic_context or "No relevant memories found for this question.",
                         "degraded": True,
@@ -477,17 +538,41 @@ class ReasoningEngine:
                 provider_lines.append(f"[{r.source}] {r.content}")
         provider_ctx = "\n".join(provider_lines) if provider_lines else "No external knowledge found."
 
+        # Detect if this is a general-knowledge-only query (no personal memories)
+        has_episodic = episodic_ctx != "No episodic memories found."
+        has_semantic = semantic_ctx != "No semantic knowledge found."
+        has_provider = provider_ctx != "No external knowledge found."
+        is_general_only = not has_episodic and not has_semantic
+
         # Inject constitution as immutable prefix (Law I, II, III)
         constitution_prefix = get_constitution_prompt_prefix()
         now = datetime.now(timezone.utc).astimezone()
         import secrets
-        prompt = constitution_prefix + REASONING_PROMPT.format(
-            current_datetime=now.strftime("%Y-%m-%d %H:%M:%S (%A, %Z)") + f" [sid:{secrets.token_hex(4)}]",
-            episodic_context=episodic_ctx,
-            semantic_context=semantic_ctx,
-            provider_context=provider_ctx,
-            question=sanitize_llm_input(question),  # I-C1: prompt injection defense
-        )
+
+        if is_general_only:
+            # General knowledge mode: no personal memory context, neutral prompt
+            provider_section = f"\n\n## Reference Material\n{provider_ctx}" if has_provider else ""
+            prompt = constitution_prefix + f"""Answer the following question using your trained knowledge and any reference material provided. Be direct, practical, and specific.{provider_section}
+
+## Question
+{sanitize_llm_input(question)}
+
+## Instructions
+- LANGUAGE: Respond in the SAME language as the question.
+- Be concise, use bullet points and headers.
+- Do NOT reference any personal infrastructure, servers, or user-specific context.
+- Focus purely on general best practices and technical knowledge.
+"""
+            sys_msg = "You are a knowledgeable technical assistant. Answer general knowledge questions accurately and concisely."
+        else:
+            prompt = constitution_prefix + REASONING_PROMPT.format(
+                current_datetime=now.strftime("%Y-%m-%d %H:%M:%S (%A, %Z)") + f" [sid:{secrets.token_hex(4)}]",
+                episodic_context=episodic_ctx,
+                semantic_context=semantic_ctx,
+                provider_context=provider_ctx,
+                question=sanitize_llm_input(question),
+            )
+            sys_msg = "You are a personal memory reasoning assistant. Use memories as your knowledge base, and your own wisdom for advice and analysis."
 
         monitor = get_resource_monitor()
         last_exc: Exception | None = None
@@ -496,7 +581,7 @@ class ReasoningEngine:
                 kwargs = dict(
                     model=self._model,
                     messages=[
-                        {"role": "system", "content": "You are a personal memory reasoning assistant. Use memories as your knowledge base, and your own wisdom for advice and analysis."},
+                        {"role": "system", "content": sys_msg},
                         {"role": "user", "content": prompt},
                     ],
                     temperature=0.0,
@@ -529,7 +614,15 @@ class ReasoningEngine:
 
         # Fallback: return raw results without LLM synthesis
         logger.error("LLM synthesis failed: %s", last_exc)
+        # For clean fallback: only include contexts that have actual content
+        fallback_parts = [f"LLM synthesis failed: {last_exc}\n"]
+        if provider_ctx and provider_ctx != "No external knowledge found.":
+            fallback_parts.append(f"## External Knowledge\n{provider_ctx}")
+        if episodic_ctx and episodic_ctx != "No episodic memories found.":
+            fallback_parts.append(f"## Episodic Memories\n{episodic_ctx}")
+        if semantic_ctx and semantic_ctx != "No semantic knowledge found.":
+            fallback_parts.append(f"## Semantic Knowledge\n{semantic_ctx}")
         return {
-            "answer": f"Memory results (LLM synthesis failed: {last_exc}):\n\n{episodic_ctx}\n\n{semantic_ctx}",
+            "answer": "\n\n".join(fallback_parts),
             "degraded": True,
         }
