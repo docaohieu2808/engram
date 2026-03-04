@@ -23,6 +23,12 @@ logger = logging.getLogger("engram")
 _TAG_PATTERN = re.compile(r"<[^>]+>.*?</[^>]+>", re.DOTALL)
 _SYSTEM_TAG_PATTERN = re.compile(r"\[message_id:\s*\d+\]")
 
+# Match Telegram metadata blocks with or without ```json``` backticks
+_METADATA_BLOCK_PATTERN = re.compile(
+    r"(?:Conversation info|Sender)\s*\(untrusted metadata\):\s*(?:```json\s*)?\{[^}]*\}\s*(?:```)?",
+    re.DOTALL,
+)
+
 # Roles we capture — skip toolCall, toolResult, session, thinking_level_change, etc.
 _CAPTURE_ROLES = {"user", "assistant"}
 
@@ -39,9 +45,10 @@ def _extract_text(content: list[dict[str, Any]]) -> str:
 
 
 def _clean_tags(text: str) -> str:
-    """Remove system tags and message IDs from captured text."""
+    """Remove system tags, message IDs, and Telegram metadata blocks from captured text."""
     text = _TAG_PATTERN.sub("", text)
     text = _SYSTEM_TAG_PATTERN.sub("", text)
+    text = _METADATA_BLOCK_PATTERN.sub("", text)
     return text.strip()
 
 
