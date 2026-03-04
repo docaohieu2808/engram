@@ -107,7 +107,10 @@ async def think(req: ThinkRequest, request: Request, auth: AuthContext = Depends
             await ep.remember(qa_content, memory_type="context", source="think")
         except Exception as exc:
             logging.getLogger("engram").warning("Failed to save think Q&A: %s", exc)
-        result = {"status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"]}
+        result = {
+            "status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"],
+            "sources": think_result.get("sources", []), "question_type": think_result.get("question_type", ""),
+        }
         await cache.set(auth.tenant_id, "think", {"q": req.question}, result, ttl=cfg.cache.think_ttl)
         return result
 
@@ -118,7 +121,10 @@ async def think(req: ThinkRequest, request: Request, auth: AuthContext = Depends
         await ep.remember(qa_content, memory_type="context", source="think")
     except Exception as exc:
         logging.getLogger("engram").warning("Failed to save think Q&A: %s", exc)
-    return {"status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"]}
+    return {
+        "status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"],
+        "sources": think_result.get("sources", []), "question_type": think_result.get("question_type", ""),
+    }
 
 
 @router.post("/ingest")

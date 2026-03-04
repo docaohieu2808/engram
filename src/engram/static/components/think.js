@@ -56,7 +56,9 @@ const Think = {
     try {
       if (mode === 'think') {
         const res = await API.think(q);
+        const srcBadges = this._formatSources(res.sources || [], res.question_type || '');
         results.innerHTML = `<div class="card"><h3>Answer</h3>
+          ${srcBadges}
           <div class="think-answer markdown-body">${this._md(res.answer || 'No answer')}</div>
           <div style="margin-top:8px"><button class="btn btn-sm" onclick="navigator.clipboard.writeText(document.querySelector('.think-answer').textContent);App.toast('Copied','info')">Copy</button></div>
         </div>`;
@@ -110,6 +112,20 @@ const Think = {
     document.getElementById('think-input').value = h.query;
     document.getElementById('think-mode').value = h.mode;
     this.execute();
+  },
+
+  _formatSources(sources, qType) {
+    if (!sources || !sources.length) return '';
+    const icons = { episodic: '🧠', semantic: '🔗', provider: '📚', llm: '💡' };
+    const labels = { episodic: 'Memory', semantic: 'Graph', provider: '', llm: 'LLM Knowledge' };
+    const typeBadge = qType ? `<span class="badge" style="background:${qType==='general'?'#2563eb':qType==='personal'?'#7c3aed':'#d97706'};color:#fff;font-size:10px;margin-right:6px">${qType.toUpperCase()}</span>` : '';
+    const badges = sources.map(s => {
+      const icon = icons[s.type] || '📄';
+      const label = s.name || labels[s.type] || s.type;
+      const count = s.count ? ` (${s.count})` : '';
+      return `<span class="badge" style="background:var(--bg-secondary);font-size:11px;padding:2px 8px;margin-right:4px">${icon} ${label}${count}</span>`;
+    }).join('');
+    return `<div style="margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">${typeBadge}${badges}</div>`;
   },
 
   _esc(s) { return (s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },

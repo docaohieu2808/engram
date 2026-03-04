@@ -382,7 +382,24 @@ class ReasoningEngine:
         else:
             result = {"answer": "No relevant memories found for this question.", "degraded": False}
 
-        # 6. Recall boost: bump importance for memories used in this Think
+        # 6. Build source attribution so UI can show where the answer came from
+        sources: list[dict] = []
+        if episodic_results:
+            sources.append({"type": "episodic", "count": len(episodic_results)})
+        if semantic_results:
+            sources.append({"type": "semantic", "count": len(semantic_results)})
+        if provider_results:
+            # Group by provider name for detailed attribution
+            from collections import Counter
+            provider_counts = Counter(r.source for r in provider_results)
+            for name, count in provider_counts.items():
+                sources.append({"type": "provider", "name": name, "count": count})
+        if not sources:
+            sources.append({"type": "llm", "name": "trained_knowledge"})
+        result["sources"] = sources
+        result["question_type"] = q_type.value
+
+        # 7. Recall boost: bump importance for memories used in this Think
         await self._boost_recalled_memories(episodic_results)
 
         fire_hook(self._on_think_hook, {"question": question, "answer": result["answer"]})
