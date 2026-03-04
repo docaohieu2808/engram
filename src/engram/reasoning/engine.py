@@ -222,8 +222,12 @@ class ReasoningEngine:
 
         return summary
 
-    async def think(self, question: str) -> dict:
+    async def think(self, question: str, mode: str | None = None) -> dict:
         """Answer a question by combining episodic, semantic, and federated memory.
+
+        Args:
+            question: The user's question.
+            mode: Optional override — "research" skips memory, only uses providers + LLM.
 
         Returns a dict with keys:
             answer (str): The synthesized or raw answer text.
@@ -250,10 +254,15 @@ class ReasoningEngine:
                 pass
         personal_entities = getattr(self, "_personal_entity_names", None)
         q_type = classify_question(question, known_entities=personal_entities)
-        skip_memory = q_type == QuestionType.GENERAL
-        logger.info("think(): q_type=%s, skip_memory=%s", q_type.value, skip_memory)
+        # "research" mode forces provider-only (no memory), overrides classifier
+        if mode == "research":
+            skip_memory = True
+            q_type = QuestionType.GENERAL
+        else:
+            skip_memory = q_type == QuestionType.GENERAL
+        logger.info("think(): mode=%s, q_type=%s, skip_memory=%s", mode or "auto", q_type.value, skip_memory)
         if skip_memory:
-            logger.info("think(): GENERAL question — skipping episodic/semantic retrieval")
+            logger.info("think(): skipping episodic/semantic retrieval")
         elif q_type == QuestionType.MIXED:
             # Reduce episodic context for MIXED — memory is background only
             _search_limit = 3
@@ -596,6 +605,7 @@ class ReasoningEngine:
 - LANGUAGE: Respond in the SAME language as the question.
 - Be concise, use bullet points and headers.
 - Focus purely on general best practices and technical knowledge.
+- When using info from Reference Material, prefix with [Source: provider-name]. When using your own knowledge, prefix with [LLM].
 """
             sys_msg = "You are a knowledgeable technical assistant. Answer general knowledge questions accurately and concisely."
         elif q_type and q_type.value == "mixed":

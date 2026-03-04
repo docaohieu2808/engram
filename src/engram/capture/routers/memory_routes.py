@@ -41,6 +41,7 @@ class RememberRequest(BaseModel):
 
 class ThinkRequest(BaseModel):
     question: str = Field(..., min_length=1)
+    mode: str | None = None  # "research" = providers only, no memory
 
 
 class IngestRequest(BaseModel):
@@ -98,10 +99,10 @@ async def think(req: ThinkRequest, request: Request, auth: AuthContext = Depends
         eng._providers = provider_registry.get_active()
 
     if cache is not None:
-        cached = await cache.get(auth.tenant_id, "think", {"q": req.question})
+        cached = await cache.get(auth.tenant_id, "think", {"q": req.question, "m": req.mode})
         if cached is not None:
             return cached
-        think_result = await eng.think(req.question)
+        think_result = await eng.think(req.question, mode=req.mode)
         try:
             qa_content = f"Q: {req.question}\nA: {think_result['answer']}"
             await ep.remember(qa_content, memory_type="context", source="think")
@@ -111,10 +112,10 @@ async def think(req: ThinkRequest, request: Request, auth: AuthContext = Depends
             "status": "ok", "answer": think_result["answer"], "degraded": think_result["degraded"],
             "sources": think_result.get("sources", []), "question_type": think_result.get("question_type", ""),
         }
-        await cache.set(auth.tenant_id, "think", {"q": req.question}, result, ttl=cfg.cache.think_ttl)
+        await cache.set(auth.tenant_id, "think", {"q": req.question, "m": req.mode}, result, ttl=cfg.cache.think_ttl)
         return result
 
-    think_result = await eng.think(req.question)
+    think_result = await eng.think(req.question, mode=req.mode)
     # Save think Q&A as episodic memory for future recall
     try:
         qa_content = f"Q: {req.question}\nA: {think_result['answer']}"

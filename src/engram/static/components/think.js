@@ -22,7 +22,7 @@ const Think = {
           </div>
           <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
             <div class="form-group" style="margin:0"><label>Mode</label>
-              <select id="think-mode"><option value="think">Think (LLM)</option><option value="recall">Recall (search)</option></select>
+              <select id="think-mode"><option value="think">Think (LLM)</option><option value="research">Research (knowledge)</option><option value="recall">Recall (search)</option></select>
             </div>
             <div class="form-group" style="margin:0"><label>Limit</label>
               <input id="think-limit" type="number" min="1" max="20" value="5" style="width:60px">
@@ -54,10 +54,10 @@ const Think = {
     results.innerHTML = '<div class="loading-overlay"><div class="spinner"></div> Processing...</div>';
 
     try {
-      if (mode === 'think') {
-        const res = await API.think(q);
+      if (mode === 'think' || mode === 'research') {
+        const res = await API.think(q, mode === 'research' ? 'research' : undefined);
         const srcBadges = this._formatSources(res.sources || [], res.question_type || '');
-        results.innerHTML = `<div class="card"><h3>Answer</h3>
+        results.innerHTML = `<div class="card"><h3>${mode === 'research' ? 'Research' : 'Answer'}</h3>
           ${srcBadges}
           <div class="think-answer markdown-body">${this._md(res.answer || 'No answer')}</div>
           <div style="margin-top:8px"><button class="btn btn-sm" onclick="navigator.clipboard.writeText(document.querySelector('.think-answer').textContent);App.toast('Copied','info')">Copy</button></div>

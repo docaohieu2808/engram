@@ -70,7 +70,7 @@ const API = {
   },
 
   // Think
-  think(question) { return this._fetch('/think', { method: 'POST', body: JSON.stringify({ question }), _timeout: 120000 }); },
+  think(question, mode) { return this._fetch('/think', { method: 'POST', body: JSON.stringify({ question, ...(mode && { mode }) }), _timeout: 120000 }); },
 
   // Feedback
   feedback(memoryId, type) {
