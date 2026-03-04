@@ -48,14 +48,12 @@ class DeleteEdgeRequest(BaseModel):
 @router.get("/graph/data")
 async def graph_data(
     request: Request,
-    limit: int = 500,
+    limit: int = 0,
     offset: int = 0,
     auth: AuthContext = Depends(get_auth_context),
 ):
-    """Return paginated nodes and edges in vis-network format. Admin only."""
+    """Return nodes and edges in vis-network format. limit=0 means no limit."""
     require_admin(auth)
-    if limit < 1 or limit > 5000:
-        raise EngramError(ErrorCode.VALIDATION_ERROR, "limit must be between 1 and 5000")
     if offset < 0:
         raise EngramError(ErrorCode.VALIDATION_ERROR, "offset must be >= 0")
 
@@ -127,8 +125,12 @@ async def graph_data(
 
     total_nodes = len(vis_nodes_all)
     total_edges = len(vis_edges_all)
-    vis_nodes = vis_nodes_all[offset: offset + limit]
-    vis_edges = vis_edges_all[offset: offset + limit]
+    if limit > 0:
+        vis_nodes = vis_nodes_all[offset: offset + limit]
+        vis_edges = vis_edges_all[offset: offset + limit]
+    else:
+        vis_nodes = vis_nodes_all[offset:]
+        vis_edges = vis_edges_all[offset:]
 
     return {
         "nodes": vis_nodes,

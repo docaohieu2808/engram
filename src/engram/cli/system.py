@@ -48,20 +48,30 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
     def _resolve_namespace():
         return get_namespace() if get_namespace else None
 
+    _cached_episodic = None
+
     def _get_episodic():
-        from engram.episodic.store import EpisodicStore
-        cfg = get_config()
-        return EpisodicStore(
-            cfg.episodic, cfg.embedding,
-            namespace=_resolve_namespace(),
-            on_remember_hook=cfg.hooks.on_remember,
-            guard_enabled=cfg.ingestion.poisoning_guard,
-        )
+        nonlocal _cached_episodic
+        if _cached_episodic is None:
+            from engram.episodic.store import EpisodicStore
+            cfg = get_config()
+            _cached_episodic = EpisodicStore(
+                cfg.episodic, cfg.embedding,
+                namespace=_resolve_namespace(),
+                on_remember_hook=cfg.hooks.on_remember,
+                guard_enabled=cfg.ingestion.poisoning_guard,
+            )
+        return _cached_episodic
+
+    _cached_graph = None
 
     def _get_graph():
-        from engram.semantic import create_graph
-        cfg = get_config()
-        return create_graph(cfg.semantic)
+        nonlocal _cached_graph
+        if _cached_graph is None:
+            from engram.semantic import create_graph
+            cfg = get_config()
+            _cached_graph = create_graph(cfg.semantic)
+        return _cached_graph
 
     def _get_engine():
         from engram.reasoning.engine import ReasoningEngine

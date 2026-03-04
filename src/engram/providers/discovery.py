@@ -20,20 +20,6 @@ logger = logging.getLogger("engram.providers.discovery")
 # Known services with ports, paths, and API fingerprints
 KNOWN_SERVICES: list[dict[str, Any]] = [
     {
-        "name": "cognee",
-        "ports": [8000],
-        "paths": ["~/.cognee/"],
-        "health": "/health",
-        "fingerprint": "/api/v1/search",
-        "default_config": {
-            "type": "rest",
-            "search_endpoint": "/api/v1/search",
-            "search_method": "POST",
-            "search_body": '{"query": "{query}"}',
-            "result_path": "data[].text",
-        },
-    },
-    {
         "name": "mem0",
         "ports": [8080],
         "paths": ["~/.mem0/"],

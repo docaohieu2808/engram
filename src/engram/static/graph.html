@@ -88,8 +88,10 @@ const SLEEP_AFTER = 90;
 // ────────────────────────────────────────────────────────────────────
 
 const COLOR_MAP = {
-  Person: '#4CAF50', Technology: '#2196F3', Project: '#FF9800',
-  Service: '#9C27B0', default: '#607D8B'
+  Technology: '#2196F3', Service: '#E040FB', Project: '#FF9800',
+  Server: '#F44336', Person: '#4CAF50', Environment: '#CDDC39',
+  Script: '#FFEB3B', Organization: '#795548', Location: '#9C27B0',
+  default: '#607D8B'
 };
 
 let network = null;
@@ -282,12 +284,16 @@ function renderGraph(nodes, edges) {
   const textColor = cs.getPropertyValue('--text-primary')?.trim() || '#e0e0e0';
   const mutedColor = cs.getPropertyValue('--text-muted')?.trim() || '#aaa';
 
-  nodesDataset = new vis.DataSet(nodes.map(n => ({
-    ...n,
-    font: { color: textColor, size: 12 },
-    borderWidth: 1,
-    borderWidthSelected: 2,
-  })));
+  nodesDataset = new vis.DataSet(nodes.map(n => {
+    const c = COLOR_MAP[n.group] || COLOR_MAP.default;
+    return {
+      ...n,
+      color: { background: c, border: c, highlight: { background: c, border: '#fff' }, hover: { background: c, border: '#fff' } },
+      font: { color: textColor, size: 12 },
+      borderWidth: 1,
+      borderWidthSelected: 2,
+    };
+  }));
   edgesDataset = new vis.DataSet(edges.map(e => ({
     ...e,
     font: { color: mutedColor, size: 10, align: 'middle' },
@@ -326,7 +332,6 @@ function renderGraph(nodes, edges) {
       hoverWidth: 0,
       selectionWidth: 0,
     },
-    background: { color: '#1a1a2e' },
   };
 
   network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);

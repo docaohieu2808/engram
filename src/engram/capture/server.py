@@ -174,7 +174,10 @@ def create_app(
     async def graph_ui():
         html_path = Path(__file__).parent.parent / "static" / "graph.html"
         if html_path.exists():
-            return HTMLResponse(html_path.read_text())
+            return HTMLResponse(
+                html_path.read_text(),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
         return HTMLResponse("<h1>Graph UI not found</h1>", status_code=404)
 
     @app.get("/")

@@ -15,7 +15,16 @@ const API = {
 
   async _fetch(path, opts = {}) {
     opts.headers = { ...this._headers(), ...opts.headers };
-    const res = await fetch(this.base + path, opts);
+    // Long-running endpoints (benchmark, think) need extended timeout
+    const timeout = opts._timeout || 30000;
+    delete opts._timeout;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    opts.signal = opts.signal || ctrl.signal;
+    let res;
+    try { res = await fetch(this.base + path, opts); }
+    catch (e) { clearTimeout(timer); throw e.name === 'AbortError' ? new Error('Request timed out') : e; }
+    clearTimeout(timer);
     if (!res.ok) {
       if (res.status === 401) {
         // Session expired or invalid credentials — show login
@@ -61,7 +70,7 @@ const API = {
   },
 
   // Think
-  think(question) { return this._fetch('/think', { method: 'POST', body: JSON.stringify({ question }) }); },
+  think(question) { return this._fetch('/think', { method: 'POST', body: JSON.stringify({ question }), _timeout: 120000 }); },
 
   // Feedback
   feedback(memoryId, type) {
@@ -85,7 +94,7 @@ const API = {
   forceRunTask(name) { return this._fetch(`/scheduler/tasks/${name}/run`, { method: 'POST' }); },
 
   // Benchmark
-  runBenchmark(questions) { return this._fetch('/benchmark/run', { method: 'POST', body: JSON.stringify({ questions }) }); },
+  runBenchmark(questions) { return this._fetch('/benchmark/run', { method: 'POST', body: JSON.stringify({ questions }), _timeout: 300000 }); },
 
   // Config
   getConfig() { return this._fetch('/config'); },

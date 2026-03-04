@@ -92,8 +92,21 @@ class EntityExtractor:
                 if ci_key not in all_edges:
                     all_edges[ci_key] = edge
 
+        # Post-process: drop orphan nodes (no edges) despite prompt instruction
+        edge_keys = set()
+        for edge in all_edges.values():
+            edge_keys.add(edge.from_node.lower())
+            edge_keys.add(edge.to_node.lower())
+        connected_nodes = {
+            k: v for k, v in all_nodes.items()
+            if v.key.lower() in edge_keys
+        }
+        dropped = len(all_nodes) - len(connected_nodes)
+        if dropped:
+            logger.debug("Dropped %d orphan nodes from extraction", dropped)
+
         return ExtractionResult(
-            nodes=list(all_nodes.values()),
+            nodes=list(connected_nodes.values()),
             edges=list(all_edges.values()),
         )
 

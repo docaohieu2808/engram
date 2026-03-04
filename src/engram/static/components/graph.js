@@ -2,16 +2,16 @@
  * Graph tab — vis-network visualization with node/edge CRUD and colored nodes.
  */
 const NODE_TYPE_COLORS = {
-  'Person':       { background: '#73bf69', border: '#5a9952', font: '#fff' },
-  'Technology':   { background: '#5794f2', border: '#4477cc', font: '#fff' },
-  'Project':      { background: '#ff9830', border: '#cc7a26', font: '#000' },
-  'Service':      { background: '#b877d9', border: '#9360ae', font: '#fff' },
-  'Server':       { background: '#f2495c', border: '#c23a4a', font: '#fff' },
-  'Environment':  { background: '#36a2eb', border: '#2b82bc', font: '#fff' },
-  'Script':       { background: '#ffcd56', border: '#ccaa45', font: '#000' },
-  'Organization': { background: '#ff6384', border: '#cc4f6a', font: '#fff' },
-  'Location':     { background: '#ffb357', border: '#cc8f46', font: '#000' },
-  'default':      { background: '#6e6e6e', border: '#555555', font: '#fff' },
+  'Technology':   { background: '#2196f3', border: '#1769aa', font: '#fff' },  // bright blue
+  'Service':      { background: '#e040fb', border: '#a02daf', font: '#fff' },  // magenta/pink
+  'Project':      { background: '#ff9800', border: '#b36a00', font: '#000' },  // orange
+  'Server':       { background: '#f44336', border: '#aa2e26', font: '#fff' },  // red
+  'Person':       { background: '#4caf50', border: '#357a38', font: '#fff' },  // green
+  'Environment':  { background: '#cddc39', border: '#9e9d24', font: '#000' },  // lime
+  'Script':       { background: '#ffeb3b', border: '#b2a429', font: '#000' },  // yellow
+  'Organization': { background: '#795548', border: '#4b3630', font: '#fff' },  // brown
+  'Location':     { background: '#9c27b0', border: '#6a1b7a', font: '#fff' },  // deep purple
+  'default':      { background: '#6e6e6e', border: '#555555', font: '#fff' },  // gray
 };
 
 function getNodeColor(type) {
@@ -188,7 +188,6 @@ const Graph = {
         smooth: { type: 'continuous', roundness: 0.2 },
         font: { size: 0 },
       },
-      background: { color: bgColor },
     });
 
     // Custom thread renderer disabled — vis-network handles edge rendering
