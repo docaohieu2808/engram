@@ -38,10 +38,17 @@ def _extract_text(content: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
+_METADATA_BLOCK_PATTERN = re.compile(
+    r"(?:Conversation info|Sender)\s*\(untrusted metadata\):\s*```json\s*\{[^}]*\}\s*```",
+    re.DOTALL,
+)
+
+
 def _clean_tags(text: str) -> str:
-    """Remove system tags and message IDs from captured text."""
+    """Remove system tags, message IDs, and Telegram metadata blocks from captured text."""
     text = _TAG_PATTERN.sub("", text)
     text = _SYSTEM_TAG_PATTERN.sub("", text)
+    text = _METADATA_BLOCK_PATTERN.sub("", text)
     return text.strip()
 
 
