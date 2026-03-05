@@ -10,13 +10,18 @@ from engram.setup.connectors import _ALL_CONNECTORS
 from engram.setup.connectors.base import DetectionResult
 from engram.setup.connectors.mcp_json_mixin import McpJsonConnector
 
-# Claude Code stores global MCP config here
+# Claude Code stores MCP config in ~/.claude.json under "mcpServers"
+# Format: {"mcpServers": {"engram": {"type": "stdio", "command": "...", "args": [], "env": {}}}}
 _CLAUDE_DIR = Path.home() / ".claude"
-_MCP_CONFIG_PATH = _CLAUDE_DIR / "mcp.json"
+_MCP_CONFIG_PATH = Path.home() / ".claude.json"
 
 
 class ClaudeCodeConnector(McpJsonConnector):
-    """Connector for Anthropic Claude Code IDE integration."""
+    """Connector for Anthropic Claude Code IDE integration.
+
+    Claude Code uses ~/.claude.json with mcpServers wrapper.
+    Each entry needs "type": "stdio" field.
+    """
 
     name = "claude-code"
     display_name = "Claude Code"

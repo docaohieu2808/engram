@@ -216,9 +216,16 @@ def _finish(engram_dir: Path, config_path: Path, non_interactive: bool) -> None:
     if configured_count:
         lines.append(f"  [green]✓[/green] MCP configured for {configured_count} IDE(s)")
 
+    # --- Step 6: Auto-start background server ---
+    server_started = _try_start_server()
+
     lines.append("")
-    lines.append("  [bold]Next step:[/bold] [cyan]engram serve[/cyan]")
-    lines.append("  Your AI agents will have persistent memory!")
+    if server_started:
+        lines.append("  [green]engram server started in background[/green]")
+        lines.append("  Your AI agents now have persistent memory!")
+    else:
+        lines.append("  [bold]Next step:[/bold] [cyan]engram start[/cyan]")
+        lines.append("  Your AI agents will have persistent memory!")
 
     console.print(
         Panel(
@@ -228,6 +235,34 @@ def _finish(engram_dir: Path, config_path: Path, non_interactive: bool) -> None:
         )
     )
     console.print()
+
+
+def _try_start_server() -> bool:
+    """Try to start engram server in background. Returns True on success."""
+    import subprocess
+    import shutil
+
+    engram_bin = shutil.which("engram")
+    if not engram_bin:
+        return False
+
+    # Check if already running
+    from engram.cli.daemon_cmd import _is_running
+    running, _ = _is_running()
+    if running:
+        console.print("  [green]engram server already running[/green]")
+        return True
+
+    try:
+        result = subprocess.run(
+            [engram_bin, "start"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
 
 
 def _prompt_confirm(message: str, default: bool = True) -> bool:

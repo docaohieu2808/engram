@@ -28,6 +28,7 @@ def _resolve_engram_mcp_command() -> str:
 def get_engram_mcp_entry() -> dict:
     """Build engram MCP server entry with resolved command path."""
     return {
+        "type": "stdio",
         "command": _resolve_engram_mcp_command(),
         "args": [],
         "env": {},

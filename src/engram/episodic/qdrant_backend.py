@@ -30,8 +30,13 @@ class QdrantBackend:
         api_key: str | None = None,
         path: str | None = None,
     ) -> None:
-        from qdrant_client import QdrantClient
         import os
+        import warnings
+        from qdrant_client import QdrantClient
+
+        # Suppress noisy Qdrant warnings (insecure API key, embedded shutdown)
+        warnings.filterwarnings("ignore", message=".*Api key is used with an insecure connection.*")
+        warnings.filterwarnings("ignore", message=".*Payload indexes have no effect.*")
 
         if path:
             # Embedded / local file-based mode — no server needed
@@ -42,6 +47,11 @@ class QdrantBackend:
             # Remote server mode — use HTTP REST (avoids gRPC SSL issues over WireGuard)
             self._client = QdrantClient(url=f"http://{host}:{port}", api_key=api_key, timeout=30)
             logger.info("QdrantBackend: remote mode at %s:%s", host, port)
+
+        # Register atexit handler to close client before interpreter shutdown
+        # Prevents "ImportError: sys.meta_path is None" from QdrantClient.__del__
+        import atexit
+        atexit.register(self._sync_close)
 
         self._collection_name: str = ""
 
@@ -206,9 +216,20 @@ class QdrantBackend:
         points, _ = await asyncio.to_thread(self._client.scroll, collection_name=self._col(), limit=limit, with_payload=True, with_vectors=True)
         return _points_to_result_dict(points, ["documents", "metadatas", "embeddings"])
 
+    def _sync_close(self) -> None:
+        """Synchronously close the Qdrant client (for atexit handler)."""
+        try:
+            self._client.close()
+        except Exception:
+            pass
+
     async def close(self) -> None:
         """Close the Qdrant client connection."""
-        await asyncio.to_thread(self._client.close)
+        try:
+            await asyncio.to_thread(self._client.close)
+        except (ImportError, RuntimeError, Exception):
+            # Qdrant embedded may raise ImportError during interpreter shutdown
+            pass
         self._collection_name = ""
 
 

@@ -73,8 +73,14 @@ def setup_logging(config: "Config") -> None:
     root.addHandler(handler)
 
     # Silence noisy third-party loggers
-    for noisy in ("LiteLLM", "litellm", "httpx"):
+    for noisy in ("LiteLLM", "litellm", "httpx", "qdrant_client", "grpc"):
         logging.getLogger(noisy).setLevel(logging.ERROR)
+
+    # Suppress Qdrant UserWarnings (insecure API key, payload indexes, embedded shutdown)
+    import warnings
+    warnings.filterwarnings("ignore", message=".*Api key is used with an insecure connection.*")
+    warnings.filterwarnings("ignore", message=".*Payload indexes have no effect.*")
+    warnings.filterwarnings("ignore", category=ImportWarning, module="qdrant_client")
 
 
 def new_correlation_id() -> str:

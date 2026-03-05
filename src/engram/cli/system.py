@@ -65,6 +65,30 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
     @app.command()
     def status():
         """Show memory stats for both stores."""
+        # If server is running, query via HTTP to avoid embedded Qdrant lock conflict
+        cfg = get_config()
+        if cfg.episodic.mode == "embedded":
+            from engram.cli.daemon_cmd import _is_running
+            running, _ = _is_running()
+            if running:
+                try:
+                    import httpx
+                    resp = httpx.get(f"http://{cfg.serve.host}:{cfg.serve.port}/api/v1/status", timeout=5)
+                    data = resp.json()
+                    console.print("[bold]Episodic Memory[/bold]")
+                    console.print(f"  Memories: {data.get('episodic', {}).get('count', 0)}")
+                    ns = data.get('episodic', {}).get('namespace')
+                    if ns:
+                        console.print(f"  Namespace: {ns}")
+                    console.print("[bold]Semantic Memory[/bold]")
+                    console.print(f"  Nodes: {data.get('semantic', {}).get('node_count', 0)}")
+                    console.print(f"  Edges: {data.get('semantic', {}).get('edge_count', 0)}")
+                    for t, c in data.get('semantic', {}).get('node_types', {}).items():
+                        console.print(f"    {t}: {c}")
+                    return
+                except Exception:
+                    pass  # Fallback to direct access
+
         episodic = _get_episodic()
         graph = _get_graph()
         ep_stats = run_async(episodic.stats())
