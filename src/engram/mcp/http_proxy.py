@@ -138,6 +138,16 @@ class HttpEpisodicProxy:
             resp = await client.post(f"{self._base}/cleanup")
             return resp.json().get("deleted", 0)
 
+    async def cleanup_dedup(self, threshold: float = 0.85, dry_run: bool = False) -> dict:
+        import httpx
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{self._base}/cleanup/dedup",
+                json={"threshold": threshold, "dry_run": dry_run},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
 
 class HttpGraphProxy:
     """Proxy SemanticGraph operations through engram HTTP API."""

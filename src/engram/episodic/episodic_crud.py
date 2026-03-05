@@ -335,6 +335,7 @@ class _EpisodicCrudMixin:
                 logger.error("EmbeddingQueue enqueue failed in _update_topic: %s", qe)
             # Fall back to metadata-only update (no re-embedding)
             await self._backend.update(ids=[mem_id], metadatas=[{
+                "memory_type": resolve_memory_type(memory_type),
                 "topic_key": topic_key,
                 "revision_count": revision,
                 "timestamp": datetime.now(timezone.utc).isoformat(),

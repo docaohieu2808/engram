@@ -50,15 +50,19 @@ async def do_ingest(file: Path, dry_run: bool, get_extractor, get_graph, get_epi
         if result.edges:
             await graph.add_edges_batch(result.edges)
     entity_names = [n.name for n in result.nodes]
+    episodic_count = 0
     for i, msg in enumerate(messages):
         content = msg.get("content", "")
-        if content:
-            ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
-            per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
+        if not content:
+            continue
+        ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
+        per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
+        if per_content:
             await episodic.remember(content, entities=per_content)
+            episodic_count += 1
 
     return IngestResult(
-        episodic_count=len(messages),
+        episodic_count=episodic_count,
         semantic_nodes=len(result.nodes),
         semantic_edges=len(result.edges),
     )
