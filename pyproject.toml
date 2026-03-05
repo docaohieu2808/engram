@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "engram-mem"
-version = "0.5.23"
+version = "0.5.24"
 description = "Dual-memory system (episodic vector + semantic graph) with LLM reasoning for AI agents. CLI, MCP, HTTP API, WebSocket interfaces."
 readme = "README.md"
 requires-python = ">=3.11"
