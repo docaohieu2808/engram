@@ -1,0 +1,104 @@
+site_name: engram
+site_description: "Memory traces for AI agents — Think like humans."
+site_url: https://docaohieu2808.github.io/Engram-Mem/
+repo_url: https://github.com/docaohieu2808/Engram-Mem
+repo_name: docaohieu2808/Engram-Mem
+edit_uri: ""
+
+docs_dir: mkdocs_docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  icon:
+    logo: material/memory
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - toc.integrate
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+plugins:
+  - search
+  - mermaid2
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/docaohieu2808/Engram-Mem
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/engram-mem/
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+  - Integrations:
+    - integrations/index.md
+    - Claude Code: integrations/claude-code.md
+    - Cursor: integrations/cursor.md
+    - OpenClaw: integrations/openclaw.md
+    - Federated Providers: integrations/federated-providers.md
+  - Reference:
+    - CLI: reference/cli.md
+    - HTTP API: reference/http-api.md
+    - WebSocket: reference/websocket.md
+    - MCP Tools: reference/mcp-tools.md
+    - Environment Variables: reference/environment-variables.md
+  - Architecture:
+    - architecture/index.md
+    - Episodic Memory: architecture/episodic-memory.md
+    - Semantic Graph: architecture/semantic-graph.md
+    - Recall Pipeline: architecture/recall-pipeline.md
+    - Entity-Gated Ingestion: architecture/entity-gated-ingestion.md
+  - Deployment:
+    - deployment/index.md
+    - Docker: deployment/docker.md
+  - Development:
+    - development/index.md
+    - Testing: development/testing.md
+    - Changelog: development/changelog.md

@@ -11,3 +11,5 @@ build/
 plans/
 .env
 force-ipv4.py
+docs-venv/
+site/
