@@ -2,9 +2,22 @@
 
 All factories cache their instances via nonlocal variables in the ``make_factories``
 closure so each CLI invocation only constructs each store once.
+
+When embedded mode is configured and the server daemon is running, factories
+will fail due to Qdrant file lock. In that case callers should use HTTP client.
 """
 
 from __future__ import annotations
+
+
+def _server_is_running() -> bool:
+    """Check if engram background server is running."""
+    try:
+        from engram.cli.daemon_cmd import _is_running
+        running, _ = _is_running()
+        return running
+    except Exception:
+        return False
 
 
 def make_factories(get_config, get_namespace=None):

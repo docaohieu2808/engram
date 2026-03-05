@@ -35,12 +35,54 @@ def _parse_duration(duration_str: str) -> datetime:
 def _get_episodic(get_config, namespace: str | None = None):
     from engram.episodic.store import EpisodicStore
     cfg = get_config()
-    return EpisodicStore(
-        cfg.episodic,
-        cfg.embedding,
-        namespace=namespace,
-        guard_enabled=cfg.ingestion.poisoning_guard,
-    )
+    try:
+        return EpisodicStore(
+            cfg.episodic,
+            cfg.embedding,
+            namespace=namespace,
+            guard_enabled=cfg.ingestion.poisoning_guard,
+        )
+    except RuntimeError as e:
+        if "already accessed" in str(e):
+            console.print("[dim]Server is running — using HTTP API[/dim]")
+            return _HttpEpisodicProxy(cfg)
+        raise
+
+
+class _HttpEpisodicProxy:
+    """Thin proxy that forwards episodic operations to running HTTP server."""
+
+    def __init__(self, cfg):
+        self._base = f"http://{cfg.serve.host}:{cfg.serve.port}/api/v1"
+
+    async def remember(self, content, **kwargs):
+        import httpx
+        payload = {"content": content}
+        if kwargs.get("tags"):
+            payload["tags"] = kwargs["tags"]
+        if kwargs.get("memory_type"):
+            payload["type"] = str(kwargs["memory_type"].value) if hasattr(kwargs["memory_type"], "value") else str(kwargs["memory_type"])
+        if kwargs.get("priority"):
+            payload["priority"] = kwargs["priority"]
+        if kwargs.get("topic_key"):
+            payload["topic_key"] = kwargs["topic_key"]
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{self._base}/remember", json=payload)
+            data = resp.json()
+            return data.get("id", "")
+
+    async def recall(self, query, top_k=5, **kwargs):
+        import httpx
+        params = {"q": query, "top_k": top_k}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{self._base}/recall", params=params)
+            return resp.json().get("memories", [])
+
+    async def stats(self):
+        import httpx
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{self._base}/status")
+            return resp.json().get("episodic", {})
 
 
 def _get_semantic(get_config):

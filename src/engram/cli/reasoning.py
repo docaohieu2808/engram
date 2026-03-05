@@ -19,9 +19,15 @@ def register(app: typer.Typer, get_config) -> None:
         from engram.reasoning.engine import ReasoningEngine
         from engram.semantic import create_graph
         cfg = get_config()
-        episodic = EpisodicStore(
-            cfg.episodic, cfg.embedding, on_remember_hook=cfg.hooks.on_remember
-        )
+        try:
+            episodic = EpisodicStore(
+                cfg.episodic, cfg.embedding, on_remember_hook=cfg.hooks.on_remember
+            )
+        except RuntimeError as e:
+            if "already accessed" in str(e):
+                # Server is running — use HTTP proxy for think
+                return _HttpThinkProxy(cfg)
+            raise
         graph = create_graph(cfg.semantic)
         registry = ProviderRegistry()
         registry.load_from_config(cfg)
@@ -31,6 +37,17 @@ def register(app: typer.Typer, get_config) -> None:
             on_think_hook=cfg.hooks.on_think, providers=providers,
             disable_thinking=cfg.llm.disable_thinking,
         )
+
+    class _HttpThinkProxy:
+        """Proxy think/ask to running HTTP server."""
+        def __init__(self, cfg):
+            self._base = f"http://{cfg.serve.host}:{cfg.serve.port}/api/v1"
+
+        async def think(self, query, **kwargs):
+            import httpx
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(f"{self._base}/think", json={"query": query})
+                return resp.json()
 
     @app.command()
     def ask(query: str = typer.Argument(..., help="Any question or search query")):
