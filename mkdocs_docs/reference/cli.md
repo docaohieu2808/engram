@@ -134,6 +134,34 @@ engram feedback <id> --positive
 engram feedback <id> --negative
 ```
 
+## Advanced
+
+```bash
+# Launch Terminal UI for interactive memory browsing
+engram tui
+
+# Show server logs
+engram logs
+
+# Install systemd services for auto-start on boot
+engram autostart
+
+# Show retrieval audit log
+engram audit
+
+# Run recall benchmark against a questions file
+engram benchmark <questions.json>
+
+# Resolve pronouns and temporal references in a query
+engram resolve <query>
+
+# Sync memories to/from .engram/ for git-friendly sharing
+engram sync
+
+# Import data from legacy memory JSON exports
+engram migrate <file>
+```
+
 ## Setup & Integration
 
 ```bash
