@@ -21,39 +21,6 @@ from engram.sanitize import sanitize_llm_input
 
 logger = logging.getLogger("engram")
 
-# --- Pronoun patterns (Vietnamese + English) ---
-
-PRONOUN_MAP: dict[str, str] = {
-    # Vietnamese
-    "cô ấy": "female_reference",
-    "anh ấy": "male_reference",
-    "chị ấy": "female_reference",
-    "nó": "neutral_reference",
-    "họ": "plural_reference",
-    "ông ấy": "male_elder_reference",
-    "bà ấy": "female_elder_reference",
-    # English
-    "he": "male_reference",
-    "she": "female_reference",
-    "they": "plural_reference",
-    "it": "neutral_reference",
-    "him": "male_reference",
-    "her": "female_reference",
-}
-
-# Compiled word-boundary patterns for pronoun detection
-_PRONOUN_PATTERNS = [
-    re.compile(rf"\b{re.escape(p)}\b", re.IGNORECASE | re.UNICODE)
-    for p in PRONOUN_MAP
-]
-
-
-def has_pronouns(text: str) -> bool:
-    """Check if text contains any known pronouns."""
-    text_lower = text.lower()
-    return any(p.search(text_lower) for p in _PRONOUN_PATTERNS)
-
-
 def _format_context(context: list[dict], max_messages: int = 10) -> str:
     """Format conversation context for LLM prompt."""
     recent = context[-max_messages:] if len(context) > max_messages else context
@@ -75,7 +42,7 @@ async def resolve_pronouns(
 
     Falls back to original text if LLM call fails.
     """
-    if not has_pronouns(text):
+    if not _has_resolvable_pronouns(text):
         return ResolvedText(original=text, resolved=text)
 
     if not context:

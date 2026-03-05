@@ -8,6 +8,7 @@ __all__ = [
     "AttributeDef", "NodeDef", "EdgeDef", "SchemaDefinition",
     "SemanticNode", "SemanticEdge", "ExtractionResult", "IngestResult",
     "Entity", "ResolvedText", "SearchResult", "MemoryCandidate",
+    "resolve_memory_type",
 ]
 
 from datetime import datetime, timezone
@@ -24,6 +25,16 @@ def _normalize_entity_name(name: str) -> str:
     Deduplication happens at the graph store level via case-insensitive lookup.
     """
     return (name or "").strip()
+
+
+# --- Helpers ---
+
+
+def resolve_memory_type(memory_type: "MemoryType | str") -> str:
+    """Return the string value of a MemoryType enum or pass through a plain string."""
+    if isinstance(memory_type, MemoryType):
+        return memory_type.value
+    return memory_type
 
 
 # --- Enums ---

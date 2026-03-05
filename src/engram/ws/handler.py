@@ -83,12 +83,6 @@ def register_ws_routes(
             await ws.close(code=4001, reason="Authentication failed")
             return
 
-        # Per-connection push handler — unsubscribed on disconnect to prevent accumulation
-        async def push_handler(tenant_id: str, event: str, data: dict[str, Any]) -> None:
-            ws_event = WSEvent(event=event, tenant_id=tenant_id, data=data)
-            sender = data.pop("_sender", "")
-            await manager.broadcast(tenant_id, ws_event, exclude_sub=sender)
-
         await manager.connect(ws, auth.tenant_id, sub)
         try:
             while True:
@@ -136,7 +130,6 @@ def register_ws_routes(
         except WebSocketDisconnect:
             pass
         finally:
-            event_bus.unsubscribe(push_handler)
             await manager.disconnect(ws, auth.tenant_id, sub)
 
 

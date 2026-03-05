@@ -93,10 +93,10 @@ async def think(req: ThinkRequest, request: Request, auth: AuthContext = Depends
     ep = resolve_episodic(state, auth)
     gr = await resolve_graph(state, auth)
     eng = resolve_engine(state, auth, ep, gr)
-    # I1 fix: pass active providers to engine for federated search
+    # Pass active providers to engine for federated search
     provider_registry = getattr(state, "provider_registry", None)
     if provider_registry is not None:
-        eng._providers = provider_registry.get_active()
+        eng.set_providers(provider_registry.get_active())
 
     if cache is not None:
         cached = await cache.get(auth.tenant_id, "think", {"q": req.question, "m": req.mode})
@@ -176,8 +176,7 @@ async def recall(
     offset = min(offset, 500)
     filters = {"memory_type": memory_type} if memory_type else None
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
-    results = await ep.search(query, limit=limit + offset, filters=filters, tags=tag_list)
-    paginated = results[offset:offset + limit]
+    paginated = await ep.search(query, limit=limit, offset=offset, filters=filters, tags=tag_list)
 
     graph_results = []
     if include_graph:
@@ -195,7 +194,7 @@ async def recall(
         "status": "ok",
         "results": [r.model_dump() for r in paginated],
         "graph_results": graph_results,
-        "total": len(results),
+        "total": len(paginated),
         "offset": offset,
         "limit": limit,
     }

@@ -202,6 +202,8 @@ class InboxWatcher:
                 except Exception as exc:
                     logger.warning("watcher: could not restore %s for retry: %s", path.name, exc)
 
+    _MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
     @staticmethod
     def _load_chat_file(path: Path, is_jsonl: bool | None = None) -> list[dict[str, Any]]:
         """Load messages from chat JSON or JSONL file.
@@ -209,6 +211,11 @@ class InboxWatcher:
         Args:
             is_jsonl: Explicit format hint. Auto-detects from extension if None.
         """
+        file_size = path.stat().st_size
+        if file_size > InboxWatcher._MAX_FILE_SIZE:
+            raise ValueError(
+                f"File {path.name} exceeds 50 MB limit ({file_size // (1024*1024)} MB); skipping."
+            )
         if is_jsonl is None:
             is_jsonl = path.suffix == ".jsonl" or (path.suffix == ".processing" and ".jsonl" in path.stem)
         if is_jsonl:

@@ -43,6 +43,7 @@ class SemanticGraph:
         self._tenant_id = tenant_id  # M10: used in audit log calls
         self._max_nodes = max_nodes
         self._load_lock = asyncio.Lock()  # D-C1: guard concurrent loads
+        self._write_lock = asyncio.Lock()  # guard concurrent asyncpg writes
 
     async def _ensure_initialized(self) -> None:
         """Initialize backend schema if not already done (does NOT load the graph)."""
@@ -122,18 +123,18 @@ class SemanticGraph:
         reuse the existing key to avoid duplicates like Project:Engram vs Project:engram.
         """
         await self._ensure_loaded()
-        # Case-insensitive lookup: find existing node with same key
-        key = node.key
-        key_lower = key.lower()
-        for existing_key in self._graph.nodes:
-            if existing_key.lower() == key_lower and existing_key != key:
-                key = existing_key  # reuse existing casing
-                node = SemanticNode(type=node.type, name=existing_key.split(":", 1)[1],
-                                    attributes=node.attributes)
-                break
-        is_new = key not in self._graph
-        await self._backend.save_node(key, node.type, node.name, json.dumps(node.attributes))
-        self._graph.add_node(key, data=node)
+        async with self._write_lock:
+            key = node.key
+            key_lower = key.lower()
+            for existing_key in self._graph.nodes:
+                if existing_key.lower() == key_lower and existing_key != key:
+                    key = existing_key
+                    node = SemanticNode(type=node.type, name=existing_key.split(":", 1)[1],
+                                        attributes=node.attributes)
+                    break
+            is_new = key not in self._graph
+            await self._backend.save_node(key, node.type, node.name, json.dumps(node.attributes))
+            self._graph.add_node(key, data=node)
         if self._audit:
             op = "semantic.add_node" if is_new else "semantic.update_node"
             self._audit.log(tenant_id=self._tenant_id, actor="system", operation=op,
@@ -143,21 +144,25 @@ class SemanticGraph:
     async def add_edge(self, edge: SemanticEdge) -> bool:
         """Add to both stores. Return True if new."""
         await self._ensure_loaded()
-        from_key = _canonicalize_node_key(edge.from_node)
-        to_key = _canonicalize_node_key(edge.to_node)
-        normalized_edge = SemanticEdge(
-            from_node=from_key,
-            to_node=to_key,
-            relation=edge.relation,
-            weight=edge.weight,
-            attributes=edge.attributes,
-        )
-        is_new = not self._graph.has_edge(from_key, to_key, key=normalized_edge.key)
-        await self._backend.save_edge(
-            normalized_edge.key, from_key, to_key, normalized_edge.relation,
-            normalized_edge.weight, json.dumps(normalized_edge.attributes),
-        )
-        self._graph.add_edge(from_key, to_key, key=normalized_edge.key, data=normalized_edge)
+        async with self._write_lock:
+            from_key = _canonicalize_node_key(edge.from_node)
+            to_key = _canonicalize_node_key(edge.to_node)
+            existing_lower = {k.lower(): k for k in self._graph.nodes}
+            from_key = existing_lower.get(from_key.lower(), from_key)
+            to_key = existing_lower.get(to_key.lower(), to_key)
+            normalized_edge = SemanticEdge(
+                from_node=from_key,
+                to_node=to_key,
+                relation=edge.relation,
+                weight=edge.weight,
+                attributes=edge.attributes,
+            )
+            is_new = not self._graph.has_edge(from_key, to_key, key=normalized_edge.key)
+            await self._backend.save_edge(
+                normalized_edge.key, from_key, to_key, normalized_edge.relation,
+                normalized_edge.weight, json.dumps(normalized_edge.attributes),
+            )
+            self._graph.add_edge(from_key, to_key, key=normalized_edge.key, data=normalized_edge)
         if self._audit:
             self._audit.log(tenant_id=self._tenant_id, actor="system", operation="semantic.add_edge",
                             resource_id=normalized_edge.key, details={"relation": normalized_edge.relation,
@@ -169,42 +174,44 @@ class SemanticGraph:
         if not nodes:
             return
         await self._ensure_loaded()
-        # Build lowercase lookup of existing keys
-        existing_lower = {k.lower(): k for k in self._graph.nodes}
-        deduped = []
-        for n in nodes:
-            key_lower = n.key.lower()
-            if key_lower in existing_lower and existing_lower[key_lower] != n.key:
-                # Reuse existing key casing
-                existing_key = existing_lower[key_lower]
-                n = SemanticNode(type=n.type, name=existing_key.split(":", 1)[1],
-                                 attributes=n.attributes)
-            existing_lower[key_lower] = n.key  # track within batch too
-            deduped.append(n)
-        rows = [(n.key, n.type, n.name, json.dumps(n.attributes)) for n in deduped]
-        await self._backend.save_nodes_batch(rows)
-        for node in nodes:
-            self._graph.add_node(node.key, data=node)
+        async with self._write_lock:
+            # Build lowercase lookup of existing keys
+            existing_lower = {k.lower(): k for k in self._graph.nodes}
+            deduped = []
+            for n in nodes:
+                key_lower = n.key.lower()
+                if key_lower in existing_lower and existing_lower[key_lower] != n.key:
+                    existing_key = existing_lower[key_lower]
+                    n = SemanticNode(type=n.type, name=existing_key.split(":", 1)[1],
+                                     attributes=n.attributes)
+                existing_lower[key_lower] = n.key
+                deduped.append(n)
+            rows = [(n.key, n.type, n.name, json.dumps(n.attributes)) for n in deduped]
+            await self._backend.save_nodes_batch(rows)
+            for node in deduped:
+                self._graph.add_node(node.key, data=node)
 
     async def add_edges_batch(self, edges: list[SemanticEdge]) -> None:
         """Add multiple edges in one backend transaction."""
         if not edges:
             return
         await self._ensure_loaded()
-        normalized_edges = [
-            SemanticEdge(
-                from_node=_canonicalize_node_key(e.from_node),
-                to_node=_canonicalize_node_key(e.to_node),
-                relation=e.relation,
-                weight=e.weight,
-                attributes=e.attributes,
-            )
-            for e in edges
-        ]
-        rows = [(e.key, e.from_node, e.to_node, e.relation, e.weight, json.dumps(e.attributes)) for e in normalized_edges]
-        await self._backend.save_edges_batch(rows)
-        for edge in normalized_edges:
-            self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
+        async with self._write_lock:
+            existing_lower = {k.lower(): k for k in self._graph.nodes}
+            normalized_edges = [
+                SemanticEdge(
+                    from_node=existing_lower.get(_canonicalize_node_key(e.from_node).lower(), _canonicalize_node_key(e.from_node)),
+                    to_node=existing_lower.get(_canonicalize_node_key(e.to_node).lower(), _canonicalize_node_key(e.to_node)),
+                    relation=e.relation,
+                    weight=e.weight,
+                    attributes=e.attributes,
+                )
+                for e in edges
+            ]
+            rows = [(e.key, e.from_node, e.to_node, e.relation, e.weight, json.dumps(e.attributes)) for e in normalized_edges]
+            await self._backend.save_edges_batch(rows)
+            for edge in normalized_edges:
+                self._graph.add_edge(edge.from_node, edge.to_node, key=edge.key, data=edge)
 
     async def get_node(self, key: str) -> SemanticNode | None:
         """Lookup node from NetworkX by key."""

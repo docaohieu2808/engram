@@ -66,12 +66,12 @@ async def export_memories(episodic_store: Any, sync_dir: str | None = None) -> d
     manifest = _load_manifest(d)
     synced_ids = set(manifest["synced_ids"])
 
-    collection = episodic_store._ensure_collection()
-    count = collection.count()
+    await episodic_store._ensure_backend()
+    count = await episodic_store._backend.count()
     if count == 0:
         return {"new_count": 0, "chunk_file": None}
 
-    data = collection.get(include=["documents", "metadatas"])
+    data = await episodic_store._backend.get_many(include=["documents", "metadatas"])
     new_records = []
     for i, mem_id in enumerate(data["ids"]):
         if mem_id in synced_ids:
@@ -129,11 +129,14 @@ async def import_memories(episodic_store: Any, sync_dir: str | None = None) -> d
                     records.append(json.loads(line))
 
         if records:
-            collection = episodic_store._ensure_collection()
+            await episodic_store._ensure_backend()
             ids = [r["id"] for r in records]
             docs = [r["content"] for r in records]
             metas = [r["metadata"] for r in records]
-            collection.upsert(ids=ids, documents=docs, metadatas=metas)
+            # No embeddings in chunk files — pass None so backend stores without vector
+            await episodic_store._backend.upsert(
+                ids=ids, embeddings=[None] * len(ids), documents=docs, metadatas=metas,
+            )
             total_imported += len(records)
             new_chunks.append({"file": chunk_path.name, "count": len(records)})
 

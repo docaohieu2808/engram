@@ -72,7 +72,7 @@ class StoreFactory:
         # LRU caches: OrderedDict preserves insertion order for eviction
         self._episodic_stores: OrderedDict[str, "EpisodicStore"] = OrderedDict()
         self._graphs: OrderedDict[str, "SemanticGraph"] = OrderedDict()
-        self._lock: asyncio.Lock | None = None  # M7: lazy init to avoid event loop issues
+        self._lock: asyncio.Lock = asyncio.Lock()
 
     def get_episodic(self, tenant_id: str | None = None) -> "EpisodicStore":
         """Return EpisodicStore for the given tenant (defaults to TenantContext.get()).
@@ -105,9 +105,6 @@ class StoreFactory:
         return store
 
     async def _get_lock(self) -> asyncio.Lock:
-        """Lazy lock creation to avoid asyncio.Lock() created outside event loop (M7)."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
         return self._lock
 
     async def get_graph(self, tenant_id: str | None = None) -> "SemanticGraph":

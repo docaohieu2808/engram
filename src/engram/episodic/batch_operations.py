@@ -13,16 +13,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-import sys as _sys
-
+from engram.episodic.embeddings import _get_embeddings
 from engram.episodic.episodic_builder import _canonicalize_entities
-
-
-def _get_embeddings(*args, **kwargs):
-    """Proxy to engram.episodic.store._get_embeddings so test patches on that name work."""
-    return _sys.modules["engram.episodic.store"]._get_embeddings(*args, **kwargs)
 from engram.episodic.fts_sync import fts_insert_batch
-from engram.models import MemoryType
+from engram.models import MemoryType, resolve_memory_type
 from engram.sanitize import sanitize_content
 
 logger = logging.getLogger("engram")
@@ -63,7 +57,7 @@ class _BatchMixin:
 
             mem_id = str(uuid.uuid4())
             doc_metadata: dict[str, Any] = {
-                "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
+                "memory_type": resolve_memory_type(memory_type),
                 "priority": priority,
                 "timestamp": timestamp,
                 "entities": json.dumps(entities),

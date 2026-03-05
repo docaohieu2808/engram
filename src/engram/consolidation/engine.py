@@ -12,6 +12,7 @@ import uuid
 import litellm
 
 from engram.config import ConsolidationConfig
+from engram.llm_utils import is_anthropic_model
 from engram.episodic.store import EpisodicStore
 from engram.models import EpisodicMemory, MemoryType
 from engram.sanitize import sanitize_llm_input
@@ -162,7 +163,7 @@ class ConsolidationEngine:
             temperature=0.3,
             max_tokens=300,
         )
-        if self._disable_thinking:
+        if self._disable_thinking and is_anthropic_model(self._model):
             kwargs["thinking"] = {"type": "disabled"}
         response = await litellm.acompletion(**kwargs)
         return response.choices[0].message.content.strip()

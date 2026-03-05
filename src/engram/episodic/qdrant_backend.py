@@ -7,6 +7,7 @@ Returns ChromaDB-style result dicts for compatibility with existing code.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 from uuid import uuid4
@@ -28,18 +29,20 @@ class QdrantBackend:
         from qdrant_client.models import Distance, VectorParams, PayloadSchemaType
         self._collection_name = namespace
         try:
-            self._client.get_collection(self._collection_name)
+            await asyncio.to_thread(self._client.get_collection, self._collection_name)
             logger.info("Qdrant collection '%s' exists", self._collection_name)
         except Exception:
             dim = embedding_dim or 3072  # default: gemini-embedding-001
-            self._client.create_collection(
+            await asyncio.to_thread(
+                self._client.create_collection,
                 collection_name=self._collection_name,
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
             )
             logger.info("Created Qdrant collection '%s' (dim=%d)", self._collection_name, dim)
         # Ensure payload index on timestamp for order_by support (needs DATETIME for range)
         try:
-            self._client.create_payload_index(
+            await asyncio.to_thread(
+                self._client.create_payload_index,
                 collection_name=self._collection_name,
                 field_name="timestamp",
                 field_schema=PayloadSchemaType.DATETIME,
@@ -56,22 +59,31 @@ class QdrantBackend:
         """Insert a single memory document."""
         from qdrant_client.models import PointStruct
         point = PointStruct(id=id, vector=embedding, payload={"document": content, **metadata})
-        self._client.upsert(collection_name=self._col(), points=[point])
+        await asyncio.to_thread(self._client.upsert, collection_name=self._col(), points=[point])
 
-    async def upsert(self, ids: list[str], embeddings: list[list[float]], documents: list[str], metadatas: list[dict]) -> None:
+    async def upsert(self, ids: list[str], embeddings: list[list[float]] | None, documents: list[str], metadatas: list[dict]) -> None:
         """Batch upsert multiple memory documents."""
         from qdrant_client.models import PointStruct
-        points = [
-            PointStruct(id=ids[i], vector=embeddings[i], payload={"document": documents[i], **metadatas[i]})
+        # Filter out records with no embedding vector (Qdrant requires vectors)
+        valid = [
+            (ids[i], embeddings[i] if embeddings else None, documents[i], metadatas[i])
             for i in range(len(ids))
+            if embeddings and embeddings[i] is not None
+        ]
+        if not valid:
+            logger.warning("QdrantBackend.upsert: all embeddings are None — skipping upsert (%d items)", len(ids))
+            return
+        points = [
+            PointStruct(id=vid, vector=vemb, payload={"document": vdoc, **vmeta})
+            for vid, vemb, vdoc, vmeta in valid
         ]
         # Batch in chunks of 500
         for start in range(0, len(points), 500):
-            self._client.upsert(collection_name=self._col(), points=points[start:start + 500])
+            await asyncio.to_thread(self._client.upsert, collection_name=self._col(), points=points[start:start + 500])
 
     async def get(self, id: str) -> dict | None:
         """Retrieve a single document by ID."""
-        results = self._client.retrieve(collection_name=self._col(), ids=[id], with_payload=True)
+        results = await asyncio.to_thread(self._client.retrieve, collection_name=self._col(), ids=[id], with_payload=True)
         if not results:
             return None
         point = results[0]
@@ -89,12 +101,13 @@ class QdrantBackend:
         The offset parameter is ignored for Qdrant scroll (not compatible).
         """
         if ids is not None:
-            points = self._client.retrieve(collection_name=self._col(), ids=ids, with_payload=True, with_vectors="embeddings" in (include or []))
+            points = await asyncio.to_thread(self._client.retrieve, collection_name=self._col(), ids=ids, with_payload=True, with_vectors="embeddings" in (include or []))
         else:
             from qdrant_client.models import Filter, OrderBy, Direction
             qdrant_filter = _build_qdrant_filter(where) if where else None
             try:
-                points, _next_offset = self._client.scroll(
+                points, _next_offset = await asyncio.to_thread(
+                    self._client.scroll,
                     collection_name=self._col(), scroll_filter=qdrant_filter,
                     limit=limit or 100,
                     with_payload=True, with_vectors="embeddings" in (include or []),
@@ -102,7 +115,8 @@ class QdrantBackend:
                 )
             except Exception:
                 # Fallback: no order_by (index may not exist yet)
-                points, _next_offset = self._client.scroll(
+                points, _next_offset = await asyncio.to_thread(
+                    self._client.scroll,
                     collection_name=self._col(), scroll_filter=qdrant_filter,
                     limit=limit or 100,
                     with_payload=True, with_vectors="embeddings" in (include or []),
@@ -112,7 +126,7 @@ class QdrantBackend:
     async def delete(self, ids: list[str]) -> None:
         """Delete documents by ID list."""
         from qdrant_client.models import PointIdsList
-        self._client.delete(collection_name=self._col(), points_selector=PointIdsList(points=ids))
+        await asyncio.to_thread(self._client.delete, collection_name=self._col(), points_selector=PointIdsList(points=ids))
 
     async def query(self, query_embeddings: list[list[float]], n_results: int, where: dict | None = None, include: list[str] | None = None) -> dict:
         """Vector similarity search. Returns ChromaDB-style nested result dict."""
@@ -120,11 +134,13 @@ class QdrantBackend:
         qdrant_filter = _build_qdrant_filter(where) if where else None
         all_ids, all_docs, all_metas, all_dists, all_embeddings = [], [], [], [], []
         for qe in query_embeddings:
-            results = self._client.query_points(
+            _resp = await asyncio.to_thread(
+                self._client.query_points,
                 collection_name=self._col(), query=qe, limit=n_results,
                 query_filter=qdrant_filter, with_payload=True,
                 with_vectors="embeddings" in (include or []),
-            ).points
+            )
+            results = _resp.points
             ids, docs, metas, dists, embeddings = [], [], [], [], []
             for hit in results:
                 payload = dict(hit.payload or {})
@@ -148,7 +164,7 @@ class QdrantBackend:
     async def update(self, ids: list[str], metadatas: list[dict]) -> None:
         """Update metadata for existing documents."""
         for i, doc_id in enumerate(ids):
-            self._client.set_payload(collection_name=self._col(), payload=metadatas[i], points=[doc_id])
+            await asyncio.to_thread(self._client.set_payload, collection_name=self._col(), payload=metadatas[i], points=[doc_id])
 
     async def update_with_embeddings(self, ids: list[str], documents: list[str], embeddings: list[list[float]], metadatas: list[dict]) -> None:
         """Update documents including embeddings."""
@@ -157,21 +173,21 @@ class QdrantBackend:
             PointStruct(id=ids[i], vector=embeddings[i], payload={"document": documents[i], **metadatas[i]})
             for i in range(len(ids))
         ]
-        self._client.upsert(collection_name=self._col(), points=points)
+        await asyncio.to_thread(self._client.upsert, collection_name=self._col(), points=points)
 
     async def count(self) -> int:
         """Return total number of documents."""
-        info = self._client.get_collection(self._col())
+        info = await asyncio.to_thread(self._client.get_collection, self._col())
         return info.points_count or 0
 
     async def peek(self, limit: int = 1) -> dict:
         """Return a small sample of documents."""
-        points, _ = self._client.scroll(collection_name=self._col(), limit=limit, with_payload=True, with_vectors=True)
+        points, _ = await asyncio.to_thread(self._client.scroll, collection_name=self._col(), limit=limit, with_payload=True, with_vectors=True)
         return _points_to_chroma_dict(points, ["documents", "metadatas", "embeddings"])
 
     async def close(self) -> None:
         """Close the Qdrant client connection."""
-        self._client.close()
+        await asyncio.to_thread(self._client.close)
         self._collection_name = ""
 
 

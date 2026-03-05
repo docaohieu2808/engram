@@ -13,20 +13,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-import sys as _sys
-
+from engram.episodic.embeddings import _get_embeddings
 from engram.episodic.episodic_builder import (
     _build_memory,
     _canonicalize_entities,
 )
-
-
-def _get_embeddings(*args, **kwargs):
-    """Proxy to engram.episodic.store._get_embeddings so test patches on that name work."""
-    return _sys.modules["engram.episodic.store"]._get_embeddings(*args, **kwargs)
 from engram.episodic.fts_sync import fts_delete, fts_insert
 from engram.hooks import fire_hook
-from engram.models import EpisodicMemory, MemoryType
+from engram.models import EpisodicMemory, MemoryType, resolve_memory_type
 from engram.sanitize import sanitize_content
 
 logger = logging.getLogger("engram")
@@ -113,7 +107,7 @@ class _EpisodicCrudMixin:
         tags = tags or []
 
         doc_metadata: dict[str, Any] = {
-            "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
+            "memory_type": resolve_memory_type(memory_type),
             "priority": priority,
             "timestamp": timestamp_str,
             "entities": json.dumps(entities),
@@ -179,13 +173,13 @@ class _EpisodicCrudMixin:
                 logger.error("EmbeddingQueue enqueue also failed: %s", qe)
 
         # Sync to FTS5 index (fire-and-forget; non-blocking on failure)
-        mt_str = memory_type.value if isinstance(memory_type, MemoryType) else memory_type
+        mt_str = resolve_memory_type(memory_type)
         await fts_insert(self._fts, memory_id, content, mt_str)
 
         fire_hook(self._on_remember_hook, {
             "id": memory_id,
             "content": content,
-            "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
+            "memory_type": resolve_memory_type(memory_type),
         })
         if self._audit:
             self._audit.log(
@@ -193,13 +187,13 @@ class _EpisodicCrudMixin:
                 actor="system",
                 operation="episodic.remember",
                 resource_id=memory_id,
-                details={"memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type},
+                details={"memory_type": resolve_memory_type(memory_type)},
             )
             self._audit.log_modification(
                 tenant_id=self._namespace, actor="system",
                 mod_type="memory_create", resource_id=memory_id,
                 after_value=content[:500],
-                description=f"New {memory_type.value if isinstance(memory_type, MemoryType) else memory_type} memory (priority={priority})",
+                description=f"New {resolve_memory_type(memory_type)} memory (priority={priority})",
             )
         return memory_id
 
@@ -323,12 +317,32 @@ class _EpisodicCrudMixin:
         revision = int(old_meta.get("revision_count", 0)) + 1
 
         await self._detect_embedding_dim()
-        embeddings = await asyncio.to_thread(
-            _get_embeddings, self._embed_model, [content], self._embedding_dim
-        )
+        try:
+            embeddings = await asyncio.to_thread(
+                _get_embeddings, self._embed_model, [content], self._embedding_dim
+            )
+        except Exception as emb_exc:
+            logger.warning(
+                "store: embedding failed in _update_topic (id=%s), queued for retry: %s",
+                mem_id[:8], emb_exc,
+            )
+            try:
+                from engram.episodic.embedding_queue import get_embedding_queue
+                doc_metadata = metadata or {}
+                doc_metadata.setdefault("topic_key", topic_key)
+                get_embedding_queue().enqueue(mem_id, content, doc_metadata)
+            except Exception as qe:
+                logger.error("EmbeddingQueue enqueue failed in _update_topic: %s", qe)
+            # Fall back to metadata-only update (no re-embedding)
+            await self._backend.update(ids=[mem_id], metadatas=[{
+                "topic_key": topic_key,
+                "revision_count": revision,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }])
+            return mem_id
 
         new_meta: dict[str, Any] = {
-            "memory_type": memory_type.value if isinstance(memory_type, MemoryType) else memory_type,
+            "memory_type": resolve_memory_type(memory_type),
             "priority": priority,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "entities": json.dumps(entities or []),

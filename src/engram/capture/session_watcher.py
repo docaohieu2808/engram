@@ -256,12 +256,12 @@ class SessionWatcher:
 
         logger.info("%s watcher started: %s (recursive=%s)", self._label, self._sessions_dir, self._recursive)
 
-        # Periodic fallback scans to handle missed FS events
+        # Periodic fallback scans to handle missed FS events (debounced: 30s interval)
         try:
             while self._observer.is_alive():
                 for jsonl in self._sessions_dir.glob(glob_pattern):
                     handler._process_new_lines(str(jsonl))
-                await asyncio.sleep(1)
+                await asyncio.sleep(30)
         except asyncio.CancelledError:
             self.stop()
 

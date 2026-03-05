@@ -155,15 +155,13 @@ class EmbeddingQueue:
 
 async def process_embedding_queue(store: Any, queue: "EmbeddingQueue | None" = None) -> dict[str, Any]:
     """Drain pending items: embed → ChromaDB add → mark_done. Called by scheduler."""
-    import asyncio, sys
+    import asyncio
+    from engram.episodic.embeddings import _get_embeddings
     if queue is None:
         queue = get_embedding_queue()
     batch = queue.dequeue_batch()
     if not batch:
         return {"processed": 0, "failed": 0, "skipped": True}
-
-    def _get_embeddings(*args, **kwargs):
-        return sys.modules["engram.episodic.store"]._get_embeddings(*args, **kwargs)
 
     processed = failed = 0
     for item in batch:

@@ -11,6 +11,7 @@ from typing import Any
 import litellm
 
 from engram.capture.extraction_filters import should_extract
+from engram.llm_utils import _llm_call_with_fallback as _shared_llm_call, is_anthropic_model
 from engram.models import ExtractionResult, SchemaDefinition, SemanticEdge, SemanticNode
 from engram.schema.loader import schema_to_prompt
 
@@ -55,14 +56,6 @@ EXTRACTION_PROMPT = """You are an entity extraction system. Extract entities and
 
 class EntityExtractor:
     """Extract semantic entities from chat messages using LLM."""
-
-    # Model fallback chain: try each model on quota/rate/auth errors
-    _MODEL_FALLBACK_CHAIN = [
-        "gemini/gemini-3.1-pro-preview",
-        "gemini/gemini-3-pro-preview",
-        "gemini/gemini-2.5-pro",
-        "gemini/gemini-2.5-flash",
-    ]
 
     def __init__(
         self,
@@ -185,35 +178,7 @@ class EntityExtractor:
         return out
 
     async def _llm_call_with_fallback(self, kwargs: dict) -> Any:
-        """Call litellm with model fallback chain on quota/rate/auth errors."""
-        primary_model = kwargs.get("model", self._model)
-
-        # Build fallback list: primary first, then chain (skip duplicates)
-        seen = {primary_model}
-        fallback_models = [primary_model]
-        for m in self._MODEL_FALLBACK_CHAIN:
-            if m not in seen:
-                fallback_models.append(m)
-                seen.add(m)
-
-        last_exc: Exception | None = None
-        for model in fallback_models:
-            kwargs["model"] = model
-            try:
-                return await litellm.acompletion(**kwargs)
-            except Exception as e:
-                last_exc = e
-                err_str = str(e).lower()
-                is_retriable = any(k in err_str for k in (
-                    "429", "rate", "quota", "resource_exhausted",
-                    "auth", "api key", "403", "401",
-                    "404", "not found", "not_found",
-                ))
-                if is_retriable and model != fallback_models[-1]:
-                    logger.warning("Extraction LLM %s failed (%s), trying next model", model, type(e).__name__)
-                    continue
-                raise
-        raise last_exc  # type: ignore[misc]
+        return await _shared_llm_call(kwargs, primary_model=kwargs.get("model", self._model))
 
     async def _extract_chunk(self, messages: list[dict]) -> ExtractionResult:
         """Run LLM extraction on a chunk of messages, with retries + model fallback."""
@@ -237,7 +202,7 @@ class EntityExtractor:
                     temperature=self._temperature,
                     response_format={"type": "json_object"},
                 )
-                if self._disable_thinking:
+                if self._disable_thinking and is_anthropic_model(self._model):
                     kwargs["thinking"] = {"type": "disabled"}
                 response = await self._llm_call_with_fallback(kwargs)
                 content = response.choices[0].message.content

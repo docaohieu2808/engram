@@ -27,7 +27,7 @@ async def backup(episodic, graph, output_path: str) -> dict:
         await episodic._ensure_backend()
         count = await episodic._backend.count()
         if count > 0:
-            data = await episodic._backend.get_many(include=["documents", "metadatas"])
+            data = await episodic._backend.get_many(include=["documents", "metadatas", "embeddings"])
             (tmp_path / "episodic.json").write_text(json.dumps(data, default=str))
 
         # --- Export semantic graph ---
@@ -105,11 +105,10 @@ async def restore(episodic, graph, archive_path: str) -> dict:
             metadatas = data.get("metadatas", [])
             if ids:
                 await episodic._ensure_backend()
-                # Call ChromaDB collection directly for restore (no embeddings in backup archive)
-                import asyncio
-                col = episodic._backend._col()
-                await asyncio.to_thread(
-                    col.upsert, ids=ids, documents=documents, metadatas=metadatas,
+                # Use backend abstraction — works for both ChromaDB and Qdrant backends
+                embeddings = data.get("embeddings") or [None] * len(ids)
+                await episodic._backend.upsert(
+                    ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas,
                 )
                 episodic_count = len(ids)
 

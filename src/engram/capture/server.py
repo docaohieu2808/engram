@@ -231,6 +231,15 @@ def create_app(
             await _ws_event_bus.close()
             logger.info("RedisEventBus stopped")
 
+    # Mount MCP server as SSE transport for remote clients
+    try:
+        from engram.mcp.server import mcp as mcp_server
+        mcp_sse = mcp_server.sse_app()
+        app.mount("/mcp", mcp_sse)
+        logger.info("MCP SSE transport mounted at /mcp")
+    except Exception as e:
+        logger.warning("Failed to mount MCP SSE transport: %s", e)
+
     return app
 
 
@@ -270,8 +279,15 @@ def run_server(
         config = load_config()
     from engram.telemetry import setup_telemetry
     setup_telemetry(config)
-    app_cache, app_limiter = asyncio.run(_build_cache_and_limiter(config))
-    app = create_app(episodic, graph, engine, ingest_fn, store_factory, app_cache, app_limiter, config)
+    # Create app without cache/limiter; initialize them in startup event to avoid
+    # asyncio.run() conflict when run_server() is called from an existing async context
+    app = create_app(episodic, graph, engine, ingest_fn, store_factory, None, None, config)
+
+    @app.on_event("startup")
+    async def _init_cache_and_limiter():
+        app_cache, app_limiter = await _build_cache_and_limiter(config)
+        app.state.cache = app_cache
+        app.state.rate_limiter = app_limiter
 
     if episodic is not None:
         from engram.scheduler import create_default_scheduler

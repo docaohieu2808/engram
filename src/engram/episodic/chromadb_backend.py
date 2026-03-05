@@ -58,15 +58,17 @@ class ChromaDBBackend:
     async def upsert(
         self,
         ids: list[str],
-        embeddings: list[list[float]],
+        embeddings: list[list[float]] | None,
         documents: list[str],
         metadatas: list[dict],
     ) -> None:
+        # Only pass embeddings to ChromaDB if they are actual vectors (not None/empty)
+        has_vectors = embeddings and any(e is not None for e in embeddings)
         await asyncio.to_thread(
             self._col().upsert,
             ids=ids,
             documents=documents,
-            embeddings=embeddings,
+            embeddings=embeddings if has_vectors else None,
             metadatas=metadatas,
         )
 

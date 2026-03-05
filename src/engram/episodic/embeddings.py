@@ -20,6 +20,9 @@ logger = logging.getLogger("engram")
 # Round-robin counter — persists across calls within the same process
 _rr_counter = itertools.count()
 
+# Cached key strategy — loaded once to avoid config I/O on every embedding call
+_key_strategy_cache: str | None = None
+
 
 def _get_api_keys() -> list[str]:
     """Return list of available Gemini API keys (primary + fallback)."""
@@ -34,18 +37,23 @@ def _get_api_keys() -> list[str]:
 
 
 def _get_key_strategy() -> str:
-    """Read key_strategy from config, fall back to env, then default."""
+    """Read key_strategy from config, fall back to env, then default. Cached after first call."""
+    global _key_strategy_cache
+    if _key_strategy_cache is not None:
+        return _key_strategy_cache
     # Env override takes precedence (for systemd services)
     env_val = os.environ.get("GEMINI_KEY_STRATEGY")
     if env_val:
-        return env_val.lower()
-    # Read from config file
+        _key_strategy_cache = env_val.lower()
+        return _key_strategy_cache
+    # Read from config file once
     try:
         from engram.config import load_config
         cfg = load_config()
-        return cfg.embedding.key_strategy.lower()
+        _key_strategy_cache = cfg.embedding.key_strategy.lower()
     except Exception:
-        return "failover"
+        _key_strategy_cache = "failover"
+    return _key_strategy_cache
 
 
 def _order_keys(keys: list[str]) -> list[str]:

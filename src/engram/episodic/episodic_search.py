@@ -12,15 +12,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from engram.episodic.decay import compute_activation_score
+from engram.episodic.embeddings import _get_embeddings
 from engram.episodic.episodic_builder import _build_memory
-import sys as _sys
-
 from engram.episodic.fts_sync import fts_search
-
-
-def _get_embeddings(*args, **kwargs):
-    """Proxy to engram.episodic.store._get_embeddings so test patches on that name work."""
-    return _sys.modules["engram.episodic.store"]._get_embeddings(*args, **kwargs)
 from engram.models import EpisodicMemory
 
 logger = logging.getLogger("engram")
@@ -33,6 +27,7 @@ class _EpisodicSearchMixin:
         self,
         query: str,
         limit: int = 5,
+        offset: int = 0,
         filters: dict[str, Any] | None = None,
         tags: list[str] | None = None,
     ) -> list[EpisodicMemory]:
@@ -41,6 +36,7 @@ class _EpisodicSearchMixin:
         Args:
             query: Search query text.
             limit: Maximum number of results.
+            offset: Number of results to skip (applied after scoring).
             filters: ChromaDB `where` clause dict.
             tags: Optional tag list — all provided tags must be present in memory.
         """
@@ -51,9 +47,10 @@ class _EpisodicSearchMixin:
                 _get_embeddings, self._embed_model, [query], self._embedding_dim
             )
             coll_count = await self._backend.count()
+            fetch_limit = min(limit + offset, coll_count or 1)
             results = await self._backend.query(
                 query_embeddings=query_embedding,
-                n_results=min(limit, coll_count or 1),
+                n_results=fetch_limit,
                 where=filters if filters else None,
             )
         except Exception as e:
@@ -112,9 +109,11 @@ class _EpisodicSearchMixin:
                 "last_accessed": now.isoformat(),
             })
 
-        # Re-sort by activation score
+        # Re-sort by activation score, then apply offset/limit
         scored.sort(key=lambda x: x[0], reverse=True)
         memories = [m for _, m in scored]
+        if offset:
+            memories = memories[offset:offset + limit]
 
         # Fire-and-forget access tracking update
         if access_ids:

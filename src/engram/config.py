@@ -618,13 +618,31 @@ def apply_llm_api_key(config: Config) -> None:
     _apply_provider_key(config.embedding.provider, config.embedding.api_key)
 
 
+_SENSITIVE_FIELDS = {"jwt_secret", "admin_secret", "api_key", "dsn"}
+
+
+def _mask_secrets(data: Any) -> Any:
+    """Recursively mask sensitive fields before saving to YAML."""
+    if isinstance(data, dict):
+        return {
+            k: "<redacted>" if k in _SENSITIVE_FIELDS and isinstance(v, str) and v and not v.startswith("${")
+            else _mask_secrets(v)
+            for k, v in data.items()
+        }
+    if isinstance(data, list):
+        return [_mask_secrets(item) for item in data]
+    return data
+
+
 def save_config(config: Config, path: Path | None = None) -> None:
-    """Save config to YAML."""
+    """Save config to YAML. Sensitive fields are masked; set them via env vars."""
     config_path = path or get_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    data = config.model_dump(by_alias=True)
+    data = _mask_secrets(config.model_dump(by_alias=True))
+    config_path.touch(mode=0o600, exist_ok=True)
     with open(config_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    config_path.chmod(0o600)
 
 
 def get_config_value(config: Config, key_path: str) -> Any:

@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
 
-from engram.models import IngestResult
 from engram.utils import run_async
+from engram.cli.ingest import do_ingest, do_ingest_messages
+from engram.cli.factories import make_factories
 
+logger = logging.getLogger("engram")
 console = Console()
 
 
@@ -48,240 +51,16 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
     def _resolve_namespace():
         return get_namespace() if get_namespace else None
 
-    _cached_episodic = None
+    # Build lazy store factories
+    _factories = make_factories(get_config, get_namespace)
+    _get_episodic = _factories["get_episodic"]
+    _get_graph = _factories["get_graph"]
+    _get_engine = _factories["get_engine"]
+    _get_extractor = _factories["get_extractor"]
 
-    def _get_episodic():
-        nonlocal _cached_episodic
-        if _cached_episodic is None:
-            from engram.episodic.store import EpisodicStore
-            cfg = get_config()
-            _cached_episodic = EpisodicStore(
-                cfg.episodic, cfg.embedding,
-                namespace=_resolve_namespace(),
-                on_remember_hook=cfg.hooks.on_remember,
-                guard_enabled=cfg.ingestion.poisoning_guard,
-            )
-        return _cached_episodic
-
-    _cached_graph = None
-
-    def _get_graph():
-        nonlocal _cached_graph
-        if _cached_graph is None:
-            from engram.semantic import create_graph
-            cfg = get_config()
-            _cached_graph = create_graph(cfg.semantic)
-        return _cached_graph
-
-    def _get_providers():
-        from engram.providers.registry import ProviderRegistry
-        cfg = get_config()
-        registry = ProviderRegistry()
-        registry.load_from_config(cfg)
-        return registry.get_active()
-
-    def _get_engine():
-        from engram.reasoning.engine import ReasoningEngine
-        cfg = get_config()
-        return ReasoningEngine(
-            _get_episodic(), _get_graph(),
-            model=cfg.llm.model,
-            on_think_hook=cfg.hooks.on_think,
-            providers=_get_providers(),
-            recall_config=cfg.recall_pipeline,
-            disable_thinking=cfg.llm.disable_thinking,
-        )
-
-    def _get_extractor():
-        from engram.capture.extractor import EntityExtractor
-        from engram.schema.loader import load_schema
-        cfg = get_config()
-        schema = load_schema(cfg.semantic.schema_name)
-        return EntityExtractor(
-            model=cfg.extraction.llm_model or cfg.llm.model,
-            schema=schema,
-            disable_thinking=cfg.llm.disable_thinking,
-            chunk_size=cfg.extraction.chunk_size,
-            max_retries=cfg.extraction.max_retries,
-            retry_delay_seconds=cfg.extraction.retry_delay_seconds,
-            temperature=cfg.extraction.temperature,
-        )
-
-    @app.command()
-    def health(
-        quick: bool = typer.Option(False, "--quick", "-q", help="Skip LLM/embedding checks"),
-        features: bool = typer.Option(False, "--features", "-f", help="Show full feature registry (all ~350 features)"),
-        all_checks: bool = typer.Option(False, "--all", "-a", help="Show runtime health + full feature registry"),
-        category: Optional[str] = typer.Option(None, "--category", "-c", help="Filter registry by category name"),
-        grep: Optional[str] = typer.Option(None, "--grep", "-g", help="Filter registry by text search"),
-    ):
-        """Full system health check across all subsystems."""
-        from engram.health import (
-            full_health_check, check_api_keys, check_disk, check_fts5, check_watcher,
-            check_feature_flags, ComponentHealth,
-        )
-        from engram.health.feature_registry import build_full_registry
-        from rich.table import Table
-
-        cfg = get_config()
-
-        # --- Full feature registry renderer ---
-        def _render_registry(cat_filter: Optional[str] = None, grep_filter: Optional[str] = None):
-            registry = build_full_registry(cfg)
-
-            # Apply filters
-            if cat_filter:
-                lo = cat_filter.lower()
-                registry = [e for e in registry
-                            if lo in e.category.lower() or lo in e.subcategory.lower()]
-            if grep_filter:
-                lo = grep_filter.lower()
-                registry = [e for e in registry
-                            if lo in e.name.lower() or lo in e.subcategory.lower()
-                            or lo in e.config_path.lower() or lo in e.env_var.lower()
-                            or lo in e.category.lower() or lo in e.status.lower()]
-
-            # Count boolean flags
-            bool_flags = [e for e in registry if e.category == "Config Boolean Flags"]
-            flag_on = sum(1 for e in bool_flags if e.status == "enabled")
-            flag_off = sum(1 for e in bool_flags if e.status == "disabled")
-
-            console.print(
-                f"\n[bold]Feature Registry:[/bold] {len(registry)} features"
-                + (f" ({len(bool_flags)} flags: {flag_on} on / {flag_off} off)" if bool_flags else "")
-            )
-            if cat_filter:
-                console.print(f"[dim]  filter: category={cat_filter!r}[/dim]")
-            if grep_filter:
-                console.print(f"[dim]  filter: grep={grep_filter!r}[/dim]")
-            console.print()
-
-            # Group by category
-            from collections import defaultdict
-            grouped: dict[str, list] = defaultdict(list)
-            for entry in registry:
-                grouped[entry.category].append(entry)
-
-            status_styles = {"enabled": "[green]enabled[/green]", "disabled": "[red]disabled[/red]",
-                             "always-on": "[cyan]always-on[/cyan]"}
-
-            for cat, entries in grouped.items():
-                console.print(f"[bold]--- {cat} ({len(entries)}) ---[/bold]")
-                tbl = Table(show_header=True, show_edge=False, pad_edge=False)
-                tbl.add_column("Subcategory", style="dim", width=16)
-                tbl.add_column("Feature / Parameter", width=40)
-                tbl.add_column("Status / Value", width=20)
-                tbl.add_column("Config / Env Var")
-                for e in entries:
-                    status_cell = status_styles.get(e.status, e.status)
-                    cfg_col = e.config_path or ""
-                    if e.env_var:
-                        cfg_col += f"\n[dim]{e.env_var}[/dim]" if cfg_col else f"[dim]{e.env_var}[/dim]"
-                    tbl.add_row(e.subcategory, e.name, status_cell, cfg_col)
-                console.print(tbl)
-                console.print()
-
-        # --features: show full registry only, skip runtime checks
-        if features and not all_checks:
-            _render_registry(category, grep)
-            return
-
-        # --- Legacy feature-flags only render (used by --all) ---
-        def _render_flags():
-            flags = check_feature_flags(cfg)
-            enabled_count = sum(1 for f in flags if f.enabled)
-            console.print(f"\n[bold]Feature Flags:[/bold] {enabled_count} enabled / {len(flags)} total\n")
-            tbl = Table(show_header=True)
-            tbl.add_column("Category", style="dim", width=12)
-            tbl.add_column("Feature", width=24)
-            tbl.add_column("Status", width=10)
-            tbl.add_column("Env Var")
-            for fl in flags:
-                status_cell = "[green]✓ on[/green]" if fl.enabled else "[red]✗ off[/red]"
-                tbl.add_row(fl.category, fl.name, status_cell, fl.env_var)
-            console.print(tbl)
-
-        # Runtime health check
-        episodic = None
-        graph = None
-        try:
-            episodic = _get_episodic()
-        except Exception as e:
-            console.print(f"[yellow]Could not init episodic store:[/yellow] {e}")
-        try:
-            graph = _get_graph()
-        except Exception as e:
-            console.print(f"[yellow]Could not init semantic graph:[/yellow] {e}")
-
-        if quick:
-            async def _quick():
-                results = {}
-                api = check_api_keys()
-                results[api.name] = api
-                for coro in [check_disk(), check_fts5(), check_watcher()]:
-                    r = await coro
-                    results[r.name] = r
-                if episodic:
-                    from engram.health import check_chromadb
-                    r = await check_chromadb(episodic)
-                    results[r.name] = r
-                if graph:
-                    from engram.health import check_semantic
-                    r = await check_semantic(graph)
-                    results[r.name] = r
-                return results
-
-            comps = run_async(_quick())
-            overall = "healthy"
-            for c in comps.values():
-                if c.status == "unhealthy":
-                    overall = "unhealthy"
-                    break
-                if c.status == "degraded" and overall == "healthy":
-                    overall = "degraded"
-        else:
-            result = run_async(full_health_check(episodic, graph, cfg.llm.model, config=cfg))
-            overall = result["status"]
-            comps = {}
-            for name, data in result["components"].items():
-                comps[name] = ComponentHealth(
-                    name=name,
-                    status=data.get("status", "unknown"),
-                    latency_ms=data.get("latency_ms", 0),
-                    details={k: v for k, v in data.items() if k not in ("status", "latency_ms", "error")},
-                    error=data.get("error", ""),
-                )
-
-        # Render runtime health table
-        style_map = {"healthy": "green", "degraded": "yellow", "unhealthy": "red"}
-        overall_style = style_map.get(overall, "white")
-        console.print(f"\n[bold]Engram Health:[/bold] [{overall_style}]{overall.upper()}[/{overall_style}]\n")
-
-        table = Table(show_header=True)
-        table.add_column("Component", style="cyan", width=14)
-        table.add_column("Status", width=10)
-        table.add_column("Latency", justify="right", width=8)
-        table.add_column("Details")
-
-        for comp in comps.values():
-            s = style_map.get(comp.status, "white")
-            latency = f"{comp.latency_ms:.0f}ms" if comp.latency_ms else "—"
-            details_parts = []
-            if comp.details:
-                details_parts.append(", ".join(f"{k}={v}" for k, v in comp.details.items()))
-            if comp.error:
-                details_parts.append(f"[red]{comp.error}[/red]")
-            table.add_row(comp.name, f"[{s}]{comp.status}[/{s}]", latency, " | ".join(details_parts) or "—")
-
-        console.print(table)
-
-        # Feature summary line (default) or full registry (--all)
-        flags = check_feature_flags(cfg)
-        enabled_count = sum(1 for f in flags if f.enabled)
-        if all_checks:
-            _render_registry(category, grep)
-        else:
-            console.print(f"\n[dim]Features: {enabled_count}/{len(flags)} flags enabled — run [bold]engram health --features[/bold] for full registry[/dim]")
+    # Register health command via dedicated module
+    from engram.cli.commands.health_cmd import register_health
+    register_health(app, get_config, _get_episodic, _get_graph)
 
     @app.command()
     def status():
@@ -340,7 +119,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         if not file.exists():
             console.print(f"[red]File not found:[/red] {file}")
             raise typer.Exit(1)
-        result = run_async(_do_ingest(file, dry_run, _get_extractor, _get_graph, _get_episodic))
+        result = run_async(do_ingest(file, dry_run, _get_extractor, _get_graph, _get_episodic))
         console.print(
             f"[green]Ingested:[/green] {result.episodic_count} memories, "
             f"{result.semantic_nodes} nodes, {result.semantic_edges} edges"
@@ -373,7 +152,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         cfg = get_config()
 
         async def ingest_messages(messages, source: str = ""):
-            return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
+            return await do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
 
         if daemon:
             daemonize()
@@ -634,113 +413,6 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         setup_telemetry(cfg)
 
         async def ingest_messages(messages, source: str = ""):
-            return await _do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
+            return await do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
 
         run_server(_get_episodic(), _get_graph(), _get_engine(), cfg, ingest_messages)
-
-
-async def _do_ingest(file: Path, dry_run: bool, get_extractor, get_graph, get_episodic) -> IngestResult:
-    """Run dual ingest on a chat file."""
-    with open(file) as f:
-        data = json.load(f)
-
-    messages = data if isinstance(data, list) else data.get("messages", [])
-    if not messages:
-        return IngestResult()
-
-    extractor = get_extractor()
-    result = await extractor.extract_entities(messages)
-
-    if dry_run:
-        console.print("[bold]Dry run - extracted entities:[/bold]")
-        for n in result.nodes:
-            console.print(f"  [cyan]Node:[/cyan] {n.key}")
-        for e in result.edges:
-            console.print(f"  [green]Edge:[/green] {e.key}")
-        return IngestResult(semantic_nodes=len(result.nodes), semantic_edges=len(result.edges))
-
-    graph = get_graph()
-    episodic = get_episodic()
-    for node in result.nodes:
-        await graph.add_node(node)
-    for edge in result.edges:
-        await graph.add_edge(edge)
-    entity_names = [n.name for n in result.nodes]
-    for i, msg in enumerate(messages):
-        content = msg.get("content", "")
-        if content:
-            ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
-            per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
-            await episodic.remember(content, entities=per_content)
-
-    return IngestResult(
-        episodic_count=len(messages),
-        semantic_nodes=len(result.nodes),
-        semantic_edges=len(result.edges),
-    )
-
-
-async def _do_ingest_messages(
-    messages: list[dict], get_extractor, get_graph, get_episodic, source: str = "",
-) -> IngestResult:
-    """Ingest messages (called by watcher/server).
-
-    Episodic storage runs first (no LLM needed).
-    Entity extraction runs separately — failures don't block memory capture.
-    """
-    episodic = get_episodic()
-
-    # Step 1: Store raw messages into episodic memory immediately (no LLM)
-    episodic_count = 0
-    for msg in messages:
-        content = msg.get("content", "")
-        if content:
-            await episodic.remember(content, source=source)
-            episodic_count += 1
-
-    # Step 2: Entity extraction + semantic graph (best-effort, LLM-dependent)
-    semantic_nodes = 0
-    semantic_edges = 0
-    try:
-        extractor = get_extractor()
-        graph = get_graph()
-        result = await extractor.extract_entities(messages)
-        for node in result.nodes:
-            await graph.add_node(node)
-        for edge in result.edges:
-            await graph.add_edge(edge)
-        semantic_nodes = len(result.nodes)
-        semantic_edges = len(result.edges)
-
-        # Enrich episodic memories with entity tags
-        # Merge LLM-extracted names with ALL known graph entities for better coverage
-        entity_names = [n.name for n in result.nodes]
-        try:
-            all_nodes = await graph.get_nodes()
-            known_names = [n.name for n in all_nodes]
-            # Deduplicate: LLM-extracted first, then known (case-insensitive)
-            seen = {n.casefold() for n in entity_names}
-            for kn in known_names:
-                if kn.casefold() not in seen:
-                    entity_names.append(kn)
-                    seen.add(kn.casefold())
-        except Exception:
-            pass  # Fall back to LLM-only names
-        if entity_names:
-            for i, msg in enumerate(messages):
-                content = msg.get("content", "")
-                if content:
-                    ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
-                    per_content = extractor.filter_entities_for_content(
-                        content, entity_names, context_messages=ctx,
-                    )
-                    if per_content:
-                        await episodic.remember(content, entities=per_content)
-    except Exception as e:
-        logger.warning("Entity extraction skipped (messages already stored): %s", e)
-
-    return IngestResult(
-        episodic_count=episodic_count,
-        semantic_nodes=semantic_nodes,
-        semantic_edges=semantic_edges,
-    )
