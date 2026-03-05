@@ -99,11 +99,17 @@ class PostgresBackend:
             max_size=self._pool_max,
         )
         async with self._pool.acquire() as conn:
-            await conn.execute(_CREATE_NODES)
-            await conn.execute(_CREATE_EDGES)
-            for idx_sql in _CREATE_INDEXES:
-                await conn.execute(idx_sql)
-            # Migrate existing tables
+            try:
+                await conn.execute(_CREATE_NODES)
+                await conn.execute(_CREATE_EDGES)
+                for idx_sql in _CREATE_INDEXES:
+                    await conn.execute(idx_sql)
+            except Exception as exc:
+                if "read-only" in str(exc).lower():
+                    logger.warning("pg_backend: read-only transaction, skipping DDL (tables must exist already)")
+                else:
+                    raise
+            # Migrate existing tables (best-effort)
             for mig_sql in _MIGRATE_EDGES:
                 try:
                     await conn.execute(mig_sql)
