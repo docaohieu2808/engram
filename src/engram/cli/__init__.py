@@ -2,6 +2,20 @@
 
 from __future__ import annotations
 
+# Force IPv4 for outgoing connections (litellm/httpx hang on IPv6 on some hosts)
+import socket as _socket
+
+_orig_getaddrinfo = _socket.getaddrinfo
+
+
+def _ipv4_getaddrinfo(*args, **kwargs):
+    results = _orig_getaddrinfo(*args, **kwargs)
+    ipv4 = [r for r in results if r[0] == _socket.AF_INET]
+    return ipv4 if ipv4 else results
+
+
+_socket.getaddrinfo = _ipv4_getaddrinfo
+
 from typing import Optional
 
 import typer
