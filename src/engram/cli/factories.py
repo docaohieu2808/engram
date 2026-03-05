@@ -33,17 +33,28 @@ def make_factories(get_config, get_namespace=None):
     _cached_episodic = None
     _cached_graph = None
 
+    _http_proxy = False
+
     def get_episodic():
-        nonlocal _cached_episodic
+        nonlocal _cached_episodic, _cached_graph, _http_proxy
         if _cached_episodic is None:
             from engram.episodic.store import EpisodicStore
             cfg = get_config()
-            _cached_episodic = EpisodicStore(
-                cfg.episodic, cfg.embedding,
-                namespace=_resolve_namespace(),
-                on_remember_hook=cfg.hooks.on_remember,
-                guard_enabled=cfg.ingestion.poisoning_guard,
-            )
+            try:
+                _cached_episodic = EpisodicStore(
+                    cfg.episodic, cfg.embedding,
+                    namespace=_resolve_namespace(),
+                    on_remember_hook=cfg.hooks.on_remember,
+                    guard_enabled=cfg.ingestion.poisoning_guard,
+                )
+            except RuntimeError as e:
+                if "already accessed" in str(e):
+                    from engram.mcp.http_proxy import HttpEpisodicProxy, HttpGraphProxy
+                    _cached_episodic = HttpEpisodicProxy(cfg)
+                    _cached_graph = HttpGraphProxy(cfg)
+                    _http_proxy = True
+                else:
+                    raise
         return _cached_episodic
 
     def get_graph():
@@ -51,7 +62,14 @@ def make_factories(get_config, get_namespace=None):
         if _cached_graph is None:
             from engram.semantic import create_graph
             cfg = get_config()
-            _cached_graph = create_graph(cfg.semantic)
+            try:
+                _cached_graph = create_graph(cfg.semantic)
+            except Exception:
+                if _http_proxy:
+                    from engram.mcp.http_proxy import HttpGraphProxy
+                    _cached_graph = HttpGraphProxy(get_config())
+                else:
+                    raise
         return _cached_graph
 
     def get_providers():
@@ -62,6 +80,9 @@ def make_factories(get_config, get_namespace=None):
         return registry.get_active()
 
     def get_engine():
+        if _http_proxy:
+            from engram.mcp.http_proxy import HttpEngineProxy
+            return HttpEngineProxy(get_config())
         from engram.reasoning.engine import ReasoningEngine
         cfg = get_config()
         return ReasoningEngine(
