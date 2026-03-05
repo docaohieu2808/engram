@@ -85,6 +85,7 @@ from engram.cli import benchmark_cmd as _benchmark_cmd_mod  # noqa: E402
 from engram.cli import setup_cmd as _setup_cmd_mod  # noqa: E402
 from engram.cli import init_cmd as _init_cmd_mod  # noqa: E402
 from engram.cli import daemon_cmd as _daemon_cmd_mod  # noqa: E402
+from engram.cli import autostart_cmd as _autostart_cmd_mod  # noqa: E402
 
 _episodic_mod.register(app, _get_config, get_namespace=_get_namespace)
 _semantic_mod.register(app, add_app, remove_app, _get_config)
@@ -110,6 +111,7 @@ _benchmark_cmd_mod.register(app, _get_config, get_namespace=_get_namespace)
 _setup_cmd_mod.register(app, _get_config)
 _init_cmd_mod.register(app)
 _daemon_cmd_mod.register(app, _get_config)
+_autostart_cmd_mod.register(app)
 
 if __name__ == "__main__":
     app()

@@ -36,6 +36,9 @@ llm:
   model: gemini/gemini-2.5-flash
   api_key: ${GEMINI_API_KEY}
 
+consolidation:
+  enabled: true
+
 serve:
   host: 127.0.0.1
   port: 8765
@@ -216,16 +219,21 @@ def _finish(engram_dir: Path, config_path: Path, non_interactive: bool) -> None:
     if configured_count:
         lines.append(f"  [green]✓[/green] MCP configured for {configured_count} IDE(s)")
 
-    # --- Step 6: Auto-start background server ---
-    server_started = _try_start_server()
+    # --- Step 6: Auto-start (systemd on Linux, fallback to daemon) ---
+    autostart_ok = _try_autostart()
 
     lines.append("")
-    if server_started:
-        lines.append("  [green]engram server started in background[/green]")
+    if autostart_ok:
+        lines.append("  [green]engram auto-starts on boot (systemd)[/green]")
         lines.append("  Your AI agents now have persistent memory!")
     else:
-        lines.append("  [bold]Next step:[/bold] [cyan]engram start[/cyan]")
-        lines.append("  Your AI agents will have persistent memory!")
+        server_started = _try_start_server()
+        if server_started:
+            lines.append("  [green]engram server started in background[/green]")
+            lines.append("  Your AI agents now have persistent memory!")
+        else:
+            lines.append("  [bold]Next step:[/bold] [cyan]engram start[/cyan]")
+            lines.append("  Your AI agents will have persistent memory!")
 
     console.print(
         Panel(
@@ -235,6 +243,19 @@ def _finish(engram_dir: Path, config_path: Path, non_interactive: bool) -> None:
         )
     )
     console.print()
+
+
+def _try_autostart() -> bool:
+    """Try to install systemd autostart. Returns True on success (Linux only)."""
+    import platform
+    if platform.system() != "Linux":
+        return False
+    try:
+        from engram.cli.autostart_cmd import _install_systemd
+        return _install_systemd()
+    except Exception as exc:
+        console.print(f"  [yellow]![/yellow] Autostart setup failed: {exc}")
+        return False
 
 
 def _try_start_server() -> bool:
