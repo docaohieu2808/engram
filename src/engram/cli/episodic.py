@@ -87,7 +87,7 @@ class _HttpEpisodicProxy:
             resp = await client.get(f"{self._base}/recall", params=params)
             data = resp.json()
         memories = []
-        for m in data.get("memories", []):
+        for m in data.get("results", data.get("memories", [])):
             mem = SimpleNamespace(
                 id=m.get("id", ""),
                 content=m.get("content", ""),
