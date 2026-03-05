@@ -13,6 +13,28 @@ from typing import Any
 logger = logging.getLogger("engram")
 
 
+def _build_memory_namespace(m: dict, ts) -> SimpleNamespace:
+    """Build a SimpleNamespace with proper types for MCP episodic_tools."""
+    from engram.models import MemoryType
+    raw_type = m.get("memory_type", m.get("type", "fact"))
+    try:
+        mt = MemoryType(raw_type)
+    except ValueError:
+        mt = MemoryType.FACT
+    return SimpleNamespace(
+        id=m.get("id", ""),
+        content=m.get("content", ""),
+        memory_type=mt,
+        priority=m.get("priority", 5),
+        tags=m.get("tags", []),
+        entities=m.get("entities", []),
+        timestamp=ts,
+        access_count=m.get("access_count", 0),
+        score=m.get("score", 0.0),
+        decay_rate=m.get("decay_rate", 0.1),
+    )
+
+
 class HttpEpisodicProxy:
     """Proxy EpisodicStore operations through engram HTTP API."""
 
@@ -56,29 +78,28 @@ class HttpEpisodicProxy:
                     ts = datetime.now(timezone.utc)
             elif not ts:
                 ts = datetime.now(timezone.utc)
-            mem = SimpleNamespace(
-                id=m.get("id", ""),
-                content=m.get("content", ""),
-                memory_type=m.get("type", "fact"),
-                priority=m.get("priority", 5),
-                tags=m.get("tags", []),
-                timestamp=ts,
-                access_count=m.get("access_count", 0),
-                score=m.get("score", 0.0),
-                decay_rate=m.get("decay_rate", 0.1),
-            )
+            mem = _build_memory_namespace(m, ts)
             memories.append(mem)
         return memories
 
     async def get_by_id(self, memory_id: str) -> Any:
         import httpx
+        from datetime import datetime, timezone
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(f"{self._base}/memories/{memory_id}")
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
             m = resp.json()
-            return SimpleNamespace(**m) if isinstance(m, dict) else m
+            if not isinstance(m, dict):
+                return m
+            ts = m.get("timestamp", "")
+            if isinstance(ts, str) and ts:
+                try:
+                    ts = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    ts = datetime.now(timezone.utc)
+            return _build_memory_namespace(m, ts)
 
     async def delete(self, memory_id: str) -> bool:
         import httpx
