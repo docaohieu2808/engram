@@ -78,6 +78,29 @@ class _HttpEpisodicProxy:
             resp = await client.get(f"{self._base}/recall", params=params)
             return resp.json().get("memories", [])
 
+    async def search(self, query, limit=5, **kwargs):
+        """Search via HTTP API — returns list of Memory-like objects."""
+        import httpx
+        from types import SimpleNamespace
+        params = {"q": query, "top_k": limit}
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{self._base}/recall", params=params)
+            data = resp.json()
+        memories = []
+        for m in data.get("memories", []):
+            mem = SimpleNamespace(
+                id=m.get("id", ""),
+                content=m.get("content", ""),
+                memory_type=m.get("type", "fact"),
+                priority=m.get("priority", 5),
+                tags=m.get("tags", []),
+                timestamp=m.get("timestamp", ""),
+                access_count=m.get("access_count", 0),
+                score=m.get("score", 0.0),
+            )
+            memories.append(mem)
+        return memories
+
     async def stats(self):
         import httpx
         async with httpx.AsyncClient(timeout=30) as client:
@@ -88,7 +111,16 @@ class _HttpEpisodicProxy:
 def _get_semantic(get_config):
     from engram.semantic import create_graph
     cfg = get_config()
-    return create_graph(cfg.semantic)
+    try:
+        return create_graph(cfg.semantic)
+    except Exception:
+        return _NullGraph()
+
+
+class _NullGraph:
+    """No-op graph when semantic store is unavailable (server holds lock)."""
+    async def query(self, *a, **kw): return []
+    async def stats(self, *a, **kw): return {"node_count": 0, "edge_count": 0}
 
 
 def register(app: typer.Typer, get_config, get_namespace=None) -> None:
