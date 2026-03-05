@@ -42,11 +42,14 @@ _SKIP_PATTERNS = [
 _CAPTURE_ROLES = {"user", "assistant"}
 
 
-def _extract_text(content: list[dict[str, Any]]) -> str:
-    """Extract plain text from content array.
+_MESSAGE_TOOL_KEYWORDS = {"message", "send", "reply", "telegram", "discord", "slack", "notify"}
 
-    Handles: text blocks, thinking blocks (assistant reasoning),
-    and toolCall args with message/text/content fields.
+
+def _extract_text(content: list[dict[str, Any]]) -> str:
+    """Extract meaningful text from content blocks.
+
+    Captures: text blocks + message-sending toolCalls.
+    Skips: thinking blocks (noise), generic toolCalls (file ops, search, etc.).
     """
     parts = []
     for block in content:
@@ -55,19 +58,17 @@ def _extract_text(content: list[dict[str, Any]]) -> str:
             text = block.get("text", "").strip()
             if text:
                 parts.append(text)
-        elif btype == "thinking":
-            text = block.get("thinking", "").strip()
-            if text:
-                parts.append(text)
         elif btype == "toolCall":
-            # Capture message-sending tool calls (send_message, etc.)
             tc = block.get("toolCall", {})
-            args = tc.get("args", {})
-            for key in ("message", "text", "content"):
-                val = args.get(key)
-                if isinstance(val, str) and val.strip():
-                    parts.append(val.strip())
-                    break
+            name = tc.get("name", "").lower()
+            # Only capture message-sending tools
+            if any(kw in name for kw in _MESSAGE_TOOL_KEYWORDS):
+                args = tc.get("args", {})
+                for key in ("message", "text", "content"):
+                    val = args.get(key)
+                    if isinstance(val, str) and val.strip():
+                        parts.append(val.strip())
+                        break
     return "\n".join(parts)
 
 
