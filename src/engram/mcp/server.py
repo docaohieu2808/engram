@@ -32,21 +32,39 @@ def _get_config():
 def _get_episodic() -> EpisodicStore:
     if "episodic" not in _instances:
         cfg = _get_config()
-        # MCP uses config namespace as implicit tenant_id (single-tenant mode)
         namespace = cfg.episodic.namespace or "default"
         TenantContext.set(namespace)
-        _instances["episodic"] = EpisodicStore(
-            cfg.episodic, cfg.embedding,
-            namespace=namespace,
-            on_remember_hook=cfg.hooks.on_remember,
-        )
+        try:
+            _instances["episodic"] = EpisodicStore(
+                cfg.episodic, cfg.embedding,
+                namespace=namespace,
+                on_remember_hook=cfg.hooks.on_remember,
+            )
+        except RuntimeError as e:
+            if "already accessed" in str(e):
+                # Embedded Qdrant locked by HTTP server — proxy through HTTP API
+                import logging
+                logging.getLogger("engram").info("MCP: embedded Qdrant locked, proxying via HTTP")
+                from engram.mcp.http_proxy import HttpEpisodicProxy, HttpGraphProxy
+                _instances["episodic"] = HttpEpisodicProxy(cfg)
+                _instances["graph"] = HttpGraphProxy(cfg)
+                _instances["_http_proxy"] = True
+            else:
+                raise
     return _instances["episodic"]
 
 
 def _get_graph() -> SemanticGraph:
     if "graph" not in _instances:
         cfg = _get_config()
-        _instances["graph"] = create_graph(cfg.semantic)
+        try:
+            _instances["graph"] = create_graph(cfg.semantic)
+        except Exception:
+            if _instances.get("_http_proxy"):
+                from engram.mcp.http_proxy import HttpGraphProxy
+                _instances["graph"] = HttpGraphProxy(cfg)
+            else:
+                raise
     return _instances["graph"]
 
 
@@ -68,13 +86,18 @@ def _get_session_store() -> SessionStore:
 
 def _get_engine() -> ReasoningEngine:
     if "engine" not in _instances:
-        cfg = _get_config()
-        _instances["engine"] = ReasoningEngine(
-            _get_episodic(), _get_graph(), model=cfg.llm.model,
-            on_think_hook=cfg.hooks.on_think, providers=_get_providers(),
-            recall_config=cfg.recall_pipeline,
-            disable_thinking=cfg.llm.disable_thinking,
-        )
+        if _instances.get("_http_proxy"):
+            from engram.mcp.http_proxy import HttpEngineProxy
+            cfg = _get_config()
+            _instances["engine"] = HttpEngineProxy(cfg)
+        else:
+            cfg = _get_config()
+            _instances["engine"] = ReasoningEngine(
+                _get_episodic(), _get_graph(), model=cfg.llm.model,
+                on_think_hook=cfg.hooks.on_think, providers=_get_providers(),
+                recall_config=cfg.recall_pipeline,
+                disable_thinking=cfg.llm.disable_thinking,
+            )
     return _instances["engine"]
 
 
