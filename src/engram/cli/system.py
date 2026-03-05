@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -246,8 +247,15 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
 
         cfg = get_config()
 
-        async def ingest_messages(messages, source: str = ""):
-            return await do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
+        # If serve.proxy_to is set, proxy ingest via HTTP instead of local Qdrant
+        proxy_url = getattr(cfg.serve, 'proxy_to', None) or os.environ.get('ENGRAM_PROXY_URL')
+        if proxy_url:
+            from engram.capture.http_ingest import http_ingest_messages
+            async def ingest_messages(messages, source: str = ""):
+                return await http_ingest_messages(messages, proxy_url, source=source)
+        else:
+            async def ingest_messages(messages, source: str = ""):
+                return await do_ingest_messages(messages, _get_extractor, _get_graph, _get_episodic, source=source)
 
         if daemon:
             daemonize()

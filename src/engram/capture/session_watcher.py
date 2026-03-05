@@ -134,13 +134,34 @@ class _SessionFileHandler(FileSystemEventHandler):
         ingest_fn: Callable[[list[dict[str, Any]]], Coroutine],
         loop: asyncio.AbstractEventLoop,
         label: str = "session",
+        positions_file: Path | None = None,
     ):
         super().__init__()
         self._ingest_fn = ingest_fn
         self._loop = loop
         self._label = label
+        self._positions_file = positions_file
         # Track file read positions: path -> byte offset
-        self._positions: dict[str, int] = {}
+        self._positions: dict[str, int] = self._load_positions()
+
+    def _load_positions(self) -> dict[str, int]:
+        """Load persisted positions from disk."""
+        if not self._positions_file or not self._positions_file.exists():
+            return {}
+        try:
+            return json.loads(self._positions_file.read_text())
+        except Exception:
+            return {}
+
+    def _save_positions(self) -> None:
+        """Persist positions to disk for crash recovery."""
+        if not self._positions_file:
+            return
+        try:
+            self._positions_file.parent.mkdir(parents=True, exist_ok=True)
+            self._positions_file.write_text(json.dumps(self._positions))
+        except Exception:
+            pass
 
     def on_modified(self, event: FileModifiedEvent) -> None:
         if event.is_directory:
@@ -193,19 +214,23 @@ class _SessionFileHandler(FileSystemEventHandler):
                 new_pos = f.tell()
 
             self._positions[path] = new_pos
+            self._save_positions()
 
             if messages:
                 logger.info(
                     "%s: captured %d messages from %s",
                     self._label, len(messages), Path(path).name,
                 )
+                print(f"{self._label}: captured {len(messages)} messages from {Path(path).name}", flush=True)
                 fut = asyncio.run_coroutine_threadsafe(
                     self._ingest_fn(messages, source=self._label), self._loop
                 )
                 def _done(f):
                     try:
                         f.result()
+                        print(f"{self._label}: ingested OK", flush=True)
                     except Exception as ex:
+                        print(f"{self._label}: INGEST FAILED for {Path(path).name}: {ex}", flush=True)
                         logger.warning("%s ingest failed for %s: %s", self._label, Path(path).name, ex)
                 fut.add_done_callback(_done)
 
@@ -227,12 +252,18 @@ class SessionWatcher:
         ingest_fn: Callable[[list[dict[str, Any]]], Coroutine],
         label: str = "session",
         recursive: bool = False,
+        state_dir: str | None = None,
     ):
         self._sessions_dir = Path(os.path.expanduser(sessions_dir))
         self._ingest_fn = ingest_fn
         self._label = label
         self._recursive = recursive
         self._observer: Observer | None = None
+        # Persist positions to survive restarts
+        if state_dir:
+            self._positions_file = Path(os.path.expanduser(state_dir)) / f"watcher-{label}-positions.json"
+        else:
+            self._positions_file = Path(os.path.expanduser("~/.engram")) / f"watcher-{label}-positions.json"
 
     async def start(self) -> None:
         """Start watching sessions directory."""
@@ -244,12 +275,17 @@ class SessionWatcher:
             return
 
         loop = asyncio.get_running_loop()
-        handler = _SessionFileHandler(self._ingest_fn, loop, self._label)
+        handler = _SessionFileHandler(
+            self._ingest_fn, loop, self._label,
+            positions_file=self._positions_file,
+        )
 
-        # Initialize positions to end of existing files (don't re-ingest history)
+        # Use persisted positions; for NEW files not yet tracked, start at end
         glob_pattern = "**/*.jsonl" if self._recursive else "*.jsonl"
         for jsonl in self._sessions_dir.glob(glob_pattern):
-            handler._positions[str(jsonl)] = jsonl.stat().st_size
+            path_str = str(jsonl)
+            if path_str not in handler._positions:
+                handler._positions[path_str] = jsonl.stat().st_size
 
         self._observer = Observer()
         self._observer.schedule(handler, str(self._sessions_dir), recursive=self._recursive)
