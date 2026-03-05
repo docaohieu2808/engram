@@ -9,3 +9,5 @@ build/
 .ruff_cache/
 .pytest_cache/
 plans/
+.env
+force-ipv4.py
