@@ -421,7 +421,29 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
         port: Optional[int] = typer.Option(None, "--port", "-p"),
         host: Optional[str] = typer.Option(None, "--host"),
     ):
-        """Start HTTP webhook server."""
+        """Start HTTP webhook server (foreground). Use 'engram start' for background."""
+        # Stop any existing background daemon to release embedded Qdrant lock
+        from engram.cli.daemon_cmd import _is_running, _PID_FILE
+        from engram.capture.watcher import is_daemon_running, stop_daemon
+        import os, signal as _signal
+
+        # Stop serve daemon
+        running, pid = _is_running()
+        if running:
+            console.print(f"[yellow]Stopping background server (PID={pid})...[/yellow]")
+            try:
+                os.kill(pid, _signal.SIGTERM)
+                _PID_FILE.unlink(missing_ok=True)
+                import time; time.sleep(1)
+            except OSError:
+                _PID_FILE.unlink(missing_ok=True)
+
+        # Stop watcher daemon (also holds embedded Qdrant lock)
+        if is_daemon_running():
+            console.print("[yellow]Stopping background watcher...[/yellow]")
+            stop_daemon()
+            import time; time.sleep(1)
+
         _load_env_file()
         from engram.capture.server import run_server
         from engram.config import apply_llm_api_key
