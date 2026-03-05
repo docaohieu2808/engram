@@ -116,21 +116,33 @@ class HttpEpisodicProxy:
 
     async def get_recent(self, n: int = 10, **kwargs) -> list:
         import httpx
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{self._base}/memories", params={"limit": min(n, 100), "offset": 0})
-            data = resp.json()
         results = []
-        for m in data.get("memories", []):
-            ts = m.get("timestamp", "")
-            if isinstance(ts, str) and ts:
-                try:
-                    ts = datetime.fromisoformat(ts)
-                except (ValueError, TypeError):
-                    ts = datetime.now(timezone.utc)
-            elif not ts:
-                ts = datetime.now(timezone.utc)
-            results.append(_build_memory_namespace(m, ts))
-        return results
+        page_size = 100
+        offset = 0
+        async with httpx.AsyncClient(timeout=30) as client:
+            while len(results) < n:
+                resp = await client.get(
+                    f"{self._base}/memories",
+                    params={"limit": min(page_size, n - len(results)), "offset": offset},
+                )
+                data = resp.json()
+                page = data.get("memories", [])
+                if not page:
+                    break
+                for m in page:
+                    ts = m.get("timestamp", "")
+                    if isinstance(ts, str) and ts:
+                        try:
+                            ts = datetime.fromisoformat(ts)
+                        except (ValueError, TypeError):
+                            ts = datetime.now(timezone.utc)
+                    elif not ts:
+                        ts = datetime.now(timezone.utc)
+                    results.append(_build_memory_namespace(m, ts))
+                offset += len(page)
+                if len(page) < page_size:
+                    break
+        return results[:n]
 
     async def cleanup_expired(self) -> int:
         import httpx
