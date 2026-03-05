@@ -7,7 +7,7 @@ __all__ = [
     "EpisodicMemory",
     "AttributeDef", "NodeDef", "EdgeDef", "SchemaDefinition",
     "SemanticNode", "SemanticEdge", "ExtractionResult", "IngestResult",
-    "Entity", "ResolvedText", "SearchResult", "MemoryCandidate",
+    "Entity", "ResolvedText", "SearchResult", "MemoryCandidate", "MeetingLedger",
     "resolve_memory_type",
 ]
 
@@ -53,6 +53,7 @@ class MemoryType(str, Enum):
     LESSON = "lesson"
     AVOIDANCE = "avoidance"
     PERSONALITY_TRAIT = "personality_trait"
+    MEETING_LEDGER = "meeting_ledger"
 
 
 class Priority(int, Enum):
@@ -226,6 +227,18 @@ class SearchResult(BaseModel):
     importance: int = 5
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MeetingLedger(BaseModel):
+    """Structured record of a meeting or conversation session."""
+
+    title: str = ""
+    attendees: list[str] = []
+    decisions: list[str] = []
+    action_items: list[str] = []
+    topics: list[str] = []
+    date: str = ""
+    summary: str = ""
 
 
 class MemoryCandidate(BaseModel):
