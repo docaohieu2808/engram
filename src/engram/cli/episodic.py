@@ -73,7 +73,7 @@ class _HttpEpisodicProxy:
 
     async def recall(self, query, top_k=5, **kwargs):
         import httpx
-        params = {"q": query, "top_k": top_k}
+        params = {"query": query, "top_k": top_k}
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(f"{self._base}/recall", params=params)
             return resp.json().get("memories", [])
