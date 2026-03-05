@@ -25,14 +25,21 @@ _key_strategy_cache: str | None = None
 
 
 def _get_api_keys() -> list[str]:
-    """Return list of available Gemini API keys (primary + fallback)."""
+    """Return list of available Gemini API keys (config + env primary + env fallback)."""
     keys = []
-    primary = os.environ.get("GEMINI_API_KEY")
-    if primary:
-        keys.append(primary)
-    fallback = os.environ.get("GEMINI_API_KEY_FALLBACK")
-    if fallback:
-        keys.append(fallback)
+    # Config api_key takes priority (explicit, not an env-var reference)
+    try:
+        from engram.config import load_config
+        cfg_key = load_config().embedding.api_key
+        if cfg_key and not cfg_key.startswith("${"):
+            keys.append(cfg_key)
+    except Exception:
+        pass
+    # Env vars as additional/fallback keys
+    for env_name in ("GEMINI_API_KEY", "GEMINI_API_KEY_FALLBACK"):
+        val = os.environ.get(env_name)
+        if val and val not in keys:
+            keys.append(val)
     return keys
 
 
