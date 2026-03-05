@@ -124,7 +124,7 @@ def parse_session_line(line: str) -> dict[str, Any] | None:
     else:
         return None
 
-    if not text:
+    if not text or len(text) < 20:
         return None
 
     # Skip OpenClaw system noise (HEARTBEAT, NO_REPLY)
@@ -132,7 +132,7 @@ def parse_session_line(line: str) -> dict[str, Any] | None:
         return None
 
     text = _clean_tags(text)
-    if not text:
+    if not text or len(text) < 20:
         return None
 
     # Skip error-only messages
