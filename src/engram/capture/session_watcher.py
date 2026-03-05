@@ -42,13 +42,31 @@ _CAPTURE_ROLES = {"user", "assistant"}
 
 
 def _extract_text(content: list[dict[str, Any]]) -> str:
-    """Extract plain text from content array, skipping non-text blocks."""
+    """Extract plain text from content array.
+
+    Handles: text blocks, thinking blocks (assistant reasoning),
+    and toolCall args with message/text/content fields.
+    """
     parts = []
     for block in content:
-        if block.get("type") == "text":
+        btype = block.get("type")
+        if btype == "text":
             text = block.get("text", "").strip()
             if text:
                 parts.append(text)
+        elif btype == "thinking":
+            text = block.get("thinking", "").strip()
+            if text:
+                parts.append(text)
+        elif btype == "toolCall":
+            # Capture message-sending tool calls (send_message, etc.)
+            tc = block.get("toolCall", {})
+            args = tc.get("args", {})
+            for key in ("message", "text", "content"):
+                val = args.get(key)
+                if isinstance(val, str) and val.strip():
+                    parts.append(val.strip())
+                    break
     return "\n".join(parts)
 
 
