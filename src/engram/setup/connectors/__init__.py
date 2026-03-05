@@ -27,6 +27,6 @@ __all__ = [
 
 # Import connector modules so they self-register into _ALL_CONNECTORS
 # Tier 1
-from engram.setup.connectors import claude_code, cursor, openclaw, windsurf  # noqa: E402, F401
+from engram.setup.connectors import claude_code, codex, cursor, github_copilot, openclaw, windsurf  # noqa: E402, F401
 # Tier 2
 from engram.setup.connectors import antigravity, aider, cline, void_editor, zed  # noqa: E402, F401
