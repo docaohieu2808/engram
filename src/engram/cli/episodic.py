@@ -244,6 +244,10 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
                 for r in provider_results:
                     console.print(f"[magenta]\\[{r.source}][/magenta] {r.content[:300]}")
 
+        # Close graph backend pool to prevent process hang on exit
+        if hasattr(graph, 'close'):
+            run_async(graph.close())
+
         if not results and not graph_nodes and not provider_results:
             console.print("[dim]No memories found.[/dim]")
             return
