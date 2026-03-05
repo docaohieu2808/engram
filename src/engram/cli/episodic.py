@@ -218,16 +218,25 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             tags=tag_list,
         ))
 
-        # Also search semantic graph for matching entities
+        # Search semantic graph and close pool in same event loop to prevent hang
         graph = _get_semantic(get_config)
-        graph_nodes = run_async(graph.query(query))
+
+        async def _graph_search_and_close():
+            nodes = await graph.query(query)
+            related_map = {}
+            for node in nodes[:3]:
+                rel = await graph.get_related([node.name])
+                related_map[node.name] = rel.get(node.name, {}).get("edges", [])[:5]
+            if hasattr(graph, 'close'):
+                await graph.close()
+            return nodes, related_map
+
+        graph_nodes, graph_related = run_async(_graph_search_and_close())
         if graph_nodes:
             for node in graph_nodes[:3]:
                 attrs = ", ".join(f"{k}={v}" for k, v in node.attributes.items()) if node.attributes else ""
                 console.print(f"[yellow][graph][/yellow] {node.type}:{node.name}" + (f" ({attrs})" if attrs else ""))
-                # Show related edges
-                related = run_async(graph.get_related([node.name]))
-                for edge in related.get(node.name, {}).get("edges", [])[:5]:
+                for edge in graph_related.get(node.name, []):
                     console.print(f"  [dim]{edge.from_node} --{edge.relation}--> {edge.to_node}[/dim]")
 
         # Federated search across external providers
@@ -243,10 +252,6 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
                 provider_results = run_async(federated_search(query, providers, limit=limit, timeout_seconds=timeout))
                 for r in provider_results:
                     console.print(f"[magenta]\\[{r.source}][/magenta] {r.content[:300]}")
-
-        # Close graph backend pool to prevent process hang on exit
-        if hasattr(graph, 'close'):
-            run_async(graph.close())
 
         if not results and not graph_nodes and not provider_results:
             console.print("[dim]No memories found.[/dim]")
