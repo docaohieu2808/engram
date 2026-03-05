@@ -46,6 +46,7 @@ class ThinkRequest(BaseModel):
 
 class IngestRequest(BaseModel):
     messages: list[dict[str, Any]]
+    source: str = ""
 
 
 class QueryRequest(BaseModel):
@@ -165,7 +166,7 @@ async def ingest(req: IngestRequest, request: Request, auth: AuthContext = Depen
     cache: EngramCache | None = getattr(state, "cache", None)
     engine = getattr(state, "engine", None)
     if ingest_fn:
-        result = await ingest_fn(req.messages)
+        result = await ingest_fn(req.messages, source=req.source)
         if cache is not None:
             await cache.invalidate(auth.tenant_id, "recall")
         if engine is not None:

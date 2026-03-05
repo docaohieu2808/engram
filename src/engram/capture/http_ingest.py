@@ -1,7 +1,8 @@
-"""HTTP proxy for ingesting messages via oracle's /api/v1/remember endpoint.
+"""HTTP proxy for ingesting messages via oracle's /api/v1/ingest endpoint.
 
-Used by watcher nodes (e.g. server-1) that capture chats and forward
-to the oracle engram server instead of writing directly to Qdrant.
+Uses the entity-gated ingest pipeline on oracle: extract entities first,
+only store messages that have at least one entity. This prevents noise
+from being stored in episodic memory.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(timeout=30)
+        _client = httpx.AsyncClient(timeout=60)
     return _client
 
 
@@ -30,24 +31,29 @@ async def http_ingest_messages(
     base_url: str,
     source: str = "",
 ) -> IngestResult:
-    """Send each message to oracle's /api/v1/remember endpoint."""
+    """Send messages to oracle's /api/v1/ingest endpoint (entity-gated)."""
     client = _get_client()
-    remember_url = f"{base_url.rstrip('/')}/api/v1/remember"
-    count = 0
+    ingest_url = f"{base_url.rstrip('/')}/api/v1/ingest"
 
-    for msg in messages:
-        content = msg.get("content", "")
-        if not content:
-            continue
-        try:
-            resp = await client.post(
-                remember_url,
-                json={"content": content, "source": source},
-            )
-            resp.raise_for_status()
-            count += 1
-        except Exception as e:
-            print(f"HTTP ingest failed: {e}", flush=True)
-            logger.warning("HTTP ingest to %s failed: %s", remember_url, e)
+    # Filter out empty content
+    valid = [m for m in messages if m.get("content", "").strip()]
+    if not valid:
+        return IngestResult()
 
-    return IngestResult(episodic_count=count)
+    try:
+        resp = await client.post(
+            ingest_url,
+            json={"messages": valid, "source": source},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        result = data.get("result", {})
+        return IngestResult(
+            episodic_count=result.get("episodic_count", 0),
+            semantic_nodes=result.get("semantic_nodes", 0),
+            semantic_edges=result.get("semantic_edges", 0),
+        )
+    except Exception as e:
+        print(f"HTTP ingest failed: {e}", flush=True)
+        logger.warning("HTTP ingest to %s failed: %s", ingest_url, e)
+        return IngestResult()
