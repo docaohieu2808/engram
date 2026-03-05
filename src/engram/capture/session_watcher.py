@@ -33,6 +33,8 @@ _METADATA_BLOCK_PATTERN = re.compile(
 _SKIP_PATTERNS = [
     re.compile(r"^HEARTBEAT_OK$"),
     re.compile(r"^NO_REPLY$"),
+    re.compile(r"Read HEARTBEAT\.md if it exists"),
+    re.compile(r"HEARTBEAT_OK.*Current time:", re.DOTALL),
 ]
 
 # Roles we capture — skip toolCall, toolResult, session, thinking_level_change, etc.
