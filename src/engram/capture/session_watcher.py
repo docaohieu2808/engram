@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any, Callable, Coroutine
 
@@ -161,6 +162,8 @@ class _SessionFileHandler(FileSystemEventHandler):
         self._positions_file = positions_file
         # Track file read positions: path -> byte offset
         self._positions: dict[str, int] = self._load_positions()
+        # Per-file lock to prevent duplicate reads from rapid inotify events
+        self._file_locks: dict[str, threading.Lock] = {}
 
     def _load_positions(self) -> dict[str, int]:
         """Load persisted positions from disk."""
@@ -210,6 +213,10 @@ class _SessionFileHandler(FileSystemEventHandler):
 
     def _process_new_lines(self, path: str) -> None:
         """Read new lines from file since last known position, parse and ingest."""
+        # Per-file lock prevents duplicate reads from rapid inotify events
+        lock = self._file_locks.setdefault(path, threading.Lock())
+        if not lock.acquire(blocking=False):
+            return  # Another call is already processing this file
         try:
             file_size = os.path.getsize(path)
             last_pos = self._positions.get(path, 0)
@@ -254,6 +261,8 @@ class _SessionFileHandler(FileSystemEventHandler):
 
         except Exception as e:
             logger.warning("%s watcher error on %s: %s", self._label, path, e)
+        finally:
+            lock.release()
 
 
 class SessionWatcher:
