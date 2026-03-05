@@ -73,7 +73,7 @@ class _HttpEpisodicProxy:
 
     async def recall(self, query, top_k=5, **kwargs):
         import httpx
-        params = {"query": query, "top_k": top_k}
+        params = {"query": query, "limit": top_k}
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(f"{self._base}/recall", params=params)
             return resp.json().get("memories", [])
@@ -82,19 +82,28 @@ class _HttpEpisodicProxy:
         """Search via HTTP API — returns list of Memory-like objects."""
         import httpx
         from types import SimpleNamespace
-        params = {"q": query, "top_k": limit}
+        from datetime import datetime, timezone
+        params = {"query": query, "limit": limit}
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(f"{self._base}/recall", params=params)
             data = resp.json()
         memories = []
         for m in data.get("results", data.get("memories", [])):
+            ts = m.get("timestamp", "")
+            if isinstance(ts, str) and ts:
+                try:
+                    ts = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    ts = datetime.now(timezone.utc)
+            elif not ts:
+                ts = datetime.now(timezone.utc)
             mem = SimpleNamespace(
                 id=m.get("id", ""),
                 content=m.get("content", ""),
                 memory_type=m.get("type", "fact"),
                 priority=m.get("priority", 5),
                 tags=m.get("tags", []),
-                timestamp=m.get("timestamp", ""),
+                timestamp=ts,
                 access_count=m.get("access_count", 0),
                 score=m.get("score", 0.0),
             )

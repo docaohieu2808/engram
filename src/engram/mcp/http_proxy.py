@@ -39,20 +39,30 @@ class HttpEpisodicProxy:
 
     async def search(self, query: str, limit: int = 5, **kwargs) -> list:
         import httpx
-        params: dict[str, Any] = {"query": query, "top_k": limit}
+        from datetime import datetime, timezone
+        params: dict[str, Any] = {"query": query, "limit": limit}
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(f"{self._base}/recall", params=params)
             resp.raise_for_status()
             data = resp.json()
         memories = []
         for m in data.get("results", data.get("memories", [])):
+            # Parse timestamp string to datetime object
+            ts = m.get("timestamp", "")
+            if isinstance(ts, str) and ts:
+                try:
+                    ts = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    ts = datetime.now(timezone.utc)
+            elif not ts:
+                ts = datetime.now(timezone.utc)
             mem = SimpleNamespace(
                 id=m.get("id", ""),
                 content=m.get("content", ""),
                 memory_type=m.get("type", "fact"),
                 priority=m.get("priority", 5),
                 tags=m.get("tags", []),
-                timestamp=m.get("timestamp", ""),
+                timestamp=ts,
                 access_count=m.get("access_count", 0),
                 score=m.get("score", 0.0),
                 decay_rate=m.get("decay_rate", 0.1),
