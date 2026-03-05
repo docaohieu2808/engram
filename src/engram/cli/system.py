@@ -444,6 +444,8 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             stop_daemon()
             import time; time.sleep(1)
 
+        console.print("[dim]Tip: Use 'engram start' to run in background instead.[/dim]")
+
         _load_env_file()
         from engram.capture.server import run_server
         from engram.config import apply_llm_api_key
