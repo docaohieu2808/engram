@@ -16,12 +16,33 @@ logger = logging.getLogger("engram")
 
 
 class QdrantBackend:
-    """EpisodicBackend implementation using Qdrant vector database."""
+    """EpisodicBackend implementation using Qdrant vector database.
 
-    def __init__(self, host: str = "localhost", port: int = 6333, api_key: str | None = None) -> None:
+    Supports two modes:
+    - Remote server: QdrantBackend(host="localhost", port=6333)
+    - Embedded local: QdrantBackend(path="~/.engram/qdrant")
+    """
+
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 6333,
+        api_key: str | None = None,
+        path: str | None = None,
+    ) -> None:
         from qdrant_client import QdrantClient
-        # Use url= to force HTTP REST (avoids gRPC SSL issues over WireGuard)
-        self._client = QdrantClient(url=f"http://{host}:{port}", api_key=api_key, timeout=30)
+        import os
+
+        if path:
+            # Embedded / local file-based mode — no server needed
+            expanded = os.path.expanduser(os.path.expandvars(path))
+            self._client = QdrantClient(path=expanded)
+            logger.info("QdrantBackend: embedded mode at %s", expanded)
+        else:
+            # Remote server mode — use HTTP REST (avoids gRPC SSL issues over WireGuard)
+            self._client = QdrantClient(url=f"http://{host}:{port}", api_key=api_key, timeout=30)
+            logger.info("QdrantBackend: remote mode at %s:%s", host, port)
+
         self._collection_name: str = ""
 
     async def initialize(self, namespace: str, embedding_dim: int | None = None) -> None:

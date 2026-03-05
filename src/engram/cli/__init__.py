@@ -83,6 +83,7 @@ from engram.cli import feedback_cmd as _feedback_cmd_mod  # noqa: E402
 from engram.cli import audit_cmd as _audit_cmd_mod  # noqa: E402
 from engram.cli import benchmark_cmd as _benchmark_cmd_mod  # noqa: E402
 from engram.cli import setup_cmd as _setup_cmd_mod  # noqa: E402
+from engram.cli import init_cmd as _init_cmd_mod  # noqa: E402
 
 _episodic_mod.register(app, _get_config, get_namespace=_get_namespace)
 _semantic_mod.register(app, add_app, remove_app, _get_config)
@@ -106,6 +107,7 @@ _feedback_cmd_mod.register(app, _get_config, get_namespace=_get_namespace)
 _audit_cmd_mod.register(app, _get_config, get_namespace=_get_namespace)
 _benchmark_cmd_mod.register(app, _get_config, get_namespace=_get_namespace)
 _setup_cmd_mod.register(app, _get_config)
+_init_cmd_mod.register(app)
 
 if __name__ == "__main__":
     app()
