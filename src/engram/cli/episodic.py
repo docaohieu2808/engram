@@ -97,12 +97,19 @@ class _HttpEpisodicProxy:
                     ts = datetime.now(timezone.utc)
             elif not ts:
                 ts = datetime.now(timezone.utc)
+            from engram.models import MemoryType
+            raw_type = m.get("memory_type", m.get("type", "fact"))
+            try:
+                mt = MemoryType(raw_type)
+            except ValueError:
+                mt = MemoryType.FACT
             mem = SimpleNamespace(
                 id=m.get("id", ""),
                 content=m.get("content", ""),
-                memory_type=m.get("type", "fact"),
+                memory_type=mt,
                 priority=m.get("priority", 5),
                 tags=m.get("tags", []),
+                entities=m.get("entities", []),
                 timestamp=ts,
                 access_count=m.get("access_count", 0),
                 score=m.get("score", 0.0),
