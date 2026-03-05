@@ -54,7 +54,7 @@ async def backup(episodic, graph, output_path: str) -> dict:
 async def restore(episodic, graph, archive_path: str) -> dict:
     """Import episodic and semantic data from a tar.gz backup archive.
 
-    Episodic memories are added directly via ChromaDB collection upsert.
+    Episodic memories are restored via backend upsert.
     Semantic nodes and edges are imported via graph methods.
     Returns counts of restored items.
     """
@@ -105,7 +105,6 @@ async def restore(episodic, graph, archive_path: str) -> dict:
             metadatas = data.get("metadatas", [])
             if ids:
                 await episodic._ensure_backend()
-                # Use backend abstraction — works for both ChromaDB and Qdrant backends
                 embeddings = data.get("embeddings") or [None] * len(ids)
                 await episodic._backend.upsert(
                     ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas,

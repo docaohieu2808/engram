@@ -141,7 +141,7 @@ class TestParallelSearcher:
     @pytest.mark.asyncio
     async def test_exception_in_one_source_doesnt_crash(self):
         episodic = AsyncMock()
-        episodic.search = AsyncMock(side_effect=Exception("ChromaDB down"))
+        episodic.search = AsyncMock(side_effect=Exception("vector store down"))
         semantic = AsyncMock()
         semantic.get_related = AsyncMock(return_value={})
         semantic.query = AsyncMock(return_value=[])

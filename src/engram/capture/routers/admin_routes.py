@@ -321,7 +321,7 @@ async def list_models(
 
 @router.post("/test-model")
 async def test_model(request: Request, auth: AuthContext = Depends(get_auth_context)):
-    """Lightweight model test — calls LLM directly without ChromaDB."""
+    """Lightweight model test — calls LLM directly without touching the vector store."""
     import litellm
     from engram.config import apply_llm_api_key
 

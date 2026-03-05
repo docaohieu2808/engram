@@ -59,7 +59,7 @@ class TenantContext:
 class StoreFactory:
     """Create and cache tenant-scoped store instances.
 
-    EpisodicStore: one per tenant (ChromaDB collection engram_{tenant_id}).
+    EpisodicStore: one per tenant (Qdrant collection per namespace/tenant_id).
     SemanticGraph: one per tenant (SQLite file per tenant, or same PG DB).
     Max 100 tenant graphs cached in memory (LRU eviction).
     """
@@ -78,7 +78,7 @@ class StoreFactory:
         """Return EpisodicStore for the given tenant (defaults to TenantContext.get()).
 
         Creates a new store if one doesn't exist for this tenant.
-        EpisodicStore uses ChromaDB collection engram_{tenant_id} for isolation.
+        EpisodicStore uses a Qdrant collection per tenant namespace for isolation.
         """
         tid = validate_tenant_id(tenant_id or TenantContext.get())
 

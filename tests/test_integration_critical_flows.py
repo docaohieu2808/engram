@@ -329,7 +329,7 @@ class TestHealthCheckFlow:
         result = await deep_check(episodic, graph)
         assert result["status"] in ("healthy", "unhealthy")
         assert "components" in result
-        assert "chromadb" in result["components"]
+        assert "episodic_store" in result["components"]
         assert "semantic" in result["components"]
 
     async def test_full_health_check_without_api_keys(self, episodic, graph):

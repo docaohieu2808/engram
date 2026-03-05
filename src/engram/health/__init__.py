@@ -3,7 +3,7 @@
 from engram.health.components import (
     ComponentHealth,
     check_api_keys,
-    check_chromadb,
+    check_episodic_store,
     check_constitution,
     check_disk,
     check_embedding,
@@ -25,7 +25,7 @@ __all__ = [
     "FeatureEntry",
     # component checks
     "check_api_keys",
-    "check_chromadb",
+    "check_episodic_store",
     "check_constitution",
     "check_disk",
     "check_embedding",

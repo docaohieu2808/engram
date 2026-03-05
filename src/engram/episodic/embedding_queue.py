@@ -154,7 +154,7 @@ class EmbeddingQueue:
 
 
 async def process_embedding_queue(store: Any, queue: "EmbeddingQueue | None" = None) -> dict[str, Any]:
-    """Drain pending items: embed → ChromaDB add → mark_done. Called by scheduler."""
+    """Drain pending items: embed → store add → mark_done. Called by scheduler."""
     import asyncio
     from engram.episodic.embeddings import _get_embeddings
     if queue is None:

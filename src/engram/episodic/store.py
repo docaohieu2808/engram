@@ -1,7 +1,7 @@
-"""ChromaDB-backed episodic memory store.
+"""Qdrant-backed episodic memory store.
 
-Handles embeddings manually (not via ChromaDB embedding_function) to avoid
-dimension mismatch when switching between providers (e.g. default 384 vs gemini 3072).
+Handles embeddings manually (not via built-in embedding_function) to avoid
+dimension mismatch when switching between embedding providers (e.g. 384 vs 3072).
 
 Embedding helpers → episodic/embeddings.py
 Decay scoring    → episodic/decay.py
@@ -40,11 +40,11 @@ class EpisodicStore(
     _BatchMixin,
     _EpisodicMaintenanceMixin,
 ):
-    """ChromaDB-backed episodic memory store.
+    """Qdrant-backed episodic memory store.
 
     Manages embeddings externally to prevent dimension conflicts.
     Collection uses cosine similarity with no built-in embedding function.
-    Supports namespaces (separate ChromaDB collections) and TTL expiry.
+    Supports namespaces (separate Qdrant collections) and TTL expiry.
     """
 
     def __init__(
@@ -60,10 +60,10 @@ class EpisodicStore(
         from engram.episodic import make_episodic_backend
 
         self._embed_model = f"{embedding_config.provider}/{embedding_config.model}"
-        # Namespace determines which ChromaDB collection we use
+        # Namespace determines which Qdrant collection we use
         self._namespace = namespace or getattr(config, "namespace", "default") or "default"
         self.COLLECTION_NAME = _collection_name(self._namespace)
-        # Build backend via factory (embedded by default, http when config.mode == "http")
+        # Build backend via factory (Qdrant)
         self._backend = make_episodic_backend(config)
         # _collection kept as None; _ensure_collection() initialises backend lazily
         self._collection = None
@@ -83,44 +83,24 @@ class EpisodicStore(
         self._fts = FtsIndex(db_path=fts_db_path) if fts_enabled else None
 
     def _ensure_collection(self) -> Any:
-        """Return a sentinel so legacy synchronous callers get a non-None value.
-
-        Real initialisation is async; mixins must call `await self._ensure_backend()`
-        before any backend operation. This shim preserves backward compat for any
-        code that still checks `self._collection is not None`.
-        """
-        # Return backend so legacy `collection.xyz()` patterns surface a clear error
-        # rather than AttributeError on None. Mixins are updated to use self._backend directly.
+        """Return backend instance. Real initialisation is async via _ensure_backend()."""
         return self._backend
 
     async def _ensure_backend(self) -> None:
-        """Initialise backend on first async call (lazy, idempotent).
-
-        Also handles legacy test setups that inject a raw ChromaDB collection
-        mock via `store._collection = mock_obj` without calling __init__.
-        In that case a _LegacyCollectionBackend shim is created automatically.
-        """
+        """Initialise backend on first async call (lazy, idempotent)."""
         if getattr(self, "_backend_initialised", False):
             return
 
         if not hasattr(self, "_backend"):
-            # Legacy test path: _collection was injected directly (MagicMock or real collection)
-            col = getattr(self, "_collection", None)
-            if col is not None:
-                from engram.episodic._legacy_collection_backend import _LegacyCollectionBackend
-                self._backend = _LegacyCollectionBackend(col)
-                self._backend_initialised = True
-                return
-            # No collection and no backend — something is wrong
             raise RuntimeError(
-                "EpisodicStore: no backend configured. Call __init__ or set _collection."
+                "EpisodicStore: no backend configured. Call __init__ properly."
             )
 
         await self._backend.initialize(self.COLLECTION_NAME, self._embedding_dim)
         self._backend_initialised = True
 
     async def _detect_embedding_dim(self) -> None:
-        """Detect embedding dimension from existing collection data (D-H1: async to avoid blocking)."""
+        """Detect embedding dimension from existing collection data."""
         if self._embedding_dim is not None:
             return
         # Check known dimensions for configured model (fast path via registry)

@@ -8,7 +8,7 @@ import logging
 from engram.health.components import (
     ComponentHealth,
     check_api_keys,
-    check_chromadb,
+    check_episodic_store,
     check_constitution,
     check_disk,
     check_embedding,
@@ -38,7 +38,7 @@ def _add_component(components: dict, comp: ComponentHealth) -> None:
 async def deep_check(episodic, graph) -> dict:
     """Run core component checks and return aggregated status."""
     results = await asyncio.gather(
-        check_chromadb(episodic),
+        check_episodic_store(episodic),
         check_semantic(graph),
         check_disk(),
         return_exceptions=True,
@@ -60,7 +60,7 @@ async def deep_check(episodic, graph) -> dict:
 async def full_health_check(episodic=None, graph=None, llm_model: str = "", config=None) -> dict:
     """Run comprehensive health check across all subsystems.
 
-    Checks: chromadb, semantic, disk, api_keys, fts5, llm, embedding,
+    Checks: episodic_store (qdrant), semantic, disk, api_keys, fts5, llm, embedding,
             watcher, redis (if cache/rate_limit enabled), constitution,
             resource_tier.
     """
@@ -72,7 +72,7 @@ async def full_health_check(episodic=None, graph=None, llm_model: str = "", conf
     resource_tier_result = check_resource_tier()
 
     if episodic is not None:
-        tasks.append(check_chromadb(episodic))
+        tasks.append(check_episodic_store(episodic))
     if graph is not None:
         tasks.append(check_semantic(graph))
 

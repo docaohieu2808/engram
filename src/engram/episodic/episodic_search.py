@@ -37,7 +37,7 @@ class _EpisodicSearchMixin:
             query: Search query text.
             limit: Maximum number of results.
             offset: Number of results to skip (applied after scoring).
-            filters: ChromaDB `where` clause dict.
+            filters: Backend `where` clause dict (Qdrant filter format).
             tags: Optional tag list — all provided tags must be present in memory.
         """
         try:
@@ -94,7 +94,7 @@ class _EpisodicSearchMixin:
                     continue
 
             # Compute activation score
-            similarity = max(0.0, 1.0 - distance)  # ChromaDB cosine distance → similarity
+            similarity = max(0.0, 1.0 - distance)  # cosine distance → similarity
             score = compute_activation_score(
                 similarity, memory.timestamp, memory.access_count,
                 memory.decay_rate, now, self._scoring, self._decay_enabled,
@@ -127,8 +127,8 @@ class _EpisodicSearchMixin:
     async def search_fulltext(self, query: str, limit: int = 10) -> list[EpisodicMemory]:
         """Search memories using FTS5 exact keyword matching.
 
-        Returns EpisodicMemory objects fetched from ChromaDB by ID.
-        Skips IDs not found in ChromaDB (may have been deleted without FTS sync).
+        Returns EpisodicMemory objects fetched from backend by ID.
+        Skips IDs not found in backend (may have been deleted without FTS sync).
         """
         fts_results = await fts_search(self._fts, query, limit)
         if not fts_results:
@@ -142,7 +142,7 @@ class _EpisodicSearchMixin:
                 include=["documents", "metadatas"],
             )
         except Exception as e:
-            logger.debug("FTS5 ChromaDB fetch failed: %s", e)
+            logger.debug("FTS5 backend fetch failed: %s", e)
             return []
 
         memories: list[EpisodicMemory] = []
@@ -159,7 +159,7 @@ class _EpisodicSearchMixin:
 
         Args:
             n: Maximum number of results.
-            where: Optional ChromaDB ``where`` filter (e.g. ``{"source": "OpenClaw"}``).
+            where: Optional backend ``where`` filter (e.g. ``{"source": "OpenClaw"}``).
                    When provided, scans the full collection instead of just the tail
                    so that older items matching the filter are not missed.
         """
@@ -171,7 +171,7 @@ class _EpisodicSearchMixin:
                 return []
             if where:
                 # With a metadata filter we must scan the whole collection;
-                # ChromaDB get() with where= handles this server-side.
+                # With a metadata filter, get_many() handles this server-side.
                 result = await self._backend.get_many(
                     include=["documents", "metadatas"],
                     where=where,

@@ -133,8 +133,8 @@ def register_health(app: typer.Typer, get_config, get_episodic, get_graph) -> No
                     r = await coro
                     results[r.name] = r
                 if episodic:
-                    from engram.health import check_chromadb
-                    r = await check_chromadb(episodic)
+                    from engram.health import check_episodic_store
+                    r = await check_episodic_store(episodic)
                     results[r.name] = r
                 if graph:
                     from engram.health import check_semantic

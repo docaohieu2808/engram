@@ -295,7 +295,7 @@ class _EpisodicCrudMixin:
             return False
 
     async def _find_by_topic_key(self, topic_key: str) -> str | None:
-        """Find memory ID by topic_key using ChromaDB where filter."""
+        """Find memory ID by topic_key using backend where filter."""
         try:
             await self._ensure_backend()
             result = await self._backend.get_many(where={"topic_key": topic_key})
@@ -399,7 +399,7 @@ class _EpisodicCrudMixin:
     ) -> str | None:
         """Check if a semantically similar memory exists. If so, merge entities/tags.
 
-        ChromaDB cosine distance: 0.0 = identical, 2.0 = opposite.
+        Cosine distance: 0.0 = identical, 2.0 = opposite.
         Similarity = 1 - (distance / 2).  Threshold of 0.85 → distance < 0.30.
 
         Returns existing memory ID if merged, None if no duplicate found.

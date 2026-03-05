@@ -36,23 +36,23 @@ class _EpisodicMaintenanceMixin:
         return result
 
     async def reconcile_stores(self) -> dict[str, int]:
-        """Sync FTS5 index with ChromaDB (source of truth). Returns stats dict.
+        """Sync FTS5 index with Qdrant (source of truth). Returns stats dict.
 
-        D-C3: Periodic reconciliation to fix drift between ChromaDB and FTS5
+        D-C3: Periodic reconciliation to fix drift between Qdrant and FTS5
         since writes to both stores are not atomic.
         """
         if not self._fts:
             return {"orphaned_removed": 0, "missing_added": 0}
         await self._ensure_backend()
         # Fetch all IDs from both stores
-        all_chroma = await self._backend.get_many(include=[])
-        chroma_ids = set(all_chroma["ids"])
+        all_qdrant = await self._backend.get_many(include=[])
+        chroma_ids = set(all_qdrant["ids"])
         fts_ids = await fts_get_all_ids(self._fts)
-        # Remove FTS entries not present in ChromaDB
+        # Remove FTS entries not present in Qdrant
         orphaned_fts = fts_ids - chroma_ids
         for oid in orphaned_fts:
             await fts_delete(self._fts, oid)
-        # Add FTS entries for ChromaDB IDs missing from FTS
+        # Add FTS entries for Qdrant IDs missing from FTS
         missing_fts = chroma_ids - fts_ids
         if missing_fts:
             batch = await self._backend.get_many(

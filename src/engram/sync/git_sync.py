@@ -108,7 +108,7 @@ async def import_memories(episodic_store: Any, sync_dir: str | None = None) -> d
     """Import memories from .engram/chunks/ not yet in this store.
 
     Reads manifest to determine which chunks have been imported.
-    Uses ChromaDB upsert to handle duplicates gracefully.
+    Uses backend upsert to handle duplicates gracefully.
     """
     d = _get_sync_dir(sync_dir)
     manifest = _load_manifest(d)

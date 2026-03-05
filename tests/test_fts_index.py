@@ -182,22 +182,18 @@ class TestFtsIndexSearch:
 
 
 # ---------------------------------------------------------------------------
-# EpisodicStore integration tests (mocked ChromaDB)
+# EpisodicStore integration tests (mocked backend)
 # ---------------------------------------------------------------------------
 
 class TestEpisodicStoreFtsIntegration:
     """Integration tests for FTS5 methods in EpisodicStore using real FtsIndex."""
 
     def _make_store(self, tmp_path: Path):
-        """Build a minimal EpisodicStore with mocked ChromaDB and real FtsIndex."""
-        from engram.config import EpisodicConfig, EmbeddingConfig
+        """Build a minimal EpisodicStore with mocked Qdrant backend and real FtsIndex."""
         from engram.episodic.store import EpisodicStore
 
-        config = EpisodicConfig(path=str(tmp_path / "chroma"), dedup_enabled=False)
-        embed_config = EmbeddingConfig()
-
         store = EpisodicStore.__new__(EpisodicStore)
-        # Minimal attribute setup without calling __init__ (avoids chromadb I/O)
+        # Minimal attribute setup without calling __init__ (avoids backend I/O)
         store._namespace = "test"
         store.COLLECTION_NAME = "engram_test"
         store._collection = None
@@ -208,7 +204,8 @@ class TestEpisodicStoreFtsIntegration:
         store._default_decay_rate = 0.1
         store._scoring = __import__("engram.config", fromlist=["ScoringConfig"]).ScoringConfig()
         store._embed_model = "gemini/gemini-embedding-001"
-        store._client = MagicMock()
+        store._backend = AsyncMock()
+        store._backend_initialised = True
         store._fts = FtsIndex(db_path=str(tmp_path / "fts.db"))
         return store
 
@@ -218,18 +215,16 @@ class TestEpisodicStoreFtsIntegration:
         # Pre-populate FTS index
         store._fts.insert("mem-abc", "PostgreSQL deployment on production", "fact")
 
-        # Mock ChromaDB collection.get
+        # Mock backend get_many
         from datetime import datetime, timezone
-        mock_collection = MagicMock()
-        mock_collection.get.return_value = {
+        store._backend.get_many = AsyncMock(return_value={
             "ids": ["mem-abc"],
             "documents": ["PostgreSQL deployment on production"],
             "metadatas": [{"memory_type": "fact", "priority": 5,
                            "timestamp": datetime.now(timezone.utc).isoformat(),
                            "entities": "[]", "tags": "[]",
                            "access_count": 0, "decay_rate": 0.1}],
-        }
-        store._collection = mock_collection
+        })
 
         results = await store.search_fulltext("PostgreSQL")
         assert len(results) == 1
@@ -239,18 +234,15 @@ class TestEpisodicStoreFtsIntegration:
     @pytest.mark.asyncio
     async def test_search_fulltext_no_match(self, tmp_path):
         store = self._make_store(tmp_path)
-        store._collection = MagicMock()
         results = await store.search_fulltext("nonexistent_term_xyz")
         assert results == []
 
     @pytest.mark.asyncio
-    async def test_search_fulltext_chromadb_error_returns_empty(self, tmp_path):
+    async def test_search_fulltext_backend_error_returns_empty(self, tmp_path):
         store = self._make_store(tmp_path)
         store._fts.insert("mem-1", "some keyword content", "fact")
 
-        mock_collection = MagicMock()
-        mock_collection.get.side_effect = RuntimeError("ChromaDB error")
-        store._collection = mock_collection
+        store._backend.get_many = AsyncMock(side_effect=RuntimeError("backend error"))
 
         # Should not raise, returns empty list
         results = await store.search_fulltext("keyword")

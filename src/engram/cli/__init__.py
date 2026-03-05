@@ -58,7 +58,7 @@ def _set_config_value(key: str, value: str) -> Config:
 def main(
     namespace: Optional[str] = typer.Option(
         None, "--namespace", "-n",
-        help="Memory namespace (isolates ChromaDB collection). Default: 'default'.",
+        help="Memory namespace (isolates Qdrant collection). Default: 'default'.",
         envvar="ENGRAM_NAMESPACE",
     ),
 ):

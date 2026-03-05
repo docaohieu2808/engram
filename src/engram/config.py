@@ -20,18 +20,18 @@ from pydantic import BaseModel, Field
 
 
 class EpisodicConfig(BaseModel):
-    provider: str = "chromadb"
-    path: str = "~/.engram/episodic"
+    provider: str = "qdrant"
+    path: str = "~/.engram/episodic"  # kept for backward compat; not used by Qdrant backend
     namespace: str = "default"
     decay_rate: float = 0.1
     decay_enabled: bool = True
     dedup_enabled: bool = True
     dedup_threshold: float = 0.85  # cosine similarity; 1.0 = identical
-    # Backend transport: "embedded" (local PersistentClient), "http" (remote HttpClient), or "qdrant"
-    mode: str = "embedded"
+    # Backend transport: "qdrant" (remote Qdrant vector DB)
+    mode: str = "qdrant"
     host: str = "localhost"
-    port: int = 8000
-    api_key: str = ""  # API key for remote backends (e.g. Qdrant)
+    port: int = 6333
+    api_key: str = ""  # API key for Qdrant cloud
     fts_db_path: str = "~/.engram/fts_index.db"
     fts_enabled: bool = True
 

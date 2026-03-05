@@ -1,7 +1,7 @@
 """Abstract backend protocol for episodic vector storage.
 
 Mirrors the pattern used in semantic/backend.py.
-Concrete implementations: chromadb_backend.py, chromadb_http_backend.py
+Concrete implementation: qdrant_backend.py
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class EpisodicBackend(Protocol):
-    """Protocol for episodic storage backends (embedded ChromaDB, HTTP ChromaDB, etc.)."""
+    """Protocol for episodic storage backends (Qdrant)."""
 
     async def initialize(self, namespace: str, embedding_dim: int | None) -> None:
         """Create or open the collection for the given namespace."""
@@ -52,7 +52,7 @@ class EpisodicBackend(Protocol):
         limit: int | None = None,
         offset: int | None = None,
     ) -> dict:
-        """Retrieve multiple documents. Returns raw ChromaDB-style result dict."""
+        """Retrieve multiple documents. Returns result dict with ids, documents, metadatas keys."""
         ...
 
     async def delete(self, ids: list[str]) -> None:
@@ -66,7 +66,7 @@ class EpisodicBackend(Protocol):
         where: dict | None = None,
         include: list[str] | None = None,
     ) -> dict:
-        """Vector similarity query. Returns raw ChromaDB-style result dict."""
+        """Vector similarity query. Returns result dict with ids, documents, metadatas, distances keys."""
         ...
 
     async def update(self, ids: list[str], metadatas: list[dict]) -> None:

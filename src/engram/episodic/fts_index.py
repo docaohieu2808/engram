@@ -1,6 +1,6 @@
 """SQLite FTS5 full-text search index for episodic memories.
 
-Provides exact keyword search as a complement to ChromaDB vector search.
+Provides exact keyword search as a complement to Qdrant vector search.
 DB is always-on at ~/.engram/fts_index.db; no extra config needed.
 """
 
@@ -26,7 +26,7 @@ class FtsResult(NamedTuple):
 
 
 class FtsIndex:
-    """SQLite FTS5 index synced alongside ChromaDB episodic store.
+    """SQLite FTS5 index synced alongside Qdrant episodic store.
 
     Thread-safe via WAL mode; all operations are synchronous (caller wraps
     in asyncio.to_thread where needed).

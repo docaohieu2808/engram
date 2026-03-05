@@ -2,7 +2,7 @@
 
 Implements EpisodicBackend protocol using qdrant-client.
 Connects to a remote Qdrant server via HTTP/gRPC with API key auth.
-Returns ChromaDB-style result dicts for compatibility with existing code.
+Returns standardized result dicts (ids, documents, metadatas, distances) compatible with EpisodicBackend protocol.
 """
 
 from __future__ import annotations
@@ -95,7 +95,7 @@ class QdrantBackend:
         }
 
     async def get_many(self, ids: list[str] | None = None, where: dict | None = None, include: list[str] | None = None, limit: int | None = None, offset: int | None = None) -> dict:
-        """Retrieve multiple documents. Returns ChromaDB-style result dict.
+        """Retrieve multiple documents. Returns standardized result dict.
 
         Uses order_by=timestamp desc to get most recent results.
         The offset parameter is ignored for Qdrant scroll (not compatible).
@@ -121,7 +121,7 @@ class QdrantBackend:
                     limit=limit or 100,
                     with_payload=True, with_vectors="embeddings" in (include or []),
                 )
-        return _points_to_chroma_dict(points, include)
+        return _points_to_result_dict(points, include)
 
     async def delete(self, ids: list[str]) -> None:
         """Delete documents by ID list."""
@@ -129,7 +129,7 @@ class QdrantBackend:
         await asyncio.to_thread(self._client.delete, collection_name=self._col(), points_selector=PointIdsList(points=ids))
 
     async def query(self, query_embeddings: list[list[float]], n_results: int, where: dict | None = None, include: list[str] | None = None) -> dict:
-        """Vector similarity search. Returns ChromaDB-style nested result dict."""
+        """Vector similarity search. Returns standardized nested result dict."""
         from qdrant_client.models import Filter
         qdrant_filter = _build_qdrant_filter(where) if where else None
         all_ids, all_docs, all_metas, all_dists, all_embeddings = [], [], [], [], []
@@ -183,7 +183,7 @@ class QdrantBackend:
     async def peek(self, limit: int = 1) -> dict:
         """Return a small sample of documents."""
         points, _ = await asyncio.to_thread(self._client.scroll, collection_name=self._col(), limit=limit, with_payload=True, with_vectors=True)
-        return _points_to_chroma_dict(points, ["documents", "metadatas", "embeddings"])
+        return _points_to_result_dict(points, ["documents", "metadatas", "embeddings"])
 
     async def close(self) -> None:
         """Close the Qdrant client connection."""
@@ -192,7 +192,7 @@ class QdrantBackend:
 
 
 def _build_qdrant_filter(where: dict | None) -> Any:
-    """Convert ChromaDB-style where filter to Qdrant Filter."""
+    """Convert EpisodicBackend-style where filter dict to Qdrant Filter."""
     if not where:
         return None
     from qdrant_client.models import FieldCondition, Filter, MatchValue
@@ -210,8 +210,8 @@ def _build_qdrant_filter(where: dict | None) -> Any:
     return Filter(must=conditions) if conditions else None
 
 
-def _points_to_chroma_dict(points: list, include: list[str] | None = None) -> dict:
-    """Convert Qdrant points to ChromaDB-style result dict."""
+def _points_to_result_dict(points: list, include: list[str] | None = None) -> dict:
+    """Convert Qdrant points to standardized result dict."""
     ids, docs, metas, embeddings = [], [], [], []
     for p in points:
         payload = dict(p.payload or {})

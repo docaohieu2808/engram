@@ -68,7 +68,7 @@ def _collection_name(namespace: str) -> str:
 
 
 def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> EpisodicMemory:
-    """Construct EpisodicMemory from ChromaDB result fields."""
+    """Construct EpisodicMemory from backend result fields."""
     raw_type = metadata.get("memory_type", MemoryType.FACT.value)
     try:
         memory_type = MemoryType(raw_type)

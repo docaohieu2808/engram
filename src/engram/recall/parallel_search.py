@@ -1,6 +1,6 @@
 """Parallel search with fusion — multi-source memory retrieval.
 
-Runs parallel searches across episodic (ChromaDB), entity graph (NetworkX),
+Runs parallel searches across episodic (Qdrant), entity graph (NetworkX),
 and keyword (graph query) sources, then fuses results by deduplication and scoring.
 """
 
@@ -83,7 +83,7 @@ class ParallelSearcher:
         return self._fuse(all_results, top_k)
 
     async def _search_semantic(self, query: str, limit: int) -> list[SearchResult]:
-        """ChromaDB vector similarity search. Excludes consolidated originals."""
+        """Vector similarity search via Qdrant. Excludes consolidated originals."""
         memories = await self._episodic.search(query, limit=limit)
         results = []
         for m in memories:

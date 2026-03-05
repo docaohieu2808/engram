@@ -62,7 +62,7 @@ async def filtered_search(
     fetch_limit = limit * 3 if entities else limit
     results = await store.search(query, limit=fetch_limit, filters=filters)
 
-    # Post-filter by entities (stored as JSON array string, not filterable via ChromaDB)
+    # Post-filter by entities (stored as JSON array string in metadata)
     if entities:
         entity_set = set(entities)
         results = [m for m in results if entity_set & set(m.entities)]

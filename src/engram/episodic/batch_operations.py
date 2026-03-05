@@ -26,7 +26,7 @@ class _BatchMixin:
     """Mixin providing remember_batch() for EpisodicStore."""
 
     async def remember_batch(self, memories: list[dict[str, Any]]) -> list[str]:
-        """Store multiple memories in a single ChromaDB upsert call.
+        """Store multiple memories in a single backend upsert call.
 
         Each dict may contain: content (required), memory_type, priority, entities, tags,
         expires_at, metadata. Returns list of memory IDs in same order as input.

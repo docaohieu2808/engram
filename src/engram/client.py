@@ -320,17 +320,16 @@ class EngramClient:
     async def _dedup_memories(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Remove items that are too similar to existing memories.
 
-        Uses ChromaDB cosine distance: distance < 0.15 means ~similarity > 0.85.
+        Uses cosine distance: distance < 0.15 means ~similarity > 0.85.
         """
         new_items: list[dict[str, Any]] = []
         for item in items:
             try:
                 existing = await self._episodic.search(item["content"], limit=1)
                 if existing:
-                    # ChromaDB cosine distance — lower = more similar
+                    # Cosine distance — lower = more similar
                     # EpisodicMemory doesn't expose distance, so we do a basic
                     # content-overlap check as a lightweight dedup heuristic.
-                    # A full distance check would require raw ChromaDB access.
                     existing_content = existing[0].content.lower()
                     candidate = item["content"].lower()
                     # Skip if content is very similar (> 85% word overlap)

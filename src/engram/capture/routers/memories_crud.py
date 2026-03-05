@@ -41,7 +41,7 @@ async def list_memories(
     state = request.app.state
     ep = resolve_episodic(state, auth)
     limit = min(limit, 100)
-    # Build ChromaDB where filter for fields that can be pushed down
+    # Build backend where filter for fields that can be pushed down
     where_parts: list[dict] = []
     if source:
         where_parts.append({"source": source})
@@ -52,23 +52,23 @@ async def list_memories(
         else:
             where_parts.append({"memory_type": {"$in": mt_vals}})
 
-    chroma_where = None
+    backend_where = None
     if len(where_parts) == 1:
-        chroma_where = where_parts[0]
+        backend_where = where_parts[0]
     elif len(where_parts) > 1:
-        chroma_where = {"$and": where_parts}
+        backend_where = {"$and": where_parts}
 
-    # When ChromaDB handles filtering server-side, fetch a large window
+    # When backend handles filtering server-side, fetch a large window
     # so pagination totals are accurate. Without server-side filters,
     # use a smaller multiplier since post-filtering is lighter.
-    if chroma_where:
-        fetch_limit = 5000  # ChromaDB does the heavy lifting
+    if backend_where:
+        fetch_limit = 5000
     else:
         fetch_limit = min((offset + limit) * 3, 5000)
     if search:
-        raw = await ep.search(search, limit=fetch_limit, filters=chroma_where)
+        raw = await ep.search(search, limit=fetch_limit, filters=backend_where)
     else:
-        raw = await ep.get_recent(n=fetch_limit, where=chroma_where)
+        raw = await ep.get_recent(n=fetch_limit, where=backend_where)
 
     filtered = []
     tag_filter = set(t.strip() for t in tags.split(",")) if tags else None

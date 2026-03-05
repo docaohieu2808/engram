@@ -73,7 +73,7 @@ def setup_logging(config: "Config") -> None:
     root.addHandler(handler)
 
     # Silence noisy third-party loggers
-    for noisy in ("LiteLLM", "litellm", "chromadb", "httpx"):
+    for noisy in ("LiteLLM", "litellm", "httpx"):
         logging.getLogger(noisy).setLevel(logging.ERROR)
 
 

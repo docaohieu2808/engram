@@ -221,19 +221,19 @@ async def test_health_check_returns_ok(episodic, graph):
     result = await deep_check(episodic, graph)
     assert result["status"] in ("healthy", "unhealthy")  # just verifies it runs
     assert "components" in result
-    assert "chromadb" in result["components"]
+    assert "episodic_store" in result["components"]
     assert "semantic" in result["components"]
 
 
 @pytest.mark.integration
-async def test_health_check_chromadb_component(episodic, graph):
-    """ChromaDB component health reports count correctly."""
+async def test_health_check_episodic_store_component(episodic, graph):
+    """Episodic store component health reports count correctly."""
     with patch("engram.episodic.store._get_embeddings", side_effect=_mock_embeddings):
         await episodic.remember("health check memory")
 
-    from engram.health import check_chromadb
+    from engram.health import check_episodic_store
 
-    component = await check_chromadb(episodic)
+    component = await check_episodic_store(episodic)
     assert component.status == "healthy"
     assert component.details.get("count", 0) >= 1
 

@@ -20,15 +20,15 @@ class ComponentHealth:
     error: str = ""
 
 
-async def check_chromadb(store) -> ComponentHealth:
-    """Check ChromaDB / episodic store health."""
+async def check_episodic_store(store) -> ComponentHealth:
+    """Check Qdrant / episodic store health."""
     start = time.monotonic()
     try:
         stats = await store.stats()
         ms = (time.monotonic() - start) * 1000
-        return ComponentHealth("chromadb", "healthy", ms, {"count": stats["count"]})
+        return ComponentHealth("episodic_store", "healthy", ms, {"count": stats["count"]})
     except Exception as exc:
-        return ComponentHealth("chromadb", "unhealthy", error=str(exc))
+        return ComponentHealth("episodic_store", "unhealthy", error=str(exc))
 
 
 async def check_semantic(graph) -> ComponentHealth:
