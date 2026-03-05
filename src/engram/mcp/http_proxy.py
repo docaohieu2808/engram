@@ -7,6 +7,7 @@ allowing MCP (Claude Code) and HTTP server (OpenClaw) to coexist.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -113,8 +114,23 @@ class HttpEpisodicProxy:
             resp = await client.get(f"{self._base}/status")
             return resp.json().get("episodic", {"count": 0})
 
-    async def get_recent(self, n: int = 10) -> list:
-        return await self.search("", limit=n)
+    async def get_recent(self, n: int = 10, **kwargs) -> list:
+        import httpx
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{self._base}/memories", params={"limit": min(n, 100), "offset": 0})
+            data = resp.json()
+        results = []
+        for m in data.get("memories", []):
+            ts = m.get("timestamp", "")
+            if isinstance(ts, str) and ts:
+                try:
+                    ts = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    ts = datetime.now(timezone.utc)
+            elif not ts:
+                ts = datetime.now(timezone.utc)
+            results.append(_build_memory_namespace(m, ts))
+        return results
 
     async def cleanup_expired(self) -> int:
         import httpx
@@ -168,8 +184,32 @@ class HttpGraphProxy:
             resp = await client.get(f"{self._base}/status")
             return resp.json().get("semantic", {"node_count": 0, "edge_count": 0})
 
+    async def get_nodes(self, type: str | None = None) -> list:
+        import httpx
+        params = {"keyword": "*", "limit": 500}
+        if type:
+            params["node_type"] = type
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{self._base}/query", params=params)
+            if resp.status_code != 200:
+                return []
+            return [SimpleNamespace(**n) for n in resp.json().get("results", [])]
+
+    async def get_edges(self, node_key: str | None = None) -> list:
+        # HTTP API doesn't expose edges listing directly; return empty
+        return []
+
     async def dump(self) -> dict:
-        return await self.stats()
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"{self._base}/graph/data")
+            if resp.status_code != 200:
+                return {"nodes": [], "edges": []}
+            data = resp.json()
+        return {
+            "nodes": data.get("nodes", []),
+            "edges": data.get("edges", []),
+        }
 
     async def get_related(self, names: list[str]) -> dict:
         return {n: {"edges": []} for n in names}

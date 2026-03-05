@@ -105,13 +105,84 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
                 console.print(f"    {t}: {c}")
 
     @app.command()
-    def dump(format: str = typer.Option("json", "--format", "-f")):
-        """Export all memory data."""
-        data = {
-            "episodic": run_async(_get_episodic().stats()),
-            "semantic": run_async(_get_graph().dump()),
-        }
-        console.print_json(json.dumps(data, default=str))
+    def dump(format: str = typer.Option("table", "--format", "-f", help="Output format: table|json")):
+        """Export all memory data (episodic + semantic)."""
+        from rich.table import Table
+
+        episodic = _get_episodic()
+        graph = _get_graph()
+
+        if format == "json":
+            memories = run_async(episodic.get_recent(n=500))
+            data = {
+                "episodic": [
+                    {
+                        "id": m.id, "content": m.content,
+                        "memory_type": m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type),
+                        "priority": m.priority, "tags": m.tags, "entities": m.entities,
+                        "timestamp": str(m.timestamp), "confidence": getattr(m, "confidence", 1.0),
+                        "source": getattr(m, "source", ""),
+                    }
+                    for m in memories
+                ],
+                "semantic": run_async(graph.dump()),
+            }
+            console.print_json(json.dumps(data, default=str))
+            return
+
+        # Rich table format (default fallback)
+        memories = run_async(episodic.get_recent(n=500))
+        sem = run_async(graph.dump())
+
+        # Episodic table
+        ep_table = Table(title=f"Episodic Memories ({len(memories)})")
+        ep_table.add_column("#", style="dim", width=3)
+        ep_table.add_column("Time", style="cyan", width=16)
+        ep_table.add_column("Type", style="green", width=12)
+        ep_table.add_column("P", justify="right", width=2)
+        ep_table.add_column("Content", max_width=70)
+        ep_table.add_column("Tags/Entities", style="dim", max_width=30)
+        for i, m in enumerate(memories, 1):
+            ts = m.timestamp.strftime("%m-%d %H:%M") if hasattr(m.timestamp, "strftime") else str(m.timestamp)[:16]
+            mt = m.memory_type.value if hasattr(m.memory_type, "value") else str(m.memory_type)
+            extra = []
+            if m.tags:
+                extra.append(f"t:{','.join(m.tags[:3])}")
+            if m.entities:
+                extra.append(f"e:{','.join(m.entities[:3])}")
+            ep_table.add_row(str(i), ts, mt, str(m.priority), m.content[:70], " ".join(extra))
+        console.print(ep_table)
+
+        # Nodes table
+        nodes = sem.get("nodes", [])
+        n_table = Table(title=f"Semantic Nodes ({len(nodes)})")
+        n_table.add_column("#", style="dim", width=3)
+        n_table.add_column("Type", style="green", width=14)
+        n_table.add_column("Name", style="cyan")
+        n_table.add_column("Attributes", style="dim")
+        for i, n in enumerate(nodes, 1):
+            attrs = ", ".join(f"{k}={v}" for k, v in n.get("attributes", {}).items()) if n.get("attributes") else ""
+            # Support both direct model dump (type/name) and vis.js format (group/label/id)
+            ntype = n.get("type", "") or n.get("group", "")
+            nname = n.get("name", "") or n.get("label", "")
+            n_table.add_row(str(i), ntype, nname, attrs)
+        console.print(n_table)
+
+        # Edges table
+        edges = sem.get("edges", [])
+        e_table = Table(title=f"Semantic Edges ({len(edges)})")
+        e_table.add_column("#", style="dim", width=3)
+        e_table.add_column("From", style="yellow")
+        e_table.add_column("Relation", style="green")
+        e_table.add_column("To", style="cyan")
+        e_table.add_column("Weight", style="dim", width=6)
+        for i, e in enumerate(edges, 1):
+            # Support both direct model dump and vis.js format
+            efrom = e.get("from_node", "") or e.get("from", "")
+            erel = e.get("relation", "") or e.get("label", "")
+            eto = e.get("to_node", "") or e.get("to", "")
+            e_table.add_row(str(i), efrom, erel, eto, str(e.get("weight", 1.0)))
+        console.print(e_table)
 
     @app.command()
     def cleanup():

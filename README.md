@@ -2,9 +2,15 @@
 
 **Memory traces for AI agents — Think like humans.**
 
-![Version](https://img.shields.io/badge/version-0.4.0-blue) ![Tests](https://img.shields.io/badge/tests-894%2B-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+[![PyPI](https://img.shields.io/pypi/v/engram-mem)](https://pypi.org/project/engram-mem/) ![Tests](https://img.shields.io/badge/tests-894%2B-brightgreen) ![Python](https://img.shields.io/badge/python-3.11%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-Dual-memory AI system combining episodic (vector) + semantic (graph) memory with LLM reasoning. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment. Exposes CLI, MCP, HTTP API (`/api/v1/`), and WebSocket API (`/ws`) for real-time agent communication.
+Dual-memory AI system combining **episodic (vector)** + **semantic (graph)** memory with LLM reasoning. Entity-gated ingestion ensures only meaningful data is stored. Enterprise-ready with multi-tenancy, auth, caching, observability, and Docker deployment.
+
+Works with **any AI agent or IDE** — Claude Code, OpenClaw, Cursor, and any MCP-compatible client. Federates with external knowledge systems (mem0, LightRAG, Graphiti) via auto-discovery. Exposes **CLI**, **MCP** (stdio), **HTTP API** (`/api/v1/`), and **WebSocket** (`/ws`) interfaces.
+
+```bash
+pip install engram-mem
+```
 
 ---
 
@@ -12,20 +18,30 @@ Dual-memory AI system combining episodic (vector) + semantic (graph) memory with
 
 ### Core Memory
 
-- **Episodic Memory** — ChromaDB vector store, semantic similarity search, Ebbinghaus decay, activation-based scoring, topic-key upsert
+- **Episodic Memory** — Qdrant vector store (embedded or server), semantic similarity search, Ebbinghaus decay, activation-based scoring, topic-key upsert
 - **Semantic Graph** — NetworkX MultiDiGraph, typed entities and relationships, SQLite (default) or PostgreSQL backend, weighted edges
 - **Reasoning Engine** — LLM synthesis (Gemini via litellm), dual-memory context fusion, constitution-guarded prompts
 - **Recall Pipeline** — Query decision, temporal+pronoun entity resolution, parallel multi-source search, dedup, composite scoring
+- **Entity-Gated Ingestion** — Only stores messages with extracted entities; skips noise (system prompts, trivial messages)
 - **Auto Memory** — Detect and persist save-worthy messages automatically, poisoning guard for injection prevention
-- **Feedback Loop** — Confidence scoring (+0.15/−0.2), importance adjustment, auto-delete on 3x negative feedback
+- **Meeting Ledger** — Structured meeting records with decisions, action items, attendees, topics
+- **Feedback Loop** — Confidence scoring (+0.15/-0.2), importance adjustment, auto-delete on 3x negative feedback
 - **Graph Visualization** — Interactive entity relationship explorer with dark theme, search, click-to-inspect (vis-network)
 
 ### Intelligence Layer
 
-- **Temporal Resolution** — 28 Vietnamese+English date patterns resolve "hôm nay/yesterday" → ISO dates before storing
-- **Pronoun Resolution** — "anh ấy/he/she" → named entity from graph context, LLM-based fallback
+- **Temporal Resolution** — 28 Vietnamese+English date patterns resolve "hom nay/yesterday" to ISO dates before storing
+- **Pronoun Resolution** — "anh ay/he/she" to named entity from graph context, LLM-based fallback
 - **Fusion Formatter** — Group recall results by type `[preference]`/`[fact]`/`[lesson]` for structured LLM context
 - **Memory Consolidation** — Jaccard clustering + LLM summarization reduces redundancy
+
+### Multi-Agent & Federated Knowledge
+
+- **Agent Support** — Claude Code, OpenClaw, Cursor, any MCP-compatible agent or IDE
+- **Session Capture** — Real-time JSONL session watchers for OpenClaw + Claude Code (inotify/watchdog)
+- **Federated Search** — Query mem0, LightRAG, Graphiti, custom REST/File/Postgres/MCP providers in parallel
+- **Auto-Discovery** — Scans local ports, file paths, and MCP configs (`~/.claude/`, `~/.cursor/`) to find providers
+- **Provider Adapters** — REST (with JWT auto-login), File (glob patterns), PostgreSQL (custom SQL), MCP (stdio)
 
 ### Enterprise
 
@@ -35,7 +51,7 @@ Dual-memory AI system combining episodic (vector) + semantic (graph) memory with
 - **Caching** — Redis-backed result caching with per-endpoint TTLs
 - **Rate Limiting** — Sliding-window per-tenant limits, `fail_open` option
 - **Audit Trail** — Structured before/after JSONL log for every episodic mutation
-- **Resource Tiers** — 4-tier LLM degradation (FULL → STANDARD → BASIC → READONLY), 60s auto-recovery
+- **Resource Tiers** — 4-tier LLM degradation (FULL > STANDARD > BASIC > READONLY), 60s auto-recovery
 - **Data Constitution** — 3-law LLM governance (namespace isolation, no fabrication, audit rights), SHA-256 tamper detection
 - **Consolidation Scheduler** — Asyncio background tasks (cleanup daily, consolidate 6h, decay daily), tier-aware
 - **Key Rotation** — Failover/round-robin for embedding API keys (GEMINI_API_KEY + GEMINI_API_KEY_FALLBACK)
@@ -50,19 +66,37 @@ Dual-memory AI system combining episodic (vector) + semantic (graph) memory with
 
 ```mermaid
 flowchart TD
-    CLI["CLI (Typer)"]
-    MCP["MCP (stdio)"]
-    HTTP["HTTP API /api/v1/"]
-    WS["WebSocket /ws"]
+    subgraph Agents["Agents & IDEs"]
+        CC["Claude Code"]
+        OC["OpenClaw"]
+        CU["Cursor"]
+        ANY["Any MCP Client"]
+    end
 
+    subgraph Interfaces
+        CLI["CLI (Typer)"]
+        MCP["MCP (stdio)"]
+        HTTP["HTTP API /api/v1/"]
+        WS["WebSocket /ws"]
+    end
+
+    CC & OC & CU & ANY --> MCP
     CLI & MCP & HTTP & WS --> Auth["Auth Middleware\n(JWT + RBAC, optional)"]
     Auth --> Tenant["TenantContext (ContextVar)"]
-    Tenant --> Recall["Recall Pipeline\n(decision → resolve → search → feedback)"]
-    Recall --> Episodic["EpisodicStore\n(ChromaDB)"]
+    Tenant --> Recall["Recall Pipeline\n(decision > resolve > search > feedback)"]
+    Recall --> Episodic["EpisodicStore\n(Qdrant)"]
     Recall --> Semantic["SemanticGraph\n(NetworkX + SQLite/PG)"]
+    Recall --> Fed["Federated Providers"]
     Episodic & Semantic --> Reasoning["Reasoning Engine\n(Gemini via litellm)"]
     Episodic --> Cache["Redis Cache (optional)"]
     WS --> EventBus["Event Bus\n(push events)"]
+
+    subgraph Fed["Federated Knowledge"]
+        M0["mem0"]
+        LR["LightRAG"]
+        GR["Graphiti"]
+        REST["REST / File / PG / MCP"]
+    end
 ```
 
 ---
@@ -70,69 +104,123 @@ flowchart TD
 ## Quick Start
 
 ```bash
-# Install from source
+# Install from PyPI
+pip install engram-mem
+
+# Or from source
 git clone https://github.com/docaohieu2808/Engram-Mem.git
-cd engram
-pip install -e .
+cd engram && pip install -e .
 
-# Optional: dev dependencies
-pip install -e ".[dev]"
+# Initialize config
+engram init
 
-# Optional: OpenTelemetry support
-pip install -e ".[telemetry]"
-```
-
-**Requirements:** Python 3.11+
-
-**Optional:** `GEMINI_API_KEY` for LLM reasoning and embeddings. Basic storage works without it.
-
-### CLI Usage
-
-```bash
+# Set API key
 export GEMINI_API_KEY="your-key"
+
+# Start daemon (background HTTP server + watcher)
+engram start
 
 # Store a memory
 engram remember "Deployed v2.1 to production at 14:00 - caused 503 spike"
 
-# Retrieve similar memories
+# Search memories
 engram recall "production incidents"
+
+# Browse all data (episodic + semantic)
+engram dump
 
 # Reason across all memory
 engram think "What deployment issues have we had?"
-
-# Add knowledge graph entities
-engram add node "PostgreSQL" --type Technology
-engram add edge "Service:API" "Technology:PostgreSQL" --relation uses
-
-# Start HTTP API server
-engram serve
 ```
 
-### Python SDK
+**Requirements:** Python 3.11+, `GEMINI_API_KEY` for LLM reasoning and embeddings. Basic storage works without it.
 
-```python
-from engram import EngramClient
+---
 
-async with EngramClient(namespace="my-agent") as client:
-    # Auto-recalls relevant context before LLM call,
-    # auto-extracts facts from response in the background
-    response = await client.chat([
-        {"role": "user", "content": "Deploy to production"}
-    ])
+## Integrations
 
-# Explicit operations
-await client.remember("No deploys on Fridays", memory_type="decision", priority=8)
-results = await client.recall("deployment policy", limit=5)
-answer = await client.think("What are our deployment rules?")
+### Claude Code (MCP)
+
+Add to `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "engram": {
+      "command": "engram-mcp",
+      "env": { "GEMINI_API_KEY": "your-key" }
+    }
+  }
+}
 ```
 
-### HTTP API Usage
+### Cursor (MCP)
+
+Add to Cursor's MCP settings — engram auto-discovers Cursor's config at `~/.cursor/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "engram": {
+      "command": "engram-mcp",
+      "env": { "GEMINI_API_KEY": "your-key" }
+    }
+  }
+}
+```
+
+### OpenClaw
+
+Install the engram skill, then enable session watcher in `~/.engram/config.yaml`:
+
+```yaml
+capture:
+  openclaw:
+    enabled: true
+    sessions_dir: ~/.openclaw/workspace/sessions
+```
+
+### Federated Knowledge Providers
+
+Engram auto-discovers and federates with external memory systems. Supported providers:
+
+| Provider | Type | Auto-Discovery |
+|----------|------|----------------|
+| **mem0** | REST | Port 8080, `/v1/memories` |
+| **LightRAG** | REST | Port 9520, `/query` |
+| **Graphiti** | REST | Port 8000, `/search` |
+| **OpenClaw** | File | `~/.openclaw/workspace/memory/*.md` |
+| **Custom REST** | REST | Manual config |
+| **PostgreSQL** | SQL | Manual config |
+| **MCP servers** | MCP | Scans `~/.claude/settings.json`, `~/.cursor/settings.json` |
+
+```yaml
+# Auto-discovery (enabled by default)
+discovery:
+  local: true
+  hosts: ["10.10.0.2"]  # additional hosts to scan
+
+# Or manual provider config
+providers:
+  - name: my-mem0
+    type: rest
+    url: http://localhost:8080
+    search_endpoint: /v1/memories/search
+    search_method: POST
+    search_body: '{"query": "{query}", "limit": {limit}}'
+    result_path: "results[].memory"
+```
+
+### HTTP API
 
 ```bash
+# Start server
+engram serve --port 8765
+
 # Store memory
 curl -X POST http://localhost:8765/api/v1/remember \
   -H "Content-Type: application/json" \
-  -d '{"content": "Deployed v1.0 to production", "memory_type": "fact", "priority": 8}'
+  -d '{"content": "Deployed v1.0", "memory_type": "fact", "priority": 8}'
 
 # Search
 curl "http://localhost:8765/api/v1/recall?query=deployment&limit=5"
@@ -141,179 +229,12 @@ curl "http://localhost:8765/api/v1/recall?query=deployment&limit=5"
 curl -X POST http://localhost:8765/api/v1/think \
   -H "Content-Type: application/json" \
   -d '{"question": "What deployment issues have we had?"}'
+
+# Meeting ledger
+curl -X POST http://localhost:8765/api/v1/meeting-ledger \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Sprint Review", "decisions": ["Ship v2"], "action_items": ["Update docs"]}'
 ```
-
----
-
-## Configuration
-
-**Config file:** `~/.engram/config.yaml` — Priority: CLI flags > env vars > YAML > defaults
-
-```yaml
-episodic:
-  provider: chromadb
-  path: ~/.engram/episodic
-  namespace: default
-
-embedding:
-  provider: gemini
-  model: gemini-embedding-001
-  # Key rotation: failover (default) or round-robin
-  key_strategy: failover  # GEMINI_API_KEY + GEMINI_API_KEY_FALLBACK
-
-semantic:
-  provider: sqlite          # or postgresql
-  path: ~/.engram/semantic.db
-  # For PostgreSQL:
-  # dsn: postgresql://user:pass@localhost/engram
-  # pool_min: 5
-  # pool_max: 20
-
-llm:
-  provider: gemini
-  model: gemini/gemini-2.0-flash
-  api_key: ${GEMINI_API_KEY}
-
-auth:
-  enabled: false            # Set to true for production
-  jwt_secret: "use-32+-chars-or-${ENV_VAR}"
-
-cache:
-  enabled: false            # Set to true with Redis
-  redis_url: redis://localhost:6379/0
-
-rate_limit:
-  enabled: false
-  requests_per_minute: 100
-  fail_open: true           # Allow through on Redis failure
-
-audit:
-  enabled: false
-  path: ~/.engram/audit.jsonl
-
-telemetry:
-  enabled: false            # Requires telemetry extra
-  otlp_endpoint: http://localhost:4317
-
-recall:
-  enabled: true
-  decision_skip_trivial: true
-  entity_resolution_enabled: true
-  parallel_search_enabled: true
-  feedback_enabled: true
-  auto_consolidate_threshold: 20
-  retrieval_audit_enabled: true
-
-ingestion:
-  auto_memory_enabled: true
-  guard_enabled: true
-
-feedback:
-  confidence_positive_delta: 0.15
-  confidence_negative_delta: 0.2
-  auto_delete_threshold: 3
-
-resolution:
-  temporal_enabled: true
-  pronoun_enabled: true
-
-fusion:
-  formatter_enabled: true
-
-graph:
-  visualization_enabled: true
-```
-
----
-
-## Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `GEMINI_API_KEY` | LLM + embeddings (primary key) |
-| `GEMINI_API_KEY_FALLBACK` | Secondary key for key rotation |
-| `GEMINI_KEY_STRATEGY` | `failover` (default) or `round-robin` |
-| `ENGRAM_AUTH_ENABLED` | Enable auth (`true`/`false`) |
-| `ENGRAM_AUTH_JWT_SECRET` | JWT signing key (32+ chars) |
-| `ENGRAM_SEMANTIC_PROVIDER` | `sqlite` or `postgresql` |
-| `ENGRAM_SEMANTIC_DSN` | PostgreSQL connection string |
-| `ENGRAM_CACHE_ENABLED` | Enable Redis caching |
-| `ENGRAM_CACHE_REDIS_URL` | Redis URL |
-| `ENGRAM_RATE_LIMIT_ENABLED` | Enable rate limiting |
-| `ENGRAM_RATE_LIMIT_REQUESTS_PER_MINUTE` | Default 60 |
-| `ENGRAM_AUDIT_ENABLED` | Enable audit logs |
-| `ENGRAM_TELEMETRY_ENABLED` | Enable OpenTelemetry |
-| `ENGRAM_RECALL_ENABLED` | Enable recall pipeline |
-| `ENGRAM_INGESTION_AUTO_MEMORY_ENABLED` | Detect save-worthy messages |
-| `ENGRAM_INGESTION_GUARD_ENABLED` | Block prompt injection |
-| `ENGRAM_FEEDBACK_ENABLED` | Enable feedback loop |
-| `ENGRAM_RESOLUTION_TEMPORAL_ENABLED` | Temporal entity resolution |
-| `ENGRAM_RESOLUTION_PRONOUN_ENABLED` | Pronoun resolution via LLM |
-| `ENGRAM_FUSION_FORMATTER_ENABLED` | Format recall by type |
-| `ENGRAM_GRAPH_VISUALIZATION_ENABLED` | Enable graph UI at /graph |
-
-**Note:** `${VARIABLE}` syntax in YAML is expanded at load time.
-
----
-
-## API Reference
-
-Start server: `engram serve [--host 0.0.0.0] [--port 8765]`
-
-All endpoints at `/api/v1/`; legacy routes redirect. Auth disabled by default.
-
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/health` | Liveness check (always available) |
-| `GET` | `/health/ready` | Readiness probe |
-| `POST` | `/api/v1/remember` | Store episodic memory |
-| `GET` | `/api/v1/recall` | Search memories (`?query=X&limit=5&offset=0`) |
-| `POST` | `/api/v1/think` | LLM reasoning across episodic + semantic |
-| `GET` | `/api/v1/query` | Graph search (`?keyword=X&node_type=Y&related_to=Z`) |
-| `POST` | `/api/v1/ingest` | Extract entities + store memories from messages |
-| `POST` | `/api/v1/feedback` | Record positive/negative feedback on a memory |
-| `GET` | `/api/v1/graph/data` | Graph data JSON for visualization |
-| `GET` | `/graph` | Interactive graph visualization UI |
-| `POST` | `/api/v1/cleanup` | Delete expired memories (admin only) |
-| `POST` | `/api/v1/summarize` | LLM synthesis of recent memories (admin only) |
-| `POST` | `/api/v1/auth/token` | Issue JWT (admin_secret required) |
-| `POST` | `/api/v1/backup` | Export all memory to JSON |
-| `POST` | `/api/v1/restore` | Import backup snapshot |
-
-**Responses:** All wrapped in `{data, meta}`. Errors: `{error: {code, message}, meta}`.
-
-**Auth:** When enabled, use `Authorization: Bearer <JWT>` or `X-API-Key: <key>`.
-
----
-
-## WebSocket API
-
-Real-time bidirectional communication. Connect via `ws://host:8765/ws?token=JWT` (token optional when auth disabled).
-
-**Commands (client to server):**
-
-| Command | Payload |
-|---------|---------|
-| `remember` | `{"content": "...", "priority": 7}` |
-| `recall` | `{"query": "...", "limit": 5}` |
-| `think` | `{"question": "..."}` |
-| `feedback` | `{"memory_id": "abc123", "feedback": "positive"}` |
-| `query` | `{"keyword": "PostgreSQL"}` |
-| `ingest` | `{"messages": [...]}` |
-| `status` | `{}` |
-
-**Example:**
-```json
-{"id": "corr-1", "type": "remember", "payload": {"content": "User prefers dark mode", "priority": 7}}
-{"id": "corr-1", "type": "response", "status": "ok", "data": {"id": "mem-xyz"}}
-```
-
-**Push Events (server to all agents in same tenant):**
-```json
-{"type": "event", "event": "memory_created", "tenant_id": "default", "data": {"id": "mem-xyz"}}
-```
-
-Events: `memory_created`, `memory_updated`, `memory_deleted`, `feedback_recorded`
 
 ---
 
@@ -323,14 +244,18 @@ Events: `memory_created`, `memory_updated`, `memory_deleted`, `feedback_recorded
 
 ```bash
 # Store with options
-engram remember <content> [--type fact|decision|preference|todo|error|context|workflow]
+engram remember <content> [--type fact|decision|preference|todo|error|context|workflow|meeting_ledger]
                           [--priority 1-10] [--tags tag1,tag2] [--expires 2h|1d|7d]
+                          [--topic-key unique-key]
 
 # Search
-engram recall <query> [--limit 5] [--type <type>] [--tags tag1,tag2] [--namespace <ns>]
+engram recall <query> [--limit 5] [--type <type>] [--tags tag1,tag2]
               [--resolve-entities] [--resolve-temporal]
 
-# Reason
+# Smart query (auto-routes to recall or think)
+engram ask <question>
+
+# Reason across all memory
 engram think <question>
 engram summarize [--count 20] [--save]
 ```
@@ -342,187 +267,226 @@ engram add node <name> --type <NodeType>
 engram add edge <from_key> <to_key> --relation <relation>
 engram remove node <key>
 engram query [<keyword>] [--type <NodeType>] [--related-to <name>] [--format table|json]
-engram graph [--search <keyword>]       # Open interactive graph visualization
+engram autolink-orphans [--apply] [--min-co-mentions 3]
+engram graph                          # Open interactive graph visualization
 ```
 
-### Intelligence & Pipeline
+### Browse & Export
 
 ```bash
-engram resolve <query> [--context "..."]      # Entity/temporal resolution
-engram feedback <id> [--positive|--negative]  # Record feedback on memory
-engram audit [--last N]                        # View retrieval audit log
-engram benchmark --questions file.json         # Run accuracy benchmarks
+engram status                         # Summary counts
+engram dump                           # Rich tables: all memories, nodes, edges
+engram dump --format json             # Full JSON export
+engram decay [--limit 20]             # Ebbinghaus decay report
 ```
 
 ### System
 
 ```bash
-engram status                          # Memory + graph stats
-engram serve [--host 127.0.0.1] [--port 8765]
-engram watch [--daemon]                # Watch inbox + start scheduler
-engram resource-status                 # Show resource tier (FULL/STANDARD/BASIC/READONLY)
-engram constitution-status             # Show 3-law governance + SHA-256 hash
-engram scheduler-status                # Show background task schedule + state
+engram init                           # Initialize config
+engram start                          # Start daemon (HTTP server + watcher)
+engram stop                           # Stop daemon
+engram serve [--host 0.0.0.0] [--port 8765]  # Foreground server
+engram watch [--daemon]               # Watch inbox + OpenClaw sessions
+engram health                         # Full system health check
+engram resource-status                # Resource tier (FULL/STANDARD/BASIC/READONLY)
+engram queue-status                   # Embedding queue status
+engram scheduler-status               # Background task schedule
+engram constitution-status            # 3-law governance + SHA-256 hash
 ```
 
 ### Maintenance
 
 ```bash
-engram cleanup                         # Delete expired memories
-engram ingest <file.json> [--dry-run]  # Ingest chat JSON
-engram backup                          # Export memory snapshot
-engram restore <file>                  # Import snapshot
+engram cleanup                        # Delete expired memories
+engram consolidate [--limit 50]       # LLM-driven memory consolidation
+engram ingest <file.json> [--dry-run] # Ingest chat JSON
+engram backup                         # Export memory snapshot
+engram restore <file>                 # Import snapshot
 engram config show / get <key> / set <key> <value>
+engram feedback <id> --positive|--negative
 ```
 
 ---
 
-## MCP Integration
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "engram": {
-      "command": "/path/to/.venv/bin/engram-mcp",
-      "env": {
-        "GEMINI_API_KEY": "your-key"
-      }
-    }
-  }
-}
-```
-
-**Available MCP Tools:**
+## MCP Tools
 
 | Tool | Description |
 |------|-------------|
 | `engram_remember` | Store memory with type, priority, tags, namespace |
 | `engram_recall` | Search episodic memories (compact format by default) |
-| `engram_resolve` | Entity/temporal resolution for query context |
-| `engram_feedback` | Record positive/negative feedback on memories |
 | `engram_think` | Reason across episodic + semantic memory via LLM |
-| `engram_summarize` | Summarize recent N memories via LLM |
-| `engram_cleanup` | Delete all expired memories |
 | `engram_status` | Show memory statistics |
 | `engram_get_memory` | Retrieve full memory content by ID or prefix |
 | `engram_timeline` | Chronological context around a memory |
 | `engram_add_entity` | Add entity node to knowledge graph |
 | `engram_add_relation` | Add relationship edge between entities |
 | `engram_query_graph` | Query knowledge graph |
-| `engram_get_graph_data` | Retrieve graph data for visualization |
 | `engram_ingest` | Dual ingest: extract entities + store memories |
+| `engram_meeting_ledger` | Record structured meeting (decisions, action items) |
+| `engram_feedback` | Record positive/negative feedback on memories |
+| `engram_auto_feedback` | Auto-detect feedback from conversation |
+| `engram_cleanup` | Delete all expired memories |
+| `engram_cleanup_dedup` | Deduplicate similar memories by cosine similarity |
+| `engram_summarize` | Summarize recent N memories via LLM |
 | `engram_session_start` | Begin new conversation session |
 | `engram_session_end` | End active session with optional summary |
 | `engram_session_summary` | Get summary of completed session |
 | `engram_session_context` | Retrieve memories from active session |
-
-**Claude Code Hooks:** Engram ships Stop + SessionEnd hooks that capture conversation turns automatically — no SDK integration needed.
-
----
-
-## Embeddings
-
-Only one embedding model is supported:
-
-| Mode | Model | Dimensions | Requires |
-|------|-------|-----------|---------|
-| Gemini (default) | `gemini-embedding-001` | 3072 | `GEMINI_API_KEY` |
-| Fallback | `all-MiniLM-L6-v2` (ChromaDB default) | 384 | nothing |
-
-Embedding dimensions must remain consistent within a collection. If you switch providers, reinitialize the episodic store or create a new collection.
-
-**Key rotation:** Set `GEMINI_API_KEY_FALLBACK` and `GEMINI_KEY_STRATEGY=round-robin` to distribute quota across multiple API keys.
+| `engram_ask` | Smart query — auto-routes to recall or think |
 
 ---
 
-## Benchmarks
+## Configuration
 
-Run `python tests/benchmark_performance.py --host 127.0.0.1 --port 8765` against a running server.
+**Config file:** `~/.engram/config.yaml` — Priority: CLI flags > env vars > YAML > defaults
 
-Sample results (local, SQLite backend, no Redis):
+```yaml
+episodic:
+  mode: embedded              # embedded (Qdrant in-process) or server
+  path: ~/.engram/qdrant
+  namespace: default
 
-| Operation | p50 | p95 | p99 | Notes |
-|-----------|-----|-----|-----|-------|
-| `GET /health` | 0.8ms | 1.2ms | 2.1ms | Always fast |
-| `POST /remember` | 415ms | 680ms | 920ms | Embedding API bound |
-| `GET /recall` | 1.3ms | 3.2ms | 5.8ms | Vector search |
-| `POST /think` | 5.6s | 7.2s | 9.4s | LLM bound |
+embedding:
+  provider: gemini
+  model: gemini-embedding-001
+  key_strategy: failover      # failover or round-robin
 
-Flags: `--quick` for a faster subset, `--concurrency N` for load testing.
+semantic:
+  provider: sqlite            # or postgresql
+  path: ~/.engram/semantic.db
+
+llm:
+  provider: gemini
+  model: gemini/gemini-2.0-flash
+  api_key: ${GEMINI_API_KEY}
+
+serve:
+  host: 127.0.0.1
+  port: 8765
+
+capture:
+  openclaw:
+    enabled: false
+    sessions_dir: ~/.openclaw/workspace/sessions
+  claude_code:
+    enabled: false
+    sessions_dir: ~/.claude/projects
+
+auth:
+  enabled: false
+cache:
+  enabled: false
+  redis_url: redis://localhost:6379/0
+rate_limit:
+  enabled: false
+audit:
+  enabled: false
+  path: ~/.engram/audit.jsonl
+```
+
+---
+
+## API Reference
+
+Start server: `engram serve [--host 0.0.0.0] [--port 8765]`
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/health` | Liveness check |
+| `GET` | `/health/ready` | Readiness probe |
+| `POST` | `/api/v1/remember` | Store episodic memory |
+| `GET` | `/api/v1/recall` | Search memories (`?query=X&limit=5&offset=0`) |
+| `POST` | `/api/v1/think` | LLM reasoning across episodic + semantic |
+| `GET` | `/api/v1/query` | Graph search (`?keyword=X&node_type=Y&related_to=Z`) |
+| `GET` | `/api/v1/memories` | List/filter memories with pagination |
+| `GET` | `/api/v1/memories/export` | Export memories as JSON |
+| `POST` | `/api/v1/meeting-ledger` | Record structured meeting |
+| `POST` | `/api/v1/ingest` | Extract entities + store memories |
+| `POST` | `/api/v1/feedback` | Record feedback on a memory |
+| `GET` | `/api/v1/graph/data` | Graph data JSON for visualization |
+| `GET` | `/graph` | Interactive graph visualization UI |
+| `POST` | `/api/v1/cleanup` | Delete expired memories (admin) |
+| `POST` | `/api/v1/cleanup/dedup` | Deduplicate memories (admin) |
+| `POST` | `/api/v1/summarize` | LLM summary of recent memories (admin) |
+| `GET` | `/api/v1/status` | Memory statistics |
+
+---
+
+## WebSocket API
+
+Connect via `ws://host:8765/ws?token=JWT` (token optional when auth disabled).
+
+**Commands:**
+
+| Command | Payload |
+|---------|---------|
+| `remember` | `{"content": "...", "priority": 7}` |
+| `recall` | `{"query": "...", "limit": 5}` |
+| `think` | `{"question": "..."}` |
+| `feedback` | `{"memory_id": "abc123", "feedback": "positive"}` |
+| `query` | `{"keyword": "PostgreSQL"}` |
+| `ingest` | `{"messages": [...]}` |
+| `status` | `{}` |
+
+**Push Events:** `memory_created`, `memory_updated`, `memory_deleted`, `feedback_recorded`
+
+---
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `GEMINI_API_KEY` | LLM + embeddings (primary key) |
+| `GEMINI_API_KEY_FALLBACK` | Secondary key for key rotation |
+| `ENGRAM_NAMESPACE` | Memory namespace isolation |
+| `ENGRAM_AUTH_ENABLED` | Enable JWT auth |
+| `ENGRAM_SEMANTIC_PROVIDER` | `sqlite` or `postgresql` |
+| `ENGRAM_CACHE_ENABLED` | Enable Redis caching |
+| `ENGRAM_AUDIT_ENABLED` | Enable audit logs |
+| `ENGRAM_TELEMETRY_ENABLED` | Enable OpenTelemetry |
 
 ---
 
 ## Docker
 
-### Quick Start
-
 ```bash
+# Quick start
 docker build -t engram:latest .
 docker run -e GEMINI_API_KEY="your-key" -p 8765:8765 engram:latest
+
+# Production with PostgreSQL + Redis
+ENGRAM_AUTH_ENABLED=true \
+ENGRAM_SEMANTIC_PROVIDER=postgresql \
+ENGRAM_SEMANTIC_DSN=postgresql://user:pass@postgres:5432/engram \
+ENGRAM_CACHE_ENABLED=true \
+ENGRAM_CACHE_REDIS_URL=redis://redis:6379/0 \
+docker compose up
 ```
-
-### Production (PostgreSQL + Redis)
-
-```bash
-# Production env vars
-ENGRAM_AUTH_ENABLED=true
-ENGRAM_AUTH_JWT_SECRET=$(openssl rand -hex 32)
-ENGRAM_SEMANTIC_PROVIDER=postgresql
-ENGRAM_SEMANTIC_DSN=postgresql://user:pass@postgres:5432/engram
-ENGRAM_CACHE_ENABLED=true
-ENGRAM_CACHE_REDIS_URL=redis://redis:6379/0
-ENGRAM_AUDIT_ENABLED=true
-GEMINI_API_KEY=your-key
-GEMINI_API_KEY_FALLBACK=your-fallback-key
-GEMINI_KEY_STRATEGY=round-robin
-```
-
-See [deployment-guide.md](docs/deployment-guide.md) for Docker Compose with PostgreSQL, Redis, and OpenTelemetry.
 
 ---
 
-## Test Coverage
+## Testing
 
 ```bash
-# Run all tests
-pytest tests/ -v
-
-# With coverage
-pytest tests/ --cov=src/engram --cov-report=html
-
-# Specific suites
-pytest tests/ -k "recall or resolution or feedback" -v
-pytest tests/ -k "websocket" -v
+pytest tests/ -v                      # All tests
+pytest tests/ --cov=src/engram        # With coverage
+pytest tests/ -k "recall or feedback" # Specific suites
 ```
 
-- **894+ tests** across all modules
-- **61%+ code coverage** (core features 80%+)
-- **CI/CD:** GitHub Actions runs full suite on every PR and commit
+894+ tests, 61%+ code coverage, CI/CD via GitHub Actions.
 
 ---
 
 ## Documentation
 
-- **[Project Overview & PDR](docs/project-overview-pdr.md)** — Features, requirements, config reference
-- **[System Architecture](docs/system-architecture.md)** — Design, data flow, deployment patterns
-- **[Code Standards](docs/code-standards.md)** — Conventions, patterns, best practices
-- **[Deployment Guide](docs/deployment-guide.md)** — Docker, Kubernetes, environment variables, auth setup
-- **[Codebase Summary](docs/codebase-summary.md)** — Module inventory, metrics
-- **[Project Roadmap](docs/project-roadmap.md)** — Completed phases and future work
-- **[Changelog](docs/project-changelog.md)** — Full version history
-
----
-
-## Contributing
-
-Pull requests welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-**Before submitting:**
-- Run `ruff check src/` for linting
-- Run `pytest tests/` — do not ignore failing tests
-- Do not commit `.env` files or API keys
+- [Project Overview & PDR](docs/project-overview-pdr.md)
+- [System Architecture](docs/system-architecture.md)
+- [Code Standards](docs/code-standards.md)
+- [Deployment Guide](docs/deployment-guide.md)
+- [Codebase Summary](docs/codebase-summary.md)
+- [Project Roadmap](docs/project-roadmap.md)
+- [Changelog](docs/project-changelog.md)
 
 ---
 

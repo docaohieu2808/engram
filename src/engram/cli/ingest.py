@@ -69,28 +69,25 @@ async def do_ingest_messages(
 ) -> IngestResult:
     """Ingest messages (called by watcher/server).
 
-    Episodic storage runs first (no LLM needed).
-    Entity extraction runs separately — failures don't block memory capture.
+    Only saves messages that have entities extracted (entity-gated ingestion).
+    Messages without any entity/node/edge are noise and get skipped.
     Uses _ingest_lock to prevent concurrent asyncpg pool contention.
     """
     episodic = get_episodic()
-
-    # Step 1: Store raw messages into episodic memory immediately (no LLM)
     episodic_count = 0
-    for msg in messages:
-        content = msg.get("content", "")
-        if content:
-            await episodic.remember(content, source=source)
-            episodic_count += 1
-
-    # Step 2: Entity extraction + semantic graph (best-effort, LLM-dependent)
     semantic_nodes = 0
     semantic_edges = 0
+
     try:
         extractor = get_extractor()
         graph = get_graph()
         result = await extractor.extract_entities(messages)
-        # Serialize graph writes to prevent asyncpg "another operation in progress"
+
+        if not result.nodes and not result.edges:
+            logger.debug("No entities extracted — skipping all %d messages", len(messages))
+            return IngestResult()
+
+        # Store nodes and edges into semantic graph
         async with _ingest_lock:
             if result.nodes:
                 await graph.add_nodes_batch(result.nodes)
@@ -99,31 +96,34 @@ async def do_ingest_messages(
         semantic_nodes = len(result.nodes)
         semantic_edges = len(result.edges)
 
-        # Enrich episodic memories with entity tags
+        # Build full entity name list (extracted + existing graph)
         entity_names = [n.name for n in result.nodes]
         try:
             async with _ingest_lock:
                 all_nodes = await graph.get_nodes()
-            known_names = [n.name for n in all_nodes]
             seen = {n.casefold() for n in entity_names}
-            for kn in known_names:
+            for kn in [n.name for n in all_nodes]:
                 if kn.casefold() not in seen:
                     entity_names.append(kn)
                     seen.add(kn.casefold())
         except Exception:
             pass  # Fall back to LLM-only names
-        if entity_names:
-            for i, msg in enumerate(messages):
-                content = msg.get("content", "")
-                if content:
-                    ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
-                    per_content = extractor.filter_entities_for_content(
-                        content, entity_names, context_messages=ctx,
-                    )
-                    if per_content:
-                        await episodic.remember(content, entities=per_content)
+
+        # Only save messages that mention at least one known entity
+        for i, msg in enumerate(messages):
+            content = msg.get("content", "")
+            if not content:
+                continue
+            ctx = messages[max(0, i - 2): min(len(messages), i + 3)]
+            per_content = extractor.filter_entities_for_content(
+                content, entity_names, context_messages=ctx,
+            )
+            if per_content:
+                await episodic.remember(content, entities=per_content, source=source)
+                episodic_count += 1
+
     except Exception as e:
-        logger.warning("Entity extraction skipped (messages already stored): %s", e)
+        logger.warning("Entity extraction failed — no messages stored: %s", e)
 
     return IngestResult(
         episodic_count=episodic_count,
