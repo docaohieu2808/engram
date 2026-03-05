@@ -13,7 +13,6 @@ from engram.setup.federation.llamacloud_provider import LlamaCloudProvider
 from engram.setup.federation.mem0_provider import Mem0Provider
 from engram.setup.federation.milvus_provider import MilvusProvider
 from engram.setup.federation.pinecone_provider import PineconeProvider
-from engram.setup.federation.qdrant_cloud_provider import QdrantCloudProvider
 from engram.setup.federation.weaviate_provider import WeaviateProvider
 from engram.setup.federation.zep_provider import ZepProvider
 
@@ -31,7 +30,6 @@ _ALL_PROVIDERS: list[type[FederationProvider]] = [
     PineconeProvider,
     WeaviateProvider,
     ChromaProvider,
-    QdrantCloudProvider,
     MilvusProvider,
 ]
 
