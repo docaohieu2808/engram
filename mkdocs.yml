@@ -12,17 +12,18 @@ theme:
   name: material
   palette:
     - scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
     - scheme: default
-      primary: deep purple
-      accent: amber
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
+  custom_dir: mkdocs_docs/overrides
   icon:
     logo: material/memory
     repo: fontawesome/brands/github
@@ -63,6 +64,9 @@ markdown_extensions:
   - md_in_html
   - toc:
       permalink: true
+
+extra_css:
+  - stylesheets/extra.css
 
 extra:
   social:

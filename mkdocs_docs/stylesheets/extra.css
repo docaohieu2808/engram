@@ -1,0 +1,45 @@
+/* Engram brand colors — matches WebUI design tokens */
+
+/* Dark theme (slate) */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #ff9830;
+  --md-primary-fg-color--light: #ffad5c;
+  --md-primary-fg-color--dark: #ff7a00;
+  --md-accent-fg-color: #ff9830;
+  --md-accent-fg-color--transparent: rgba(255,152,48,.12);
+  --md-default-bg-color: #0a0b0f;
+  --md-default-bg-color--light: #12141a;
+  --md-default-bg-color--lighter: #1a1d25;
+  --md-typeset-a-color: #ff9830;
+}
+
+/* Light theme */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #e07800;
+  --md-primary-fg-color--light: #ff9830;
+  --md-primary-fg-color--dark: #c06800;
+  --md-accent-fg-color: #e07800;
+  --md-accent-fg-color--transparent: rgba(224,120,0,.10);
+  --md-typeset-a-color: #e07800;
+}
+
+/* Header bar */
+.md-header {
+  background-color: #12141a;
+}
+[data-md-color-scheme="default"] .md-header {
+  background-color: #e07800;
+}
+
+/* Nav tabs */
+.md-tabs {
+  background-color: #0a0b0f;
+}
+[data-md-color-scheme="default"] .md-tabs {
+  background-color: #c06800;
+}
+
+/* Hero tagline on home page */
+.md-typeset .md-content__inner > h1 {
+  color: var(--md-primary-fg-color);
+}
