@@ -143,11 +143,24 @@ class HttpGraphProxy:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(f"{self._base}/graph/nodes", json=payload)
 
+    async def add_nodes_batch(self, nodes) -> None:
+        for n in nodes:
+            name = n.name if hasattr(n, "name") else n.get("name", "")
+            ntype = n.type if hasattr(n, "type") else n.get("type", "")
+            await self.add_node(name, ntype)
+
     async def add_edge(self, from_node: str, to_node: str, relation: str, **kwargs) -> None:
         import httpx
         payload = {"from_node": from_node, "to_node": to_node, "relation": relation, **kwargs}
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(f"{self._base}/graph/edges", json=payload)
+
+    async def add_edges_batch(self, edges) -> None:
+        for e in edges:
+            fn = e.from_node if hasattr(e, "from_node") else e.get("from_node", "")
+            tn = e.to_node if hasattr(e, "to_node") else e.get("to_node", "")
+            rel = e.relation if hasattr(e, "relation") else e.get("relation", "")
+            await self.add_edge(fn, tn, rel)
 
     async def stats(self) -> dict:
         import httpx
