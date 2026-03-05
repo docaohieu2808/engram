@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "engram-mem"
-version = "0.4.0"
+version = "0.5.0"
 description = "Memory traces for AI agents - Think like human"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -68,6 +68,9 @@ mcp = "engram.providers.mcp_adapter:McpAdapter"
 Homepage = "https://github.com/docaohieu2808/Engram-Mem"
 Repository = "https://github.com/docaohieu2808/Engram-Mem"
 Issues = "https://github.com/docaohieu2808/Engram-Mem/issues"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["engram-env/", "plans/", ".env", "force-ipv4.py"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engram"]
