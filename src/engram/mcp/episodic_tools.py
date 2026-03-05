@@ -302,6 +302,67 @@ def register(mcp, get_episodic, get_graph, get_config, get_providers=None) -> No
         )
 
     @mcp.tool()
+    async def engram_meeting_ledger(
+        title: str,
+        decisions: list[str] | None = None,
+        action_items: list[str] | None = None,
+        attendees: list[str] | None = None,
+        topics: list[str] | None = None,
+        summary: str = "",
+        namespace: str | None = None,
+    ) -> str:
+        """Record a meeting ledger — structured record of decisions, action items, and attendees.
+
+        Stores as a meeting_ledger memory with structured metadata for later retrieval.
+
+        Args:
+            title: Meeting title or subject
+            decisions: List of decisions made during the meeting
+            action_items: List of action items with assignees
+            attendees: List of attendees/participants
+            topics: List of topics discussed
+            summary: Brief summary of the meeting
+            namespace: Override config namespace for this operation
+        """
+        from engram.models import MeetingLedger
+        import json as _json
+        ledger = MeetingLedger(
+            title=title,
+            decisions=decisions or [],
+            action_items=action_items or [],
+            attendees=attendees or [],
+            topics=topics or [],
+            summary=summary,
+        )
+        content = f"Meeting: {title}"
+        if summary:
+            content += f"\nSummary: {summary}"
+        if decisions:
+            content += f"\nDecisions: {'; '.join(decisions)}"
+        if action_items:
+            content += f"\nAction Items: {'; '.join(action_items)}"
+        if attendees:
+            content += f"\nAttendees: {', '.join(attendees)}"
+        if topics:
+            content += f"\nTopics: {', '.join(topics)}"
+
+        store = _get_store(get_episodic, get_config, namespace)
+        mem_id = await store.remember(
+            content,
+            memory_type=MemoryType.MEETING_LEDGER,
+            priority=7,
+            tags=["meeting-ledger"],
+            entities=attendees or [],
+            metadata={"ledger": _json.loads(ledger.model_dump_json())},
+        )
+        items_count = len(action_items or [])
+        decisions_count = len(decisions or [])
+        return (
+            f"Meeting ledger saved (id={mem_id[:8]}): "
+            f"{decisions_count} decisions, {items_count} action items"
+        )
+
+    @mcp.tool()
     async def engram_ingest(messages: Union[list[dict], str]) -> str:
         """Dual ingest: extract entities to graph AND remember context to vector.
 

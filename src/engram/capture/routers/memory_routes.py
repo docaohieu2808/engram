@@ -64,7 +64,37 @@ class FeedbackRequest(BaseModel):
     feedback: str = Field(..., pattern="^(positive|negative)$")
 
 
+class MeetingLedgerRequest(BaseModel):
+    title: str
+    decisions: list[str] = []
+    action_items: list[str] = []
+    attendees: list[str] = []
+    topics: list[str] = []
+    summary: str = ""
+
+
 # --- Route handlers ---
+
+
+@router.post("/meeting-ledger")
+async def meeting_ledger(req: MeetingLedgerRequest, request: Request, auth: AuthContext = Depends(get_auth_context)):
+    state = request.app.state
+    ep = resolve_episodic(state, auth)
+    content = f"Meeting: {req.title}"
+    if req.summary:
+        content += f"\nSummary: {req.summary}"
+    if req.decisions:
+        content += f"\nDecisions: {'; '.join(req.decisions)}"
+    if req.action_items:
+        content += f"\nAction Items: {'; '.join(req.action_items)}"
+    if req.attendees:
+        content += f"\nAttendees: {', '.join(req.attendees)}"
+    mem_id = await ep.remember(
+        content, memory_type="meeting_ledger", priority=7,
+        entities=req.attendees, tags=["meeting-ledger"],
+        metadata={"ledger": req.model_dump()},
+    )
+    return {"status": "ok", "id": mem_id, "decisions": len(req.decisions), "action_items": len(req.action_items)}
 
 
 @router.post("/remember")
