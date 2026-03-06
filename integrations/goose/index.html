@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://docaohieu2808.github.io/Engram-Mem/integrations/cursor/">
+        <link rel="canonical" href="https://docaohieu2808.github.io/Engram-Mem/integrations/goose/">
       
       
-        <link rel="prev" href="../codex/">
+        <link rel="prev" href="../cursor/">
       
       
-        <link rel="next" href="../goose/">
+        <link rel="next" href="../openclaw/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Cursor - engram</title>
+        <title>Goose - engram</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#cursor" class="md-skip">
+        <a href="#goose-block" class="md-skip">
           Skip to content
         </a>
       
@@ -114,7 +114,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Cursor
+              Goose
             
           </span>
         </div>
@@ -726,6 +726,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../cursor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cursor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -745,7 +773,7 @@
   <span class="md-ellipsis">
     
   
-    Cursor
+    Goose
   
 
     
@@ -763,7 +791,7 @@
   <span class="md-ellipsis">
     
   
-    Cursor
+    Goose
   
 
     
@@ -800,10 +828,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#auto-setup" class="md-nav__link">
+  <a href="#usage" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Auto Setup
+        Usage
       
     </span>
   </a>
@@ -811,10 +839,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#auto-discovery" class="md-nav__link">
+  <a href="#available-tools" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Auto-Discovery
+        Available Tools
       
     </span>
   </a>
@@ -822,32 +850,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#verify" class="md-nav__link">
+  <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Verify
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#namespace-isolation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Namespace Isolation
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#available-mcp-tools" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Available MCP Tools
+        Troubleshooting
       
     </span>
   </a>
@@ -858,34 +864,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../goose/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Goose
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -1635,44 +1613,42 @@
 
 
 
-<h1 id="cursor">Cursor<a class="headerlink" href="#cursor" title="Permanent link">&para;</a></h1>
-<p>Engram integrates with Cursor via the MCP (Model Context Protocol) stdio transport.</p>
+<h1 id="goose-block">Goose (Block)<a class="headerlink" href="#goose-block" title="Permanent link">&para;</a></h1>
+<p><a href="https://github.com/block/goose">Goose</a> is Block's open-source AI agent with built-in MCP support. It runs as a CLI or desktop app.</p>
 <h2 id="setup">Setup<a class="headerlink" href="#setup" title="Permanent link">&para;</a></h2>
-<p>Add to Cursor's MCP settings (typically <code>~/.cursor/settings.json</code> or via the Cursor UI under Settings &gt; MCP):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">&quot;engram&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;engram-mcp&quot;</span><span class="p">,</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;GEMINI_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;your-key&quot;</span><span class="w"> </span><span class="p">}</span>
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Install Goose</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://github.com/block/goose/releases/download/stable/download_cli.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Add engram extension to ~/.config/goose/config.yaml</span>
 </code></pre></div>
-<h2 id="auto-setup">Auto Setup<a class="headerlink" href="#auto-setup" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>engram<span class="w"> </span>setup
+<p>Add the following to your <code>~/.config/goose/config.yaml</code> under <code>extensions:</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">extensions</span><span class="p">:</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">engram</span><span class="p">:</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">engram</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AI agent brain with dual memory (episodic + semantic)</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">display_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Engram Memory</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nt">bundled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">cmd</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">engram-mcp</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">env_keys</span><span class="p">:</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">GEMINI_API_KEY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-key</span>
 </code></pre></div>
-<p>The wizard auto-discovers Cursor's config at <code>~/.cursor/settings.json</code> and patches it automatically.</p>
-<h2 id="auto-discovery">Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
-<p>Engram also scans <code>~/.cursor/settings.json</code> during federation auto-discovery to find MCP providers you have configured in Cursor.</p>
-<h2 id="verify">Verify<a class="headerlink" href="#verify" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>engram<span class="w"> </span>setup<span class="w"> </span>--status
+<h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
+<p>Start a Goose session — engram tools are available automatically:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>goose<span class="w"> </span>session
 </code></pre></div>
-<h2 id="namespace-isolation">Namespace Isolation<a class="headerlink" href="#namespace-isolation" title="Permanent link">&para;</a></h2>
-<p>Use per-project namespaces to keep memories scoped to each workspace:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">&quot;engram&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;engram-mcp&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">        </span><span class="nt">&quot;GEMINI_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;your-key&quot;</span><span class="p">,</span>
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">        </span><span class="nt">&quot;ENGRAM_NAMESPACE&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my-project&quot;</span>
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="p">}</span>
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="p">}</span>
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="p">}</span>
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="p">}</span>
+<p>Goose will discover engram's 21 MCP tools and use them when relevant.</p>
+<h2 id="available-tools">Available Tools<a class="headerlink" href="#available-tools" title="Permanent link">&para;</a></h2>
+<p>All 21 engram MCP tools are available. See <a href="../../reference/mcp-tools/">MCP Tools Reference</a> for the full list.</p>
+<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Check Goose config</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>goose<span class="w"> </span>info
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Test engram-mcp binary directly</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;initialize&quot;,&quot;params&quot;:{&quot;protocolVersion&quot;:&quot;2024-11-05&quot;,&quot;capabilities&quot;:{},&quot;clientInfo&quot;:{&quot;name&quot;:&quot;test&quot;,&quot;version&quot;:&quot;1.0&quot;}}}&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>engram-mcp
 </code></pre></div>
-<h2 id="available-mcp-tools">Available MCP Tools<a class="headerlink" href="#available-mcp-tools" title="Permanent link">&para;</a></h2>
-<p>All <a href="../../reference/mcp-tools/">MCP tools</a> are available once connected — <code>engram_remember</code>, <code>engram_recall</code>, <code>engram_think</code>, and more.</p>
 
 
 

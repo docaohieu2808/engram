@@ -2,98 +2,106 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/architecture/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/architecture/entity-gated-ingestion/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/architecture/episodic-memory/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/architecture/recall-pipeline/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/architecture/semantic-graph/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/deployment/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/deployment/docker/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/development/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/development/changelog/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/development/testing/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/getting-started/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/getting-started/configuration/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/getting-started/installation/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/integrations/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/integrations/claude-code/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
+    </url>
+    <url>
+         <loc>https://docaohieu2808.github.io/Engram-Mem/integrations/codex/</loc>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/integrations/cursor/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/integrations/federated-providers/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
+    </url>
+    <url>
+         <loc>https://docaohieu2808.github.io/Engram-Mem/integrations/goose/</loc>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/integrations/openclaw/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/reference/cli/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/reference/environment-variables/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/reference/http-api/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/reference/mcp-tools/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
     <url>
          <loc>https://docaohieu2808.github.io/Engram-Mem/reference/websocket/</loc>
-         <lastmod>2026-03-05</lastmod>
+         <lastmod>2026-03-06</lastmod>
     </url>
 </urlset>
