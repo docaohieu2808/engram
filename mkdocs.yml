@@ -84,7 +84,9 @@ nav:
   - Integrations:
     - integrations/index.md
     - Claude Code: integrations/claude-code.md
+    - Codex CLI: integrations/codex.md
     - Cursor: integrations/cursor.md
+    - Goose: integrations/goose.md
     - OpenClaw: integrations/openclaw.md
     - Federated Providers: integrations/federated-providers.md
   - Reference:

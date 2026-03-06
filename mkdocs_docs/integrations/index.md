@@ -7,11 +7,12 @@ Engram works with any MCP-compatible AI agent or IDE. It also federates with ext
 | Agent | Protocol | Setup |
 |-------|----------|-------|
 | Claude Code | MCP (stdio) | [Guide](claude-code.md) |
+| Codex CLI (OpenAI) | MCP (stdio) | [Guide](codex.md) |
 | Cursor | MCP (stdio) | [Guide](cursor.md) |
+| Goose (Block) | MCP (stdio) | [Guide](goose.md) |
 | OpenClaw | MCP + Session Capture | [Guide](openclaw.md) |
 | Windsurf | MCP (stdio) | `engram setup` |
 | Cline | MCP (stdio) | `engram setup` |
-| Aider | MCP (stdio) | `engram setup` |
 | Any MCP client | MCP (stdio) | `command: engram-mcp` |
 
 ## Auto Setup
