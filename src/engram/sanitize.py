@@ -16,12 +16,12 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _PRIVATE_TAG_RE = re.compile(r"<private>.*?</private>", re.DOTALL | re.IGNORECASE)
 
 
-def sanitize_content(text: str, max_length: int = 10240) -> str:
+def sanitize_content(text: str, max_length: int = 65536) -> str:
     """Strip control characters and enforce maximum content length.
 
     Args:
         text: Raw input content.
-        max_length: Maximum allowed byte length (default 10240 = 10KB).
+        max_length: Maximum allowed byte length (default 65536 = 64KB).
 
     Returns:
         Sanitized string with control characters removed.

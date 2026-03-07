@@ -107,7 +107,7 @@ class LoggingConfig(BaseModel):
 
 class SecurityConfig(BaseModel):
     """Security configuration."""
-    max_content_length: int = 10240  # bytes; default 10KB
+    max_content_length: int = 65536  # bytes; default 64KB
 
 
 class AuthConfig(BaseModel):

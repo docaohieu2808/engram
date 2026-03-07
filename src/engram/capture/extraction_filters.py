@@ -38,9 +38,11 @@ _SYSTEM_PATTERNS = re.compile(
 
 
 def should_extract(content: str) -> bool:
-    """Return False if content is clearly junk — code, paths, debug noise, system messages.
+    """Return False if content is clearly junk — pure code blocks, debug noise.
 
     Conservative: when in doubt, return True to allow extraction.
+    Mixed content (natural language + code/paths/commands) is allowed through
+    since it often contains important context worth remembering.
 
     Args:
         content: Raw message content string.
@@ -50,11 +52,17 @@ def should_extract(content: str) -> bool:
     """
     if not content or len(content.strip()) < 30:
         return False
-    if _CODE_PATTERNS.search(content):
+    # Only skip if content is PREDOMINANTLY code/noise, not mixed content
+    stripped = content.strip()
+    lines = stripped.splitlines()
+    if not lines:
         return False
-    if _PATH_PATTERNS.search(content):
-        return False
-    if _COMMAND_PATTERNS.search(content):
+    # Skip pure code blocks (>80% of lines match code/command patterns)
+    noise_lines = sum(
+        1 for line in lines
+        if _CODE_PATTERNS.search(line) or _COMMAND_PATTERNS.search(line)
+    )
+    if len(lines) > 3 and noise_lines / len(lines) > 0.8:
         return False
     if _SYSTEM_PATTERNS.search(content):
         return False
