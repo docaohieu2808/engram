@@ -30,12 +30,30 @@ _METADATA_BLOCK_PATTERN = re.compile(
     re.DOTALL,
 )
 
-# Patterns to skip entirely — OpenClaw system noise
+# Patterns to skip entirely — system noise
 _SKIP_PATTERNS = [
     re.compile(r"^HEARTBEAT_OK$"),
     re.compile(r"^NO_REPLY$"),
     re.compile(r"Read HEARTBEAT\.md if it exists"),
     re.compile(r"HEARTBEAT_OK.*Current time:", re.DOTALL),
+]
+
+# Assistant narration patterns — low-value "thinking out loud" text blocks
+_ASSISTANT_NARRATION_PATTERNS = [
+    # "Let me check/look/read/..." anywhere in text
+    re.compile(r"\b[Ll]et me (check|look|read|see|search|find|examine|inspect|verify|review|understand|investigate|explore|analyze|test|try|run|start|continue|also|first|quickly)\b", re.IGNORECASE),
+    # "I'll/I need to check/look/..."
+    re.compile(r"\bI('ll| will| need to| should| can) (check|look|read|search|find|examine|verify|review|understand|investigate|explore|analyze|test|try|run|start|also)\b", re.IGNORECASE),
+    # Status narration: "Good — ...", "Now I see...", "Commands work."
+    re.compile(r"^(Good|Great|OK|Perfect|Alright|Now|First|Next|Hmm|Interesting)\b.*\b(let me|I('ll| will| see| need| have| can))\b", re.IGNORECASE),
+    # Progress narration: "Checking...", "Looking at..."
+    re.compile(r"^(Checking|Looking|Reading|Searching|Finding|Verifying|Running|Testing|Starting|Installing|Updating|Creating|Building|Compiling)\b", re.IGNORECASE),
+    # "Now I have/see/understand..."
+    re.compile(r"^Now I (have|see|understand|know|need)\b", re.IGNORECASE),
+    # Tool narration: "The file is...", "The output shows..."
+    re.compile(r"^The (file|output|error|issue|problem|command|result|log|test|build|server|service|config|code) (is|shows|says|indicates|reveals|confirms|works|doesn't)\b", re.IGNORECASE),
+    # Short acknowledgments and transitions
+    re.compile(r"^(Done|Fixed|Updated|Installed|Created|Works|Verified|Confirmed)\.\s*$", re.IGNORECASE),
 ]
 
 # Roles we capture — skip toolCall, toolResult, session, thinking_level_change, etc.
@@ -124,7 +142,7 @@ def parse_session_line(line: str) -> dict[str, Any] | None:
     else:
         return None
 
-    if not text or len(text) < 20:
+    if not text:
         return None
 
     # Skip OpenClaw system noise (HEARTBEAT, NO_REPLY)
@@ -132,8 +150,16 @@ def parse_session_line(line: str) -> dict[str, Any] | None:
         return None
 
     text = _clean_tags(text)
-    if not text or len(text) < 20:
+    if not text:
         return None
+
+    # Assistant: skip short/narration noise; User: always keep
+    if role == "assistant":
+        if len(text) < 20:
+            return None
+        for pat in _ASSISTANT_NARRATION_PATTERNS:
+            if pat.search(text):
+                return None
 
     # Skip error-only messages
     if msg.get("stopReason") == "error":
