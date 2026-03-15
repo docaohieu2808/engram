@@ -101,12 +101,14 @@ class _EpisodicSearchMixin:
             )
             scored.append((score, memory))
 
-            # Track access for batch update
+            # Track access + boost confidence on recall
             new_count = memory.access_count + 1
+            new_confidence = min(1.0, memory.confidence + 0.1)
             access_ids.append(mem_id)
             access_metas.append({
                 "access_count": new_count,
                 "last_accessed": now.isoformat(),
+                "confidence": new_confidence,
             })
 
         # Re-sort by activation score, then apply offset/limit

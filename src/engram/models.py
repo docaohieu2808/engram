@@ -99,7 +99,7 @@ class EpisodicMemory(BaseModel):
     topic_key: str | None = None
     revision_count: int = 0
     # Feedback loop fields
-    confidence: float = 1.0  # 0.0 - 1.0, adjusted by user feedback
+    confidence: float = 0.5  # 0.0 - 1.0, starts at 0.5, grows with recall, adjusted by feedback
     negative_count: int = 0  # count of negative feedbacks received
     # Source tracking (e.g. "OpenClaw", "ClaudeCode", "api", "cli")
     source: str = ""

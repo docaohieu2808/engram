@@ -133,7 +133,7 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
     revision_count = int(metadata.get("revision_count", 0))
 
     # Parse feedback fields
-    confidence = float(metadata.get("confidence", 1.0))
+    confidence = float(metadata.get("confidence", 0.5))
     negative_count = int(metadata.get("negative_count", 0))
 
     # Exclude internal fields from extra metadata
