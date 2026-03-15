@@ -12,7 +12,7 @@ import json
 import logging
 from pathlib import Path
 
-from engram.capture.memory_classifier import classify_memory_type
+from engram.capture.memory_classifier import classify_memory_type, classify_priority
 from engram.models import IngestResult
 
 logger = logging.getLogger("engram")
@@ -60,7 +60,7 @@ async def do_ingest(file: Path, dry_run: bool, get_extractor, get_graph, get_epi
         per_content = extractor.filter_entities_for_content(content, entity_names, context_messages=ctx)
         if per_content:
             mt = classify_memory_type(content)
-            await episodic.remember(content, memory_type=mt, entities=per_content)
+            await episodic.remember(content, memory_type=mt, entities=per_content, priority=classify_priority(mt))
             episodic_count += 1
 
     return IngestResult(
@@ -132,16 +132,18 @@ async def do_ingest_messages(
             per_content = extractor.filter_entities_for_content(
                 content, entity_names, context_messages=ctx,
             )
+            pri = classify_priority(mt)
             if per_content:
-                await episodic.remember(content, memory_type=mt, entities=per_content, source=source)
+                await episodic.remember(content, memory_type=mt, entities=per_content, source=source, priority=pri)
                 episodic_count += 1
             elif role == "user":
                 # Always store user messages even without entity match
-                await episodic.remember(content, memory_type=mt, source=source)
+                await episodic.remember(content, memory_type=mt, source=source, priority=pri)
                 episodic_count += 1
         else:
             # Extraction failed or no entities — store all messages plain
-            await episodic.remember(content, memory_type=mt, source=source)
+            pri = classify_priority(mt)
+            await episodic.remember(content, memory_type=mt, source=source, priority=pri)
             episodic_count += 1
 
     return IngestResult(
