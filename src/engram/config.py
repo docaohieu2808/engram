@@ -23,7 +23,7 @@ class EpisodicConfig(BaseModel):
     provider: str = "qdrant"
     path: str = "~/.engram/episodic"  # kept for backward compat; not used by Qdrant backend
     namespace: str = "default"
-    decay_rate: float = 0.1
+    decay_rate: float = 0.03
     decay_enabled: bool = True
     dedup_enabled: bool = True
     dedup_threshold: float = 0.85  # cosine similarity; 1.0 = identical

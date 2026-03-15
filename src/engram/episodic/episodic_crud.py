@@ -451,10 +451,15 @@ class _EpisodicCrudMixin:
             old_priority = int(existing_meta.get("priority", 5))
             merged_priority = max(old_priority, priority)
 
+            # Reinforce: re-mention = recall-like access boost
+            old_access = int(existing_meta.get("access_count", 0))
+
             update_meta: dict[str, Any] = {
                 "entities": json.dumps(merged_entities),
                 "tags": json.dumps(merged_tags),
                 "priority": merged_priority,
+                "access_count": old_access + 1,
+                "last_accessed": datetime.now(timezone.utc).isoformat(),
             }
             if metadata:
                 update_meta.update(metadata)

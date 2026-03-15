@@ -115,7 +115,7 @@ def _build_memory(mem_id: str, document: str, metadata: dict[str, Any]) -> Episo
 
     # Parse decay/access fields
     access_count = int(metadata.get("access_count", 0))
-    decay_rate = float(metadata.get("decay_rate", 0.1))
+    decay_rate = float(metadata.get("decay_rate", 0.03))
     raw_last_accessed = metadata.get("last_accessed")
     last_accessed = None
     if raw_last_accessed:

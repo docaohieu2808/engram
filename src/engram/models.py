@@ -91,7 +91,7 @@ class EpisodicMemory(BaseModel):
     # Ebbinghaus decay fields
     access_count: int = 0
     last_accessed: datetime | None = None
-    decay_rate: float = 0.1
+    decay_rate: float = 0.03
     # Consolidation fields
     consolidation_group: str | None = None
     consolidated_into: str | None = None
