@@ -273,7 +273,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             if cfg.capture.openclaw.enabled:
                 oc = SessionWatcher(
                     cfg.capture.openclaw.sessions_dir, ingest_messages,
-                    label="OpenClaw", recursive=False,
+                    label=cfg.capture.openclaw.label, recursive=False,
                 )
                 tasks.append(asyncio.create_task(oc.start()))
                 console.print("[dim]OpenClaw watcher started[/dim]")
@@ -281,7 +281,7 @@ def register(app: typer.Typer, get_config, get_namespace=None) -> None:
             if cfg.capture.claude_code.enabled:
                 cc = SessionWatcher(
                     cfg.capture.claude_code.sessions_dir, ingest_messages,
-                    label="ClaudeCode", recursive=True,
+                    label=cfg.capture.claude_code.label, recursive=True,
                 )
                 tasks.append(asyncio.create_task(cc.start()))
                 console.print("[dim]Claude Code watcher started[/dim]")

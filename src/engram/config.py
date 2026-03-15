@@ -63,12 +63,14 @@ class OpenClawCaptureConfig(BaseModel):
     """OpenClaw realtime session capture via inotify/watchdog."""
     enabled: bool = True
     sessions_dir: str = "~/.openclaw/agents/main/sessions"
+    label: str = "OpenClaw"
 
 
 class ClaudeCodeCaptureConfig(BaseModel):
     """Claude Code session capture — watches ~/.claude/projects/ for JSONL sessions."""
     enabled: bool = True
     sessions_dir: str = "~/.claude/projects"
+    label: str = "ClaudeCode"
 
 
 class CaptureConfig(BaseModel):
