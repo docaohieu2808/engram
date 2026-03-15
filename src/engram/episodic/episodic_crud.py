@@ -114,6 +114,8 @@ class _EpisodicCrudMixin:
             "tags": json.dumps(tags),
             "access_count": 0,
             "decay_rate": self._default_decay_rate,
+            "confidence": 0.5,
+            "negative_count": 0,
         }
         if topic_key:
             doc_metadata["topic_key"] = topic_key
